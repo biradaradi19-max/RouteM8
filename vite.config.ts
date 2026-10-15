@@ -10,5 +10,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'happy-dom',
+    env: {
+      VITE_SUPABASE_URL: '',
+      VITE_SUPABASE_ANON_KEY: '',
+      VITE_GOOGLE_MAPS_API_KEY: '',
+      VITE_GOOGLE_MAPS_MAP_ID: '',
+    },
   },
 })
