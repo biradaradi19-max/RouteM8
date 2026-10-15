@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "admin": "tsx scripts/admin.ts",
+    "admin:confirm": "tsx scripts/admin.ts confirm"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

@@ -34,6 +34,8 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({ isOpen
   const envSnippet = `# Route M8 — .env Configuration
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+# Server-side admin key (NEVER prefix with VITE_)
+SUPABASE_SERVICE_ROLE_KEY=
 VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
 VITE_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
 VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;

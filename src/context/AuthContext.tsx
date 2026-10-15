@@ -158,8 +158,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let isMounted = true;
 
-    // 1. Initial Session Restoration
+    // 1. Initial Session Restoration & URL Hash Error Handling
     const restoreInitialSession = async () => {
+      // Check for Supabase Auth redirect errors in URL hash (e.g. expired confirmation links)
+      if (typeof window !== 'undefined' && window.location.hash) {
+        try {
+          const hashStr = window.location.hash.startsWith('#')
+            ? window.location.hash.substring(1)
+            : window.location.hash;
+          const params = new URLSearchParams(hashStr);
+          const hashError = params.get('error');
+          const errorCode = params.get('error_code');
+          const errorDesc = params.get('error_description');
+
+          if (hashError || errorCode || errorDesc) {
+            let msg = errorDesc ? decodeURIComponent(errorDesc.replace(/\+/g, ' ')) : 'Authentication error occurred.';
+            if (errorCode === 'otp_expired' || msg.toLowerCase().includes('expired')) {
+              msg = 'Your email confirmation link has expired or has already been used. Please sign in directly or request a new confirmation email.';
+            }
+            if (isMounted) {
+              setError(msg);
+            }
+            // Clean up the URL hash so error is not permanently stuck in address bar
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+        } catch {
+          // Ignore URL parsing errors
+        }
+      }
+
       try {
         const { data: { session }, error: sessionError } = await client.auth.getSession();
         if (sessionError) throw sessionError;
