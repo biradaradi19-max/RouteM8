@@ -410,6 +410,85 @@ describe('Route M8 Supabase Service — Security, Error Handling & Empty Dataset
       expect(result.success).toBe(true);
       expect(result.error).toBeNull();
     });
+
+    it('should fetch transporter location and map fields correctly when client is provided', async () => {
+      const mockSingle = vi.fn().mockResolvedValue({
+        data: {
+          delivery_id: 'del-123',
+          transporter_id: 'usr-456',
+          latitude: 37.4275,
+          longitude: -122.1668,
+          heading: 90,
+          speed: 12.5,
+          updated_at: '2026-10-15T10:00:00Z',
+        },
+        error: null,
+      });
+
+      const mockFrom = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: mockSingle,
+          }),
+        }),
+      });
+
+      const mockClient = { from: mockFrom } as any;
+
+      const result = await fetchTransporterLocationFromDb('del-123', mockClient);
+      expect(result.error).toBeNull();
+      expect(result.data).not.toBeNull();
+      expect(result.data?.deliveryId).toBe('del-123');
+      expect(result.data?.latitude).toBe(37.4275);
+      expect(result.data?.longitude).toBe(-122.1668);
+      expect(result.data?.heading).toBe(90);
+    });
+
+    it('should return null data without error when no location is recorded yet', async () => {
+      const mockSingle = vi.fn().mockResolvedValue({
+        data: null,
+        error: null,
+      });
+
+      const mockFrom = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: mockSingle,
+          }),
+        }),
+      });
+
+      const mockClient = { from: mockFrom } as any;
+
+      const result = await fetchTransporterLocationFromDb('del-empty', mockClient);
+      expect(result.error).toBeNull();
+      expect(result.data).toBeNull();
+    });
+
+    it('should setup channel subscription and remove channel on unsubscribe', () => {
+      const mockChannelObj = {
+        on: vi.fn().mockReturnThis(),
+        subscribe: vi.fn().mockReturnThis(),
+      };
+      const mockRemoveChannel = vi.fn();
+      const mockChannel = vi.fn().mockReturnValue(mockChannelObj);
+
+      const mockClient = {
+        channel: mockChannel,
+        removeChannel: mockRemoveChannel,
+      } as any;
+
+      const callback = vi.fn();
+      const unsubscribe = subscribeToTransporterLocation('del-123', callback, mockClient);
+
+      expect(mockChannel).toHaveBeenCalledWith('delivery-location-del-123');
+      expect(mockChannelObj.on).toHaveBeenCalled();
+      expect(mockChannelObj.subscribe).toHaveBeenCalled();
+
+      unsubscribe();
+      expect(mockRemoveChannel).toHaveBeenCalledWith(mockChannelObj);
+    });
   });
 });
+
 

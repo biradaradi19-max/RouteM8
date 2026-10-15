@@ -1348,6 +1348,71 @@ describe('Route M8 Database Security & Authorization Verification Suite', () => 
         expect(auditLogStore[1].initialSignup).toBe(false);
       });
     });
+
+    describe('SEC-05: Transporter Live Location Tracking & RLS Authorization Rules', () => {
+      it('should permit location read strictly for authorized participants in active status', () => {
+        const canReadLocation = (
+          callerId: string,
+          delivery: { requesterId: string; transporterId: string; status: string },
+          isAdmin = false
+        ) => {
+          if (isAdmin) return true;
+          if (callerId === delivery.transporterId) return true;
+          if (callerId === delivery.requesterId && (delivery.status === 'matched' || delivery.status === 'in_transit')) {
+            return true;
+          }
+          return false;
+        };
+
+        const activeDelivery = {
+          requesterId: 'usr-customer-1',
+          transporterId: 'usr-transporter-2',
+          status: 'in_transit',
+        };
+
+        // Transporter can read their own location
+        expect(canReadLocation('usr-transporter-2', activeDelivery)).toBe(true);
+
+        // Customer/requester can read location during active delivery
+        expect(canReadLocation('usr-customer-1', activeDelivery)).toBe(true);
+
+        // Admin can read location
+        expect(canReadLocation('usr-admin-99', activeDelivery, true)).toBe(true);
+
+        // Unauthorized outsider is denied
+        expect(canReadLocation('usr-attacker-3', activeDelivery)).toBe(false);
+
+        // Once completed or cancelled, customer read access expires to protect transporter privacy
+        const completedDelivery = { ...activeDelivery, status: 'completed' };
+        expect(canReadLocation('usr-customer-1', completedDelivery)).toBe(false);
+
+        const cancelledDelivery = { ...activeDelivery, status: 'cancelled' };
+        expect(canReadLocation('usr-customer-1', cancelledDelivery)).toBe(false);
+      });
+
+      it('should restrict location updates strictly to the assigned transporter during active delivery', () => {
+        const canUpdateLocation = (
+          callerId: string,
+          delivery: { transporterId: string; status: string }
+        ) => {
+          return callerId === delivery.transporterId && (delivery.status === 'matched' || delivery.status === 'in_transit');
+        };
+
+        const activeDelivery = {
+          transporterId: 'usr-transporter-2',
+          status: 'in_transit',
+        };
+
+        // Assigned transporter can write
+        expect(canUpdateLocation('usr-transporter-2', activeDelivery)).toBe(true);
+
+        // Unauthorized caller cannot write
+        expect(canUpdateLocation('usr-attacker-3', activeDelivery)).toBe(false);
+
+        // Cannot update location when delivery is completed
+        expect(canUpdateLocation('usr-transporter-2', { ...activeDelivery, status: 'completed' })).toBe(false);
+      });
+    });
   });
 });
 

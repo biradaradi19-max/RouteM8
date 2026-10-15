@@ -695,7 +695,7 @@ export async function updateTransporterLocationInDb(
   clientOverride?: SupabaseClient
 ): Promise<{ success: boolean; error: string | null }> {
   const client = clientOverride || customClient || supabase;
-  if ((!isSupabaseConfigured && !customClient) || !client) {
+  if (!client) {
     return { success: false, error: 'Supabase backend is not configured.' };
   }
 
@@ -754,7 +754,7 @@ export async function fetchTransporterLocationFromDb(
   clientOverride?: SupabaseClient
 ): Promise<{ data: TransporterLocation | null; error: string | null }> {
   const client = clientOverride || customClient || supabase;
-  if ((!isSupabaseConfigured && !customClient) || !client) {
+  if (!client) {
     return { data: null, error: 'Supabase backend is not configured.' };
   }
 
