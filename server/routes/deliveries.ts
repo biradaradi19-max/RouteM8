@@ -8,6 +8,7 @@ import { User } from '../models/User.js';
 import { Activity } from '../models/Activity.js';
 import { Location } from '../models/Location.js';
 import { isDbConnected } from '../config/db.js';
+import { dispatchService } from '../services/dispatchService.js';
 
 const router = Router();
 
@@ -408,12 +409,18 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
           status: 'open',
         }).catch(() => {});
 
+        const io = req.app.get('io');
+        dispatchService.startDispatch(newDoc, io);
+
         res.status(201).json(formatDelivery(newDoc));
         return;
       } catch (dbErr: any) {
         console.warn('[DB Save Fallback] Using in-memory created delivery:', dbErr.message);
       }
     }
+
+    const io = req.app.get('io');
+    dispatchService.startDispatch(deliveryData, io);
 
     res.status(201).json(formatDelivery(deliveryData));
   } catch (err: any) {
@@ -492,6 +499,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
           io.to(`delivery:${delivery._id}`).emit('delivery:matched', formatted);
           io.emit('delivery:claimed', { deliveryId: delivery._id.toString() });
         }
+        dispatchService.stopDispatch(delivery._id.toString(), 'assigned', io);
 
         res.json(formatted);
         return;
@@ -530,6 +538,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
       io.to(`delivery:${target._id}`).emit('delivery:matched', formatted);
       io.emit('delivery:claimed', { deliveryId: target._id.toString() });
     }
+    dispatchService.stopDispatch(target._id.toString(), 'assigned', io);
 
     res.json(formatted);
   } catch (err: any) {
@@ -541,6 +550,8 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
 router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
+
+    dispatchService.handlePartnerDecline(req.params.id, uid);
 
     if (isDbConnected()) {
       try {
@@ -724,6 +735,12 @@ router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: R
 
     delivery.status = 'cancelled';
     await delivery.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`delivery:${delivery._id}`).emit('delivery:cancelled', { deliveryId: delivery._id.toString() });
+    }
+    dispatchService.stopDispatch(delivery._id.toString(), 'cancelled', io);
 
     res.json({ success: true, delivery: formatDelivery(delivery) });
   } catch (err: any) {
