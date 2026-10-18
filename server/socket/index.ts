@@ -3,6 +3,7 @@ import { Server as SocketIOServer, type Socket } from 'socket.io';
 import { verifyFirebaseIdToken, type VerifiedUser } from '../config/firebaseAdmin.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { Location } from '../models/Location.js';
+import { partnerPresenceService } from '../services/partnerPresence.js';
 
 interface AuthenticatedSocket extends Socket {
   data: {
@@ -48,6 +49,87 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
   io.on('connection', (socket: AuthenticatedSocket) => {
     const userId = socket.data.userId!;
     console.log(`[Socket.IO] Client connected: ${socket.id} (UID: ${userId})`);
+
+    // Auto-join personal partner room for targeted dispatch opportunities
+    socket.join(`partner:${userId}`);
+
+    // Partner registers general presence and availability
+    socket.on('partner:presence', (data: { isAvailable: boolean }, callback) => {
+      try {
+        const isAvailable = Boolean(data?.isAvailable);
+        partnerPresenceService.setAvailability(userId, isAvailable);
+        if (callback) callback({ success: true, isAvailable });
+      } catch (err: any) {
+        if (callback) callback({ error: err.message });
+      }
+    });
+
+    // Partner broadcasts dashboard GPS location for dispatch candidate matching
+    socket.on(
+      'partner:location',
+      (
+        data: {
+          latitude: number;
+          longitude: number;
+          heading?: number;
+          speed?: number;
+          isAvailable?: boolean;
+        },
+        callback
+      ) => {
+        try {
+          const { latitude, longitude, heading, speed, isAvailable } = data;
+          if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+            if (callback) callback({ error: 'Invalid coordinates' });
+            return;
+          }
+          if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            if (callback) callback({ error: 'Coordinates out of bounds' });
+            return;
+          }
+
+          const record = partnerPresenceService.updateLocation(userId, {
+            latitude,
+            longitude,
+            heading,
+            speed,
+            isAvailable: isAvailable !== undefined ? isAvailable : true,
+            socketId: socket.id,
+            fullName: socket.data.user?.name,
+          });
+
+          if (callback) callback({ success: true, record });
+        } catch (err: any) {
+          if (callback) callback({ error: err.message });
+        }
+      }
+    );
+
+    // Partner registers active journey route corridor
+    socket.on(
+      'partner:journey',
+      (
+        data: {
+          originCoords: [number, number];
+          destCoords: [number, number];
+          maxDetourMinutes: number;
+        },
+        callback
+      ) => {
+        try {
+          if (data && data.originCoords && data.destCoords) {
+            partnerPresenceService.setActiveJourney(userId, {
+              originCoords: data.originCoords,
+              destCoords: data.destCoords,
+              maxDetourMinutes: Number(data.maxDetourMinutes || 15),
+            });
+          }
+          if (callback) callback({ success: true });
+        } catch (err: any) {
+          if (callback) callback({ error: err.message });
+        }
+      }
+    );
 
     // Join delivery room with strict authorization
     socket.on('delivery:join', async ({ deliveryId }: { deliveryId: string }, callback) => {
