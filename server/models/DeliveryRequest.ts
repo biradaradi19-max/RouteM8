@@ -11,8 +11,10 @@ export interface IDeliveryRequest extends Document {
   category: RequestCategory;
   pickupAddress: string;
   pickupCoords: [number, number]; // [lat, lng]
+  pickupPlaceId?: string;
   dropoffAddress: string;
   dropoffCoords: [number, number]; // [lat, lng]
+  dropoffPlaceId?: string;
   itemSize: ItemSize;
   weightEstimateKg?: number;
   compensation: number;
@@ -67,6 +69,10 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
         message: 'Invalid pickup coordinates [lat, lng]',
       },
     },
+    pickupPlaceId: {
+      type: String,
+      trim: true,
+    },
     dropoffAddress: {
       type: String,
       required: true,
@@ -78,6 +84,10 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
         validator: (v: number[]) => v.length === 2 && v[0] >= -90 && v[0] <= 90 && v[1] >= -180 && v[1] <= 180,
         message: 'Invalid dropoff coordinates [lat, lng]',
       },
+    },
+    dropoffPlaceId: {
+      type: String,
+      trim: true,
     },
     itemSize: {
       type: String,

@@ -5,14 +5,15 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  ChevronDown,
+  Globe,
 } from 'lucide-react';
+import { getCurrentPositionAsync, isValidCoordinate } from '../../services/geolocation';
 import {
-  getCurrentPositionAsync,
-  reverseGeocode,
-  geocodeAddress,
-  isValidCoordinate,
-} from '../../services/geolocation';
+  searchGlobalPlaces,
+  resolvePlaceCoordinates,
+  reverseGeocodeCoords,
+  type PlacePrediction,
+} from '../../services/places';
 
 export interface LocationPickerInputProps {
   id: string;
@@ -20,28 +21,17 @@ export interface LocationPickerInputProps {
   placeholder?: string;
   value: string;
   coords: [number, number] | null;
-  onChange: (address: string, coords: [number, number] | null) => void;
+  placeId?: string;
+  onChange: (address: string, coords: [number, number] | null, placeId?: string) => void;
   showCurrentLocation?: boolean;
   required?: boolean;
   disabled?: boolean;
 }
 
-// Corridor presets for instant prototyping & testing
-const CORRIDOR_PRESETS: Array<{ label: string; address: string; coords: [number, number] }> = [
-  { label: 'Stanford Green Library', address: 'Green Library, 557 Escondido Mall, Stanford, CA', coords: [37.4275, -122.1668] },
-  { label: 'Stanford Gates CS Bldg', address: 'Gates Computer Science Building, Palo Alto, CA', coords: [37.4302, -122.1733] },
-  { label: 'Whole Foods Market Palo Alto', address: 'Whole Foods Market, 774 Emerson St, Palo Alto, CA', coords: [37.4418, -122.1601] },
-  { label: 'Walgreens Pharmacy El Camino', address: 'Walgreens, 4170 El Camino Real, Palo Alto, CA', coords: [37.4095, -122.1278] },
-  { label: 'San Antonio Shopping Center', address: 'San Antonio Center, Mountain View, CA', coords: [37.4022, -122.1124] },
-  { label: 'Castro Street Downtown', address: 'Castro St & El Camino Real, Mountain View, CA', coords: [37.3861, -122.0839] },
-  { label: 'Googleplex / Charleston', address: '1600 Amphitheatre Pkwy, Mountain View, CA', coords: [37.4220, -122.0841] },
-  { label: 'Sunnyvale Caltrain Station', address: 'Sunnyvale Caltrain, Sunnyvale, CA', coords: [37.3784, -122.0308] },
-];
-
 export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
   id,
   label,
-  placeholder = 'Search street, building, or landmark...',
+  placeholder = 'Search address, village, landmark, city, or postal code...',
   value,
   coords,
   onChange,
@@ -49,124 +39,140 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
   required = false,
   disabled = false,
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteRef = useRef<any>(null);
 
+  const [inputValue, setInputValue] = useState(value);
+  const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState(false);
-  const [showPresets, setShowPresets] = useState(false);
+  const [userBiasCoords, setUserBiasCoords] = useState<[number, number] | null>(null);
 
-  // Initialize Google Places Autocomplete when Google Maps Places library is available
+  // Sync external value changes
   useEffect(() => {
-    if (!inputRef.current) return;
+    setInputValue(value);
+  }, [value]);
 
-    const initAutocomplete = () => {
-      const googleMaps = (window as any).google?.maps;
-      if (googleMaps && googleMaps.places && !autocompleteRef.current) {
-        try {
-          const autocomplete = new googleMaps.places.Autocomplete(inputRef.current, {
-            fields: ['formatted_address', 'geometry', 'name'],
-          });
-
-          autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            if (place && place.geometry && place.geometry.location) {
-              const lat = place.geometry.location.lat();
-              const lng = place.geometry.location.lng();
-              const formattedAddress = place.formatted_address || place.name || inputRef.current?.value || '';
-              setGeoError(null);
-              onChange(formattedAddress, [lat, lng]);
-            }
-          });
-
-          autocompleteRef.current = autocomplete;
-        } catch (err) {
-          console.warn('[Places Autocomplete Init Notice]', err);
-        }
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
       }
     };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-    initAutocomplete();
+  // Debounced search for worldwide places
+  useEffect(() => {
+    const trimmed = inputValue.trim();
 
-    // Re-check after Google Maps SDK finishes loading asynchronously
-    const timer = setInterval(() => {
-      if ((window as any).google?.maps?.places && !autocompleteRef.current) {
-        initAutocomplete();
-        clearInterval(timer);
+    // If query is short or already matches the selected address with valid coords, don't re-search
+    if (trimmed.length < 2) {
+      setPredictions([]);
+      setIsOpen(false);
+      return;
+    }
+
+    if (coords && trimmed === value) {
+      return;
+    }
+
+    let isCurrent = true;
+    setIsSearching(true);
+    setGeoError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchGlobalPlaces(trimmed, userBiasCoords);
+        if (isCurrent) {
+          setPredictions(results);
+          setIsOpen(results.length > 0);
+        }
+      } catch (err: any) {
+        console.warn('[LocationPicker] Autocomplete search notice:', err);
+      } finally {
+        if (isCurrent) setIsSearching(false);
       }
-    }, 500);
+    }, 280);
 
     return () => {
-      clearInterval(timer);
+      isCurrent = false;
+      clearTimeout(timer);
     };
-  }, [onChange]);
+  }, [inputValue, coords, value, userBiasCoords]);
 
-  // Handle "Use My Current Location"
+  // Handle selecting a place prediction from the dropdown
+  const handleSelectPrediction = async (prediction: PlacePrediction) => {
+    setIsOpen(false);
+    setIsResolving(true);
+    setGeoError(null);
+    setInputValue(prediction.description);
+
+    try {
+      const resolved = await resolvePlaceCoordinates(prediction.placeId, prediction.description);
+      if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
+        onChange(resolved.formattedAddress || prediction.description, resolved.coords, resolved.placeId);
+      } else {
+        setGeoError(`Unable to verify coordinates for "${prediction.mainText}". Please pick another search result.`);
+        onChange(prediction.description, null, undefined);
+      }
+    } catch (err: any) {
+      setGeoError(err.message || 'Error resolving location coordinates.');
+      onChange(prediction.description, null, undefined);
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
+  // Handle "Use My Current Location" with browser GPS
   const handleUseCurrentLocation = async () => {
     setGeoError(null);
     setIsLocating(true);
+    setIsOpen(false);
+
     try {
-      const pos = await getCurrentPositionAsync();
+      const pos = await getCurrentPositionAsync({ enableHighAccuracy: true, timeout: 10000 });
       const [lat, lng] = pos;
 
       if (!isValidCoordinate(lat, lng)) {
-        throw new Error('Retrieved position is outside valid geographic coordinates.');
+        throw new Error('Received invalid GPS coordinates from browser.');
       }
 
-      // Reverse geocode into formatted address
-      const formattedAddress = await reverseGeocode([lat, lng]);
-      onChange(formattedAddress, [lat, lng]);
+      setUserBiasCoords([lat, lng]);
+
+      // Reverse geocode current position
+      const formatted = await reverseGeocodeCoords([lat, lng]);
+      setInputValue(formatted);
+      onChange(formatted, [lat, lng], undefined);
     } catch (err: any) {
-      setGeoError(err.message || 'Unable to retrieve your current location.');
+      setGeoError(err.message || 'Unable to retrieve your current location. Please check browser permissions.');
     } finally {
       setIsLocating(false);
     }
   };
 
-  // Attempt geocoding on blur if text is entered without coordinate resolution
-  const handleBlur = async () => {
-    if (!value || !value.trim()) {
-      if (coords) onChange('', null);
-      return;
-    }
-
-    // If coordinates are already set, no resolution needed
-    if (coords && isValidCoordinate(coords[0], coords[1])) return;
-
-    setIsGeocoding(true);
-    setGeoError(null);
-    try {
-      const resolved = await geocodeAddress(value);
-      if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
-        onChange(resolved.address, resolved.coords);
-      } else {
-        setGeoError('Could not verify coordinates for this address. Please choose a suggestion or pick a corridor location.');
-        onChange(value, null);
-      }
-    } catch (err: any) {
-      setGeoError(err.message || 'Failed to verify address coordinates.');
-    } finally {
-      setIsGeocoding(false);
-    }
-  };
-
   const handleClear = () => {
-    onChange('', null);
+    setInputValue('');
+    setPredictions([]);
+    setIsOpen(false);
     setGeoError(null);
+    onChange('', null, undefined);
     if (inputRef.current) inputRef.current.focus();
-  };
-
-  const handleSelectPreset = (preset: typeof CORRIDOR_PRESETS[0]) => {
-    onChange(preset.address, preset.coords);
-    setShowPresets(false);
-    setGeoError(null);
   };
 
   const hasValidCoords = Boolean(coords && isValidCoordinate(coords[0], coords[1]));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', position: 'relative' }}
+    >
+      {/* Label and "Use My Current Location" Action */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <label htmlFor={id} className="form-label" style={{ margin: 0, fontWeight: 700 }}>
           {label}
@@ -196,7 +202,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
             ) : (
               <Crosshair size={13} strokeWidth={2.5} />
             )}
-            <span>{isLocating ? 'Detecting Location...' : 'Use My Current Location'}</span>
+            <span>{isLocating ? 'Detecting GPS...' : 'Use My Current Location'}</span>
           </button>
         )}
       </div>
@@ -220,17 +226,23 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
           required={required}
           disabled={disabled}
           placeholder={placeholder}
-          value={value}
+          value={inputValue}
           onChange={(e) => {
+            const val = e.target.value;
+            setInputValue(val);
             setGeoError(null);
-            // If user types, clear previous coords until resolved
-            onChange(e.target.value, null);
+            // Invalidate coordinates until user selects a verified place
+            onChange(val, null, undefined);
           }}
-          onBlur={handleBlur}
+          onFocus={() => {
+            if (predictions.length > 0 && !hasValidCoords) {
+              setIsOpen(true);
+            }
+          }}
           className="form-input"
           style={{
             paddingLeft: '2.375rem',
-            paddingRight: value ? '4.5rem' : '2.25rem',
+            paddingRight: inputValue ? '4.5rem' : '2.25rem',
             borderColor: hasValidCoords
               ? 'rgba(16, 185, 129, 0.45)'
               : geoError
@@ -241,10 +253,20 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
           autoComplete="off"
         />
 
-        <div style={{ position: 'absolute', right: '0.625rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-          {isGeocoding && <span className="spinner" style={{ width: 14, height: 14 }} />}
+        <div
+          style={{
+            position: 'absolute',
+            right: '0.625rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+          }}
+        >
+          {(isSearching || isResolving) && (
+            <span className="spinner" style={{ width: 14, height: 14 }} />
+          )}
 
-          {value && (
+          {inputValue && (
             <button
               type="button"
               onClick={handleClear}
@@ -263,28 +285,103 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
               <X size={15} />
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => setShowPresets((prev) => !prev)}
-            title="Quick Corridor Locations"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '0.25rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <ChevronDown size={14} />
-          </button>
         </div>
       </div>
 
-      {/* Verified Coordinates Pill or Error Notice */}
+      {/* Autocomplete Predictions Dropdown */}
+      {isOpen && predictions.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 60,
+            marginTop: '0.25rem',
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-medium)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-lg)',
+            maxHeight: '260px',
+            overflowY: 'auto',
+            padding: '0.25rem',
+          }}
+        >
+          <div
+            style={{
+              padding: '0.375rem 0.625rem',
+              fontSize: '0.6875rem',
+              fontWeight: 700,
+              color: 'var(--text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+            }}
+          >
+            <Globe size={11} />
+            <span>Worldwide Matches</span>
+          </div>
+
+          {predictions.map((p, idx) => (
+            <button
+              key={p.placeId || idx}
+              type="button"
+              onClick={() => handleSelectPrediction(p)}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '0.5rem 0.625rem',
+                border: 'none',
+                background: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.5rem',
+                fontSize: '0.8125rem',
+                color: 'var(--text-primary)',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-surface-subtle)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+              }}
+            >
+              <MapPin
+                size={14}
+                style={{
+                  color: 'var(--color-mint-600)',
+                  marginTop: '0.125rem',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem', overflow: 'hidden' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {p.mainText || p.description}
+                </span>
+                {p.secondaryText && (
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {p.secondaryText}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Coordinate Verification Status Pill */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
         {hasValidCoords && coords ? (
           <span
@@ -298,93 +395,26 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
           >
             <CheckCircle2 size={13} />
             <span>
-              Resolved: {coords[0].toFixed(4)}, {coords[1].toFixed(4)}
+              Verified Coordinates: {coords[0].toFixed(4)}, {coords[1].toFixed(4)}
             </span>
           </span>
-        ) : value ? (
+        ) : isResolving ? (
+          <span style={{ color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span className="spinner" style={{ width: 11, height: 11 }} />
+            <span>Resolving verified coordinates...</span>
+          </span>
+        ) : inputValue ? (
           <span style={{ color: 'var(--text-tertiary)' }}>
-            Resolving verified road coordinates...
+            Select a location from suggestions to verify coordinates
           </span>
         ) : (
           <span style={{ color: 'var(--text-tertiary)' }}>
-            Google Places Autocomplete enabled
+            Worldwide location search enabled
           </span>
         )}
-
-        <button
-          type="button"
-          onClick={() => setShowPresets((prev) => !prev)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--color-forest-800)',
-            fontWeight: 600,
-            cursor: 'pointer',
-            padding: 0,
-            fontSize: '0.6875rem',
-            textDecoration: 'underline',
-          }}
-        >
-          {showPresets ? 'Close Presets' : 'Corridor Quick Picks'}
-        </button>
       </div>
 
-      {/* Presets Popover Menu */}
-      {showPresets && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            zIndex: 40,
-            marginTop: '0.25rem',
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-medium)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-lg)',
-            maxHeight: '220px',
-            overflowY: 'auto',
-            padding: '0.375rem',
-          }}
-        >
-          <div style={{ padding: '0.375rem 0.625rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
-            Bay Area Corridor Presets
-          </div>
-          {CORRIDOR_PRESETS.map((p, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleSelectPreset(p)}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '0.5rem 0.625rem',
-                border: 'none',
-                background: 'none',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.125rem',
-                fontSize: '0.8125rem',
-                color: 'var(--text-primary)',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-surface-subtle)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>{p.label}</span>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>{p.address}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Geolocation / Validation Error Banner */}
+      {/* Geolocation / Validation Error Notice */}
       {geoError && (
         <div
           style={{

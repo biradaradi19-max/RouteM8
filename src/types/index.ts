@@ -75,8 +75,10 @@ export interface DeliveryRequest {
   category: RequestCategory;
   pickupAddress: string;
   pickupCoords: [number, number]; // [lat, lng]
+  pickupPlaceId?: string;
   dropoffAddress: string;
   dropoffCoords: [number, number]; // [lat, lng]
+  dropoffPlaceId?: string;
   itemSize: ItemSize;
   weightEstimateKg?: number;
   compensation: number; // e.g. 9.50

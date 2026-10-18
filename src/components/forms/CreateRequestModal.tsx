@@ -10,27 +10,18 @@ interface CreateRequestModalProps {
   onClose: () => void;
 }
 
-// Initial default locations in Bay Area corridor
-const DEFAULT_PICKUP: { address: string; coords: [number, number] } = {
-  address: 'Green Library, 557 Escondido Mall, Stanford, CA',
-  coords: [37.4275, -122.1668],
-};
-
-const DEFAULT_DROPOFF: { address: string; coords: [number, number] } = {
-  address: 'Castro St & El Camino Real, Mountain View, CA',
-  coords: [37.3861, -122.0839],
-};
-
 export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, onClose }) => {
   const { createRequest, setCurrentView } = useApp();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<RequestCategory>('campus-supplies');
-  const [pickupAddress, setPickupAddress] = useState(DEFAULT_PICKUP.address);
-  const [pickupCoords, setPickupCoords] = useState<[number, number] | null>(DEFAULT_PICKUP.coords);
-  const [dropoffAddress, setDropoffAddress] = useState(DEFAULT_DROPOFF.address);
-  const [dropoffCoords, setDropoffCoords] = useState<[number, number] | null>(DEFAULT_DROPOFF.coords);
+  const [pickupAddress, setPickupAddress] = useState('');
+  const [pickupCoords, setPickupCoords] = useState<[number, number] | null>(null);
+  const [pickupPlaceId, setPickupPlaceId] = useState<string | undefined>();
+  const [dropoffAddress, setDropoffAddress] = useState('');
+  const [dropoffCoords, setDropoffCoords] = useState<[number, number] | null>(null);
+  const [dropoffPlaceId, setDropoffPlaceId] = useState<string | undefined>();
   const [routeStats, setRouteStats] = useState<{ distanceKm: number; durationMin: number } | null>(null);
 
   const [itemSize, setItemSize] = useState<ItemSize>('small');
@@ -61,8 +52,10 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
         category,
         pickupAddress,
         pickupCoords,
+        pickupPlaceId,
         dropoffAddress,
         dropoffCoords,
+        dropoffPlaceId,
         itemSize,
         compensation: Number(compensation),
         urgency,
@@ -206,13 +199,15 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
           {/* Google Places Autocomplete Pickup Picker */}
           <LocationPickerInput
             id="req-pickup-loc"
-            label="Pickup Location (Along Highway/Local Corridor)"
-            placeholder="Search pickup address, store, or campus building..."
+            label="Pickup Location"
+            placeholder="Search pickup address, village, landmark, or city..."
             value={pickupAddress}
             coords={pickupCoords}
-            onChange={(address, coords) => {
+            placeId={pickupPlaceId}
+            onChange={(address, coords, pId) => {
               setPickupAddress(address);
               setPickupCoords(coords);
+              setPickupPlaceId(pId);
             }}
             showCurrentLocation={true}
             required={true}
@@ -222,12 +217,14 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
           <LocationPickerInput
             id="req-dropoff-loc"
             label="Destination / Dropoff Location"
-            placeholder="Search dropoff destination address..."
+            placeholder="Search dropoff destination address or city..."
             value={dropoffAddress}
             coords={dropoffCoords}
-            onChange={(address, coords) => {
+            placeId={dropoffPlaceId}
+            onChange={(address, coords, pId) => {
               setDropoffAddress(address);
               setDropoffCoords(coords);
+              setDropoffPlaceId(pId);
             }}
             showCurrentLocation={false}
             required={true}

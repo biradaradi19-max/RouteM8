@@ -120,7 +120,7 @@ export const CreateRequestRouteMap: React.FC<CreateRequestRouteMapProps> = ({
   const defaultCenter = useMemo<google.maps.LatLngLiteral>(() => {
     if (pickupCoords) return { lat: pickupCoords[0], lng: pickupCoords[1] };
     if (dropoffCoords) return { lat: dropoffCoords[0], lng: dropoffCoords[1] };
-    return { lat: 37.4275, lng: -122.1668 }; // Silicon Valley default
+    return { lat: 20.0, lng: 77.0 }; // Global overview
   }, [pickupCoords, dropoffCoords]);
 
   return (

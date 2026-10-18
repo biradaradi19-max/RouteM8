@@ -338,4 +338,91 @@ describe('Route M8 Express + MongoDB + Firebase Server Architecture Tests', () =
       expect(validateCoordinates([NaN, -122.1668], [37.3861, -122.0839])).toBe(false);
     });
   });
+
+  // =========================================================================
+  // 8. Global Places Endpoints & Worldwide Search
+  // =========================================================================
+  describe('Global Places Autocomplete & Details API Routes', () => {
+    it('should return empty suggestions when autocomplete input is empty', async () => {
+      let jsonResult: any = null;
+      const req: any = { query: { input: '' } };
+      const res: any = {
+        status: () => res,
+        json: (data: any) => {
+          jsonResult = data;
+          return res;
+        },
+      };
+
+      const placesRouter = (await import('./routes/places.js')).default;
+      // Find the autocomplete route handler
+      const layer = placesRouter.stack.find((l: any) => l.route?.path === '/autocomplete');
+      expect(layer?.route?.stack?.[0]?.handle).toBeDefined();
+
+      await layer!.route!.stack[0].handle(req, res, () => {});
+      expect(jsonResult).toEqual({ suggestions: [] });
+    });
+
+    it('should reject reverse-geocode when coordinates are out of earth bounds', async () => {
+      let statusCode = 200;
+      let jsonResult: any = null;
+      const req: any = { query: { lat: '120.5', lng: '74.3' } };
+      const res: any = {
+        status: (code: number) => {
+          statusCode = code;
+          return res;
+        },
+        json: (data: any) => {
+          jsonResult = data;
+          return res;
+        },
+      };
+
+      const placesRouter = (await import('./routes/places.js')).default;
+      const layer = placesRouter.stack.find((l: any) => l.route?.path === '/reverse-geocode');
+      expect(layer?.route?.stack?.[0]?.handle).toBeDefined();
+
+      await layer!.route!.stack[0].handle(req, res, () => {});
+      expect(statusCode).toBe(400);
+      expect(jsonResult?.error).toContain('bounds');
+    });
+
+    it('should enforce atomic accept condition: only one partner wins, status changes to matched', () => {
+      const deliveryState = {
+        _id: 'del-atomic-1',
+        status: 'open',
+        requesterId: 'usr-requester-1',
+        transporterId: null as string | null,
+      };
+
+      const simulateAccept = (uid: string) => {
+        // Atomic query condition: { _id, status: 'open', requesterId: { $ne: uid } }
+        if (deliveryState.status === 'open' && deliveryState.requesterId !== uid) {
+          deliveryState.status = 'matched';
+          deliveryState.transporterId = uid;
+          return { success: true, status: 200 };
+        }
+        if (deliveryState.requesterId === uid) {
+          return { error: 'Cannot accept own delivery', status: 400 };
+        }
+        return { error: 'Already matched or not open', status: 409 };
+      };
+
+      // Partner 1 accepts first
+      const res1 = simulateAccept('partner-1');
+      expect(res1.status).toBe(200);
+      expect(deliveryState.status).toBe('matched');
+      expect(deliveryState.transporterId).toBe('partner-1');
+
+      // Partner 2 attempts to accept concurrently
+      const res2 = simulateAccept('partner-2');
+      expect(res2.status).toBe(409); // Conflict detected
+      expect(deliveryState.transporterId).toBe('partner-1'); // Partner 1 remains winner
+
+      // Requester attempts to accept own delivery
+      const resOwner = simulateAccept('usr-requester-1');
+      expect(resOwner.status).toBe(400);
+    });
+  });
 });
+

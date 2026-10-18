@@ -319,3 +319,46 @@ export const activitiesApi = {
     }
   },
 };
+
+export const placesApi = {
+  async getAutocompleteSuggestions(input: string, biasCoords?: [number, number] | null) {
+    if (!input || !input.trim()) return [];
+    try {
+      let url = `${API_BASE}/places/autocomplete?input=${encodeURIComponent(input.trim())}`;
+      if (biasCoords) {
+        url += `&lat=${biasCoords[0]}&lng=${biasCoords[1]}`;
+      }
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.suggestions || [];
+    } catch (err) {
+      console.warn('[PlacesApi] Autocomplete error:', err);
+      return [];
+    }
+  },
+
+  async getPlaceDetails(placeId: string) {
+    try {
+      const res = await fetch(`${API_BASE}/places/details?placeId=${encodeURIComponent(placeId)}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err) {
+      console.warn('[PlacesApi] Details error:', err);
+      return null;
+    }
+  },
+
+  async reverseGeocode(lat: number, lng: number): Promise<string | null> {
+    try {
+      const res = await fetch(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.formattedAddress || null;
+    } catch (err) {
+      console.warn('[PlacesApi] Reverse geocode error:', err);
+      return null;
+    }
+  },
+};
+

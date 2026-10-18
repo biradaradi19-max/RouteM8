@@ -6,6 +6,7 @@ import deliveriesRouter from './routes/deliveries.js';
 import journeysRouter from './routes/journeys.js';
 import livekitRouter from './routes/livekit.js';
 import activitiesRouter from './routes/activities.js';
+import placesRouter from './routes/places.js';
 
 export function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ export function createApp() {
   app.use('/api/journeys', journeysRouter);
   app.use('/api/livekit', livekitRouter);
   app.use('/api/activities', activitiesRouter);
+  app.use('/api/places', placesRouter);
 
   // Global 404 handler for API routes
   app.use('/api', (_req, res) => {
