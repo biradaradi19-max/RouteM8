@@ -5,11 +5,13 @@ import * as AuthContextModule from '../../context/AuthContext';
 import * as AppContextModule from '../../context/AppContext';
 import type { DeliveryRequest, PublishedJourney, UserProfile } from '../../types';
 
-describe('DashboardView Component — Production-Ready Mobility & Delivery Dashboard', () => {
+describe('DashboardView Component — Separate Requester and Delivery Partner Experiences', () => {
   const mockOnOpenCreateRequest = vi.fn();
   const mockOnOpenPublishJourney = vi.fn();
   const mockOnInspectMatch = vi.fn();
   const mockUpdateRequestStatus = vi.fn();
+  const mockAcceptDeliveryMatch = vi.fn();
+  const mockSetPartnerAvailable = vi.fn();
 
   const mockUser: UserProfile = {
     id: 'user-1',
@@ -22,14 +24,15 @@ describe('DashboardView Component — Production-Ready Mobility & Delivery Dashb
     completedDeliveries: 12,
     completedCommutes: 24,
     rating: 4.98,
+    commuteVehicle: 'Tesla Model 3',
   };
 
   const mockRequests: DeliveryRequest[] = [
     {
       id: 'req-1',
-      requesterId: 'user-2',
-      requesterName: 'Sarah Jenkins',
-      requesterTrustScore: 95,
+      requesterId: 'user-1',
+      requesterName: 'Alex Morgan',
+      requesterTrustScore: 99,
       title: 'Chemistry Lab Manual & Notes',
       description: 'Urgent pickup from Science Library',
       category: 'campus-supplies',
@@ -44,8 +47,9 @@ describe('DashboardView Component — Production-Ready Mobility & Delivery Dashb
       neededBy: 'Today by 5:00 PM',
       handoverPin: '4821',
       status: 'matched',
-      transporterId: 'user-1',
-      transporterName: 'Alex Morgan',
+      transporterId: 'user-2',
+      transporterName: 'Sarah Jenkins',
+      transporterVehicle: 'Honda Civic',
       createdAt: '2026-10-18T10:00:00Z',
       estimatedDetourMinutes: 4,
     },
@@ -93,9 +97,7 @@ describe('DashboardView Component — Production-Ready Mobility & Delivery Dashb
     },
   ];
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-
+  const setupMocks = (activeRoleMode: 'requester' | 'transporter' = 'requester') => {
     vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
       user: mockUser,
       isAuthenticated: true,
@@ -121,17 +123,13 @@ describe('DashboardView Component — Production-Ready Mobility & Delivery Dashb
       setCurrentView: vi.fn(),
       activeRoleFilter: 'all',
       setActiveRoleFilter: vi.fn(),
+      activeRoleMode,
+      setActiveRoleMode: vi.fn(),
+      partnerAvailable: true,
+      setPartnerAvailable: mockSetPartnerAvailable,
       requests: mockRequests,
       journeys: mockJourneys,
-      activities: [
-        {
-          id: 'act-1',
-          type: 'match_found',
-          title: 'Optimal Corridor Match Found',
-          description: 'Corridor match computed with Stanford Commute',
-          timestamp: '10m ago',
-        },
-      ],
+      activities: [],
       isLoadingData: false,
       backendError: null,
       supabaseStatus: 'connected',
@@ -144,113 +142,194 @@ describe('DashboardView Component — Production-Ready Mobility & Delivery Dashb
       createRequest: vi.fn(),
       publishJourney: vi.fn(),
       updateRequestStatus: mockUpdateRequestStatus,
-      acceptDeliveryMatch: vi.fn(),
+      acceptDeliveryMatch: mockAcceptDeliveryMatch,
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupMocks('requester');
+  });
+
+  describe('Requester Experience (activeRoleMode = requester)', () => {
+    it('renders Requester Portal banner with user greeting and trust score', () => {
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      expect(screen.getByText(/Requester Portal/i)).toBeDefined();
+      expect(screen.getByText(/Alex/)).toBeDefined();
+      expect(screen.getByText(/Stanford Commuter Club/i)).toBeDefined();
+      expect(screen.getByText(/99% Trust Score/i)).toBeDefined();
+    });
+
+    it('renders requester KPI cards with .kpi-card class and requester metrics', () => {
+      const { container } = render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      const kpiCards = container.querySelectorAll('.kpi-card');
+      expect(kpiCards.length).toBe(4);
+
+      expect(screen.getByText('Active Requests')).toBeDefined();
+      expect(screen.getByText('Completed Deliveries')).toBeDefined();
+      expect(screen.getByText('Compensation Spent')).toBeDefined();
+      expect(screen.getByText('Carbon Prevented')).toBeDefined();
+    });
+
+    it('prominently displays "Request a Delivery" and does not show "Publish My Journey" in requester view', () => {
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      const requestBtn = screen.getByRole('button', { name: /request a delivery/i });
+      expect(requestBtn).toBeDefined();
+      fireEvent.click(requestBtn);
+      expect(mockOnOpenCreateRequest).toHaveBeenCalledTimes(1);
+
+      // Requesters must NOT see publisher CTA as primary workflow
+      expect(screen.queryByRole('button', { name: /publish my journey/i })).toBeNull();
+    });
+
+    it('renders active delivery tracking with 4-digit handover PIN and Call Transporter button', () => {
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      expect(screen.getByText('Active Delivery Tracking & Handover')).toBeDefined();
+      expect(screen.getAllByText('Chemistry Lab Manual & Notes').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('4821')).toBeDefined(); // Handover PIN
+      expect(screen.getByRole('button', { name: /call transporter/i })).toBeDefined();
+    });
+
+    it('filters requester requests list based on search input', () => {
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      const searchInput = screen.getByPlaceholderText('Search requests...');
+      fireEvent.change(searchInput, { target: { value: 'Chemistry' } });
+
+      expect(screen.getAllByText('Chemistry Lab Manual & Notes').length).toBeGreaterThanOrEqual(1);
     });
   });
 
-  it('renders welcome panel with user name, verified badge, and trust score', () => {
-    render(
-      <DashboardView
-        onOpenCreateRequest={mockOnOpenCreateRequest}
-        onOpenPublishJourney={mockOnOpenPublishJourney}
-        onInspectMatch={mockOnInspectMatch}
-      />
-    );
-
-    expect(screen.getByText(/Alex/)).toBeDefined();
-    expect(screen.getByText(/Stanford Commuter Club/i)).toBeDefined();
-    expect(screen.getByText(/99% Trust Score/i)).toBeDefined();
-  });
-
-  it('renders KPI cards with .kpi-card class and dynamic values', () => {
-    const { container } = render(
-      <DashboardView
-        onOpenCreateRequest={mockOnOpenCreateRequest}
-        onOpenPublishJourney={mockOnOpenPublishJourney}
-        onInspectMatch={mockOnInspectMatch}
-      />
-    );
-
-    const kpiCards = container.querySelectorAll('.kpi-card');
-    expect(kpiCards.length).toBe(4);
-
-    expect(screen.getByText('Active In-Flight Deliveries')).toBeDefined();
-    expect(screen.getByText('Published Commutes')).toBeDefined();
-    expect(screen.getByText('Community Balance')).toBeDefined();
-    expect(screen.getByText('CO₂ Prevented')).toBeDefined();
-  });
-
-  it('triggers quick CTA actions for Create Request and Publish Journey', () => {
-    render(
-      <DashboardView
-        onOpenCreateRequest={mockOnOpenCreateRequest}
-        onOpenPublishJourney={mockOnOpenPublishJourney}
-        onInspectMatch={mockOnInspectMatch}
-      />
-    );
-
-    const createBtn = screen.getByRole('button', { name: /create request/i });
-    fireEvent.click(createBtn);
-    expect(mockOnOpenCreateRequest).toHaveBeenCalledTimes(1);
-
-    const publishBtn = screen.getByRole('button', { name: /publish journey/i });
-    fireEvent.click(publishBtn);
-    expect(mockOnOpenPublishJourney).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders active delivery in progress with security PIN and stepper', () => {
-    render(
-      <DashboardView
-        onOpenCreateRequest={mockOnOpenCreateRequest}
-        onOpenPublishJourney={mockOnOpenPublishJourney}
-        onInspectMatch={mockOnInspectMatch}
-      />
-    );
-
-    expect(screen.getByText('Active Deliveries in Progress')).toBeDefined();
-    expect(screen.getAllByText('Chemistry Lab Manual & Notes').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('4821')).toBeDefined(); // Security PIN
-  });
-
-  it('allows opening PIN verification and submitting the 4-digit code', async () => {
-    mockUpdateRequestStatus.mockResolvedValue({ success: true });
-
-    render(
-      <DashboardView
-        onOpenCreateRequest={mockOnOpenCreateRequest}
-        onOpenPublishJourney={mockOnOpenPublishJourney}
-        onInspectMatch={mockOnInspectMatch}
-      />
-    );
-
-    const verifyBtn = screen.getByRole('button', { name: /verify handover/i });
-    fireEvent.click(verifyBtn);
-
-    const pinInput = screen.getByPlaceholderText('e.g. 9312');
-    fireEvent.change(pinInput, { target: { value: '4821' } });
-
-    const confirmBtn = screen.getByRole('button', { name: /confirm/i });
-    fireEvent.click(confirmBtn);
-
-    await waitFor(() => {
-      expect(mockUpdateRequestStatus).toHaveBeenCalledWith('req-1', 'completed', '4821');
+  describe('Delivery Partner Experience (activeRoleMode = transporter)', () => {
+    beforeEach(() => {
+      setupMocks('transporter');
     });
-  });
 
-  it('filters nearby requests based on search input', () => {
-    render(
-      <DashboardView
-        onOpenCreateRequest={mockOnOpenCreateRequest}
-        onOpenPublishJourney={mockOnOpenPublishJourney}
-        onInspectMatch={mockOnInspectMatch}
-      />
-    );
+    it('renders Delivery Partner banner with partner availability indicator', () => {
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
 
-    const searchInput = screen.getByPlaceholderText('Filter corridor / title...');
-    fireEvent.change(searchInput, { target: { value: 'Blueprint' } });
+      expect(screen.getByText(/Delivery Partner Portal/i)).toBeDefined();
+      expect(screen.getByText(/Online • Accepting Jobs/i)).toBeDefined();
+    });
 
-    expect(screen.getByText('Architectural Scale Model Blueprint')).toBeDefined();
-    const inspectRouteButtons = screen.getAllByRole('button', { name: /inspect route/i });
-    expect(inspectRouteButtons.length).toBe(1);
+    it('renders partner KPI cards with .kpi-card class and partner metrics', () => {
+      const { container } = render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      const kpiCards = container.querySelectorAll('.kpi-card');
+      expect(kpiCards.length).toBe(4);
+
+      expect(screen.getByText('Active Deliveries')).toBeDefined();
+      expect(screen.getByText('Published Corridors')).toBeDefined();
+      expect(screen.getByText('Total Earnings')).toBeDefined();
+      expect(screen.getByText('Detour Efficiency')).toBeDefined();
+    });
+
+    it('renders "Publish My Journey" CTA for delivery partners', () => {
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      const publishBtn = screen.getByRole('button', { name: /publish my journey/i });
+      expect(publishBtn).toBeDefined();
+      fireEvent.click(publishBtn);
+      expect(mockOnOpenPublishJourney).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows partner to verify recipient PIN and complete handover', async () => {
+      mockUpdateRequestStatus.mockResolvedValue({ success: true });
+
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      const verifyBtn = screen.getByRole('button', { name: /verify handover pin/i });
+      fireEvent.click(verifyBtn);
+
+      const pinInput = screen.getByPlaceholderText('e.g. 9421');
+      fireEvent.change(pinInput, { target: { value: '4821' } });
+
+      const confirmBtn = screen.getByRole('button', { name: /confirm/i });
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(mockUpdateRequestStatus).toHaveBeenCalledWith('req-1', 'completed', '4821');
+      });
+    });
+
+    it('shows corridor opportunities and allows accepting a delivery request', async () => {
+      mockAcceptDeliveryMatch.mockResolvedValue(true);
+
+      render(
+        <DashboardView
+          onOpenCreateRequest={mockOnOpenCreateRequest}
+          onOpenPublishJourney={mockOnOpenPublishJourney}
+          onInspectMatch={mockOnInspectMatch}
+        />
+      );
+
+      expect(screen.getByText('Find Delivery Requests (Corridor Opportunities)')).toBeDefined();
+      expect(screen.getByText('Architectural Scale Model Blueprint')).toBeDefined();
+
+      const acceptBtn = screen.getByRole('button', { name: /accept job/i });
+      fireEvent.click(acceptBtn);
+
+      await waitFor(() => {
+        expect(mockAcceptDeliveryMatch).toHaveBeenCalledWith('req-2', 'jrn-1');
+      });
+    });
   });
 });

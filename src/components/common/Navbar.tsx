@@ -7,6 +7,7 @@ import {
   Moon, 
   PlusCircle, 
   Car,
+  Package,
   User, 
   Settings,
 } from 'lucide-react';
@@ -26,8 +27,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onToggleMobileMenu
 }) => {
-  const { currentView, setCurrentView, theme, toggleTheme } = useApp();
+  const { currentView, setCurrentView, theme, toggleTheme, activeRoleMode, setActiveRoleMode } = useApp();
   const { user, isAuthenticated } = useAuth();
+
+  const isBothRole = !user || user.role === 'both';
 
   return (
     <header style={{
@@ -87,15 +90,52 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Role Switcher Pill for 'both' users or Role Badge */}
+          {isBothRole ? (
+            <div className="role-switcher desktop-only" role="group" aria-label="Role Switcher">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveRoleMode('requester');
+                  if (currentView !== 'landing') setCurrentView('dashboard');
+                }}
+                className={`role-switcher-btn ${activeRoleMode === 'requester' ? 'active' : ''}`}
+                aria-pressed={activeRoleMode === 'requester'}
+                title="Switch to Requester Experience"
+              >
+                <Package size={13} />
+                <span>Requester</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveRoleMode('transporter');
+                  if (currentView !== 'landing') setCurrentView('dashboard');
+                }}
+                className={`role-switcher-btn ${activeRoleMode === 'transporter' ? 'active' : ''}`}
+                aria-pressed={activeRoleMode === 'transporter'}
+                title="Switch to Delivery Partner Experience"
+              >
+                <Car size={13} />
+                <span>Delivery Partner</span>
+              </button>
+            </div>
+          ) : (
+            <div className="badge badge-brand desktop-only" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              {user.role === 'requester' ? <Package size={13} /> : <Car size={13} />}
+              <span>{user.role === 'requester' ? 'Requester' : 'Delivery Partner'}</span>
+            </div>
+          )}
         </div>
 
         {/* Desktop Nav Tabs */}
         <nav style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} className="desktop-only" aria-label="Main Navigation">
           {[
             { id: 'landing', label: 'Overview' },
-            { id: 'dashboard', label: 'Dashboard' },
-            { id: 'matching', label: 'Route Matching' },
-            { id: 'deliveries', label: 'Active Deliveries' },
+            { id: 'dashboard', label: activeRoleMode === 'requester' ? 'Requester Hub' : 'Partner Hub' },
+            { id: 'matching', label: activeRoleMode === 'requester' ? 'Explore Routes' : 'Find Requests' },
+            { id: 'deliveries', label: activeRoleMode === 'requester' ? 'Track Deliveries' : 'Active Jobs' },
           ].map(item => {
             const isActive = currentView === item.id;
             return (
@@ -115,23 +155,47 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           
           {/* Action CTAs */}
-          <button
-            onClick={onOpenPublishJourney}
-            className="btn btn-secondary btn-sm desktop-only"
-            title="Publish your everyday commute"
-          >
-            <Car size={14} />
-            <span>Publish Commute</span>
-          </button>
+          {activeRoleMode === 'transporter' ? (
+            <button
+              onClick={onOpenPublishJourney}
+              className="btn btn-primary btn-sm desktop-only"
+              title="Publish your everyday commute"
+            >
+              <Car size={14} />
+              <span>Publish Commute</span>
+            </button>
+          ) : (
+            <button
+              onClick={onOpenCreateRequest}
+              className="btn btn-primary btn-sm desktop-only"
+              title="Request an item to be delivered"
+            >
+              <PlusCircle size={14} />
+              <span>Request Item</span>
+            </button>
+          )}
 
-          <button
-            onClick={onOpenCreateRequest}
-            className="btn btn-primary btn-sm desktop-only"
-            title="Request an item to be delivered"
-          >
-            <PlusCircle size={14} />
-            <span>Request Item</span>
-          </button>
+          {/* Secondary action for users with both roles */}
+          {isBothRole && activeRoleMode === 'transporter' && (
+            <button
+              onClick={onOpenCreateRequest}
+              className="btn btn-secondary btn-sm desktop-only"
+              title="Request an item to be delivered"
+            >
+              <PlusCircle size={14} />
+              <span>Request Item</span>
+            </button>
+          )}
+          {isBothRole && activeRoleMode === 'requester' && (
+            <button
+              onClick={onOpenPublishJourney}
+              className="btn btn-secondary btn-sm desktop-only"
+              title="Publish your commute"
+            >
+              <Car size={14} />
+              <span>Publish Commute</span>
+            </button>
+          )}
 
           {/* Infrastructure & Settings Control */}
           <button

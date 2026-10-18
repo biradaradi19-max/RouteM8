@@ -38,6 +38,7 @@ export interface SafeProfileUpdates {
   phone?: string;
   bio?: string;
   commuteVehicle?: string;
+  role?: 'both' | 'requester' | 'transporter';
 }
 
 export type VerificationType = 'student' | 'work' | 'gov_id';

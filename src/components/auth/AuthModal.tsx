@@ -91,6 +91,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } else if (mode === 'onboarding') {
       await updateProfile({
+        role,
         organization: organization.trim() || undefined,
         commuteVehicle: vehicle.trim() || undefined,
         bio: bio.trim() || undefined,
@@ -367,6 +368,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* Onboarding Specific: Commute Vehicle & Bio */}
           {mode === 'onboarding' && (
             <>
+              <div>
+                <label className="form-label">Preferred Platform Role</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                  {[
+                    { id: 'both', label: 'Both' },
+                    { id: 'requester', label: 'Requester' },
+                    { id: 'transporter', label: 'Delivery Partner' },
+                  ].map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setRole(item.id as any)}
+                      style={{
+                        padding: '0.5rem',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        border: '1px solid',
+                        borderColor: role === item.id ? 'var(--color-forest-700)' : 'var(--border-medium)',
+                        backgroundColor: role === item.id ? 'var(--bg-brand-subtle)' : 'var(--bg-surface)',
+                        color: role === item.id ? 'var(--color-forest-900)' : 'var(--text-secondary)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label className="form-label" htmlFor="onboard-vehicle">
                   Everyday Commute Mode / Vehicle

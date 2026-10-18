@@ -23,14 +23,21 @@ import {
 import { calculateRouteMatch } from '../services/routing';
 import { useAuth } from './AuthContext';
 
+export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile';
+export type RoleMode = 'requester' | 'transporter';
+
 export interface AppContextType {
   // Theme & Views
   theme: 'light' | 'dark';
   toggleTheme: () => void;
-  currentView: 'landing' | 'dashboard' | 'matching' | 'deliveries';
-  setCurrentView: (view: 'landing' | 'dashboard' | 'matching' | 'deliveries') => void;
+  currentView: AppView;
+  setCurrentView: (view: AppView) => void;
   activeRoleFilter: 'all' | 'requester' | 'transporter';
   setActiveRoleFilter: (role: 'all' | 'requester' | 'transporter') => void;
+  activeRoleMode: RoleMode;
+  setActiveRoleMode: (mode: RoleMode) => void;
+  partnerAvailable: boolean;
+  setPartnerAvailable: (available: boolean) => void;
 
   // Domain Data & Loading / Error States
   requests: DeliveryRequest[];
@@ -83,6 +90,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const LOCAL_STORAGE_THEME_KEY = 'routem8_theme_v1';
 const LOCAL_STORAGE_REQS_KEY = 'routem8_requests_v1';
 const LOCAL_STORAGE_JRNS_KEY = 'routem8_journeys_v1';
+const LOCAL_STORAGE_ROLE_MODE_KEY = 'routem8_active_role_mode_v1';
+const LOCAL_STORAGE_AVAILABILITY_KEY = 'routem8_partner_available_v1';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -108,9 +117,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-  // Navigation state
-  const [currentView, setCurrentView] = useState<'landing' | 'dashboard' | 'matching' | 'deliveries'>('landing');
+  // Navigation & Role Mode state
+  const [currentView, setCurrentView] = useState<AppView>('landing');
   const [activeRoleFilter, setActiveRoleFilter] = useState<'all' | 'requester' | 'transporter'>('all');
+
+  const [activeRoleMode, setActiveRoleModeState] = useState<RoleMode>(() => {
+    try {
+      if (user?.role === 'transporter') return 'transporter';
+      if (user?.role === 'requester') return 'requester';
+      const saved = localStorage.getItem(LOCAL_STORAGE_ROLE_MODE_KEY);
+      if (saved === 'transporter' || saved === 'requester') return saved;
+    } catch {
+      // Ignore
+    }
+    return 'requester';
+  });
+
+  useEffect(() => {
+    if (user?.role === 'transporter') {
+      setActiveRoleModeState('transporter');
+    } else if (user?.role === 'requester') {
+      setActiveRoleModeState('requester');
+    }
+  }, [user?.role]);
+
+  const setActiveRoleMode = (mode: RoleMode) => {
+    setActiveRoleModeState(mode);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_ROLE_MODE_KEY, mode);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const [partnerAvailable, setPartnerAvailableState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_AVAILABILITY_KEY);
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // Ignore
+    }
+    return true;
+  });
+
+  const setPartnerAvailable = (available: boolean) => {
+    setPartnerAvailableState(available);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_AVAILABILITY_KEY, String(available));
+    } catch {
+      // Ignore
+    }
+  };
 
   // Data State with initial seed (empty by default unless saved in local storage)
   const [requests, setRequests] = useState<DeliveryRequest[]>(() => {
@@ -388,6 +445,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const journey = journeys.find(j => j.id === journeyId);
     if (!journey) return false;
 
+    // Security check: requester cannot accept their own delivery request
+    const targetReq = requests.find(r => r.id === requestId);
+    if (targetReq && user && targetReq.requesterId === user.id) {
+      console.warn('[Security] Unauthorized: Cannot accept your own delivery request.');
+      return false;
+    }
+
     if (isSupabaseConfigured) {
       try {
         await updateDeliveryRequestStatusInDb(requestId, 'matched', journey.transporterId);
@@ -495,6 +559,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentView,
         activeRoleFilter,
         setActiveRoleFilter,
+        activeRoleMode,
+        setActiveRoleMode,
+        partnerAvailable,
+        setPartnerAvailable,
         requests,
         journeys,
         activities,

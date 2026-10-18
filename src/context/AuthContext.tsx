@@ -354,6 +354,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phone: updates.phone !== undefined ? updates.phone : user.phone,
         bio: updates.bio !== undefined ? updates.bio : user.bio,
         commuteVehicle: updates.commuteVehicle !== undefined ? updates.commuteVehicle : user.commuteVehicle,
+        role: updates.role !== undefined ? updates.role : user.role,
       };
 
       saveStoredProfile(user.id, updatedProfile);

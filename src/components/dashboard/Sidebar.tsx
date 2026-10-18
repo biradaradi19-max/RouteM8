@@ -33,15 +33,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onCloseMobile
 }) => {
-  const { currentView, setCurrentView, theme, toggleTheme, supabaseStatus } = useApp();
+  const {
+    currentView,
+    setCurrentView,
+    theme,
+    toggleTheme,
+    supabaseStatus,
+    activeRoleMode,
+    setActiveRoleMode,
+    partnerAvailable,
+    setPartnerAvailable,
+  } = useApp();
   const { user, isAuthenticated, signOut } = useAuth();
+  const isBothRole = !user || user.role === 'both';
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'matching', label: 'Route Matching', icon: Map, badge: 'Live' },
-    { id: 'deliveries', label: 'Active Deliveries', icon: Package },
+  interface SidebarNavItem {
+    id: string;
+    label: string;
+    icon: React.ComponentType<{ size?: number; color?: string }>;
+    badge?: string;
+  }
+
+  const requesterNavItems: SidebarNavItem[] = [
+    { id: 'dashboard', label: 'Requester Overview', icon: LayoutDashboard },
+    { id: 'deliveries', label: 'Track Deliveries', icon: Compass },
+    { id: 'matching', label: 'Explore Corridors', icon: Map },
     { id: 'landing', label: 'Product Landing', icon: Compass },
   ];
+
+  const partnerNavItems: SidebarNavItem[] = [
+    { id: 'dashboard', label: 'Partner Overview', icon: LayoutDashboard },
+    { id: 'matching', label: 'Find Requests', icon: Map, badge: 'Live' },
+    { id: 'deliveries', label: 'My Active Deliveries', icon: Package },
+    { id: 'landing', label: 'Product Landing', icon: Compass },
+  ];
+
+  const navItems = activeRoleMode === 'requester' ? requesterNavItems : partnerNavItems;
 
   return (
     <>
@@ -99,14 +126,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               color: 'var(--color-forest-800)',
               flexShrink: 0
             }}>
-              <Compass size={16} />
+              {activeRoleMode === 'requester' ? <Package size={16} /> : <Car size={16} />}
             </div>
             <div>
               <div style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                Corridor Hub
+                {activeRoleMode === 'requester' ? 'Requester Hub' : 'Partner Portal'}
               </div>
               <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>
-                Bay Area Network
+                {activeRoleMode === 'requester' ? 'Community Deliveries' : 'Commuter Corridors'}
               </div>
             </div>
           </div>
@@ -122,36 +149,109 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           ) : (
             <span className="badge badge-brand" style={{ fontSize: '0.625rem', padding: '0.15rem 0.4rem' }}>
-              Corridors
+              {activeRoleMode === 'requester' ? 'Requester' : 'Partner'}
             </span>
           )}
         </div>
 
+        {/* Role Switcher in Sidebar for users with both roles */}
+        {isBothRole && (
+          <div style={{ padding: '0.75rem 1rem 0' }}>
+            <div className="role-switcher" role="group" aria-label="Sidebar Role Switcher" style={{ width: '100%' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveRoleMode('requester');
+                  if (currentView !== 'landing') setCurrentView('dashboard');
+                  onCloseMobile?.();
+                }}
+                className={`role-switcher-btn ${activeRoleMode === 'requester' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '0.35rem 0.5rem' }}
+              >
+                <Package size={13} />
+                <span>Requester</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveRoleMode('transporter');
+                  if (currentView !== 'landing') setCurrentView('dashboard');
+                  onCloseMobile?.();
+                }}
+                className={`role-switcher-btn ${activeRoleMode === 'transporter' ? 'active' : ''}`}
+                style={{ flex: 1, padding: '0.35rem 0.5rem' }}
+              >
+                <Car size={13} />
+                <span>Partner</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Partner Availability Toggle (Only in Delivery Partner Mode) */}
+        {activeRoleMode === 'transporter' && (
+          <div style={{ padding: '0.75rem 1rem 0' }}>
+            <button
+              type="button"
+              onClick={() => setPartnerAvailable(!partnerAvailable)}
+              className={`availability-pill ${partnerAvailable ? 'online' : 'offline'}`}
+              style={{ width: '100%', justifyContent: 'center', border: 'none', cursor: 'pointer' }}
+              title="Click to toggle availability"
+            >
+              <span className="dot" />
+              <span>{partnerAvailable ? 'Online • Accepting Jobs' : 'Offline • Paused'}</span>
+            </button>
+          </div>
+        )}
+
         {/* Quick Action Buttons */}
         <div style={{ padding: '0.875rem 1rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <button
-            onClick={() => { onOpenCreateRequest(); onCloseMobile?.(); }}
-            className="btn btn-primary btn-sm"
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
-          >
-            <PlusCircle size={15} />
-            <span>Request an Item</span>
-          </button>
+          {activeRoleMode === 'requester' ? (
+            <button
+              onClick={() => { onOpenCreateRequest(); onCloseMobile?.(); }}
+              className="btn btn-primary btn-sm"
+              style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
+            >
+              <PlusCircle size={15} />
+              <span>Request a Delivery</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => { onOpenPublishJourney(); onCloseMobile?.(); }}
+              className="btn btn-primary btn-sm"
+              style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
+            >
+              <Car size={15} />
+              <span>Publish My Journey</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { onOpenPublishJourney(); onCloseMobile?.(); }}
-            className="btn btn-secondary btn-sm"
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
-          >
-            <Car size={15} />
-            <span>Publish Commute</span>
-          </button>
+          {isBothRole && activeRoleMode === 'transporter' && (
+            <button
+              onClick={() => { onOpenCreateRequest(); onCloseMobile?.(); }}
+              className="btn btn-secondary btn-sm"
+              style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
+            >
+              <PlusCircle size={15} />
+              <span>Request an Item</span>
+            </button>
+          )}
+          {isBothRole && activeRoleMode === 'requester' && (
+            <button
+              onClick={() => { onOpenPublishJourney(); onCloseMobile?.(); }}
+              className="btn btn-secondary btn-sm"
+              style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
+            >
+              <Car size={15} />
+              <span>Publish Commute</span>
+            </button>
+          )}
         </div>
 
         {/* Navigation Menu */}
         <nav style={{ padding: '0.625rem 0.75rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem' }} aria-label="Sidebar Navigation">
           <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', padding: '0.375rem 0.5rem' }}>
-            Navigation
+            {activeRoleMode === 'requester' ? 'Requester Views' : 'Partner Views'}
           </div>
 
           {navItems.map(item => {
