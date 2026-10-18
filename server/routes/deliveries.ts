@@ -550,8 +550,9 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
 router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
+    const deliveryId = String(req.params.id);
 
-    dispatchService.handlePartnerDecline(req.params.id, uid);
+    dispatchService.handlePartnerDecline(deliveryId, uid);
 
     if (isDbConnected()) {
       try {

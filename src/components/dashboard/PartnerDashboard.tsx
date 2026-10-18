@@ -903,7 +903,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         title="Decline / dismiss this delivery opportunity for your account"
                       >
                         {isRejecting ? <span className="spinner" style={{ width: 13, height: 13 }} /> : <X size={13} />}
-                        <span>{isRejecting ? 'Declining...' : 'Decline'}</span>
+                        <span>{isRejecting ? 'Declining...' : 'Decline / Reject'}</span>
                       </button>
                       <button
                         type="button"

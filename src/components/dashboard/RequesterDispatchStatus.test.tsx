@@ -35,6 +35,7 @@ describe('RequesterDashboard Dispatch Status View', () => {
     neededBy: 'Today by 19:00',
     requesterId: 'usr-customer-1',
     requesterName: 'Marcus Vance',
+    requesterTrustScore: 95,
     handoverPin: '4821',
     createdAt: new Date().toISOString(),
   };

@@ -39,6 +39,7 @@ describe('PartnerDashboard Dispatch Matching UI', () => {
     neededBy: 'ASAP',
     requesterId: 'usr-customer-99',
     requesterName: 'Alice Patient',
+    requesterTrustScore: 98,
     handoverPin: '1234',
     distanceKm: 3.2,
     matchType: 'nearby',

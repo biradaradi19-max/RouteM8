@@ -1,5 +1,5 @@
 import { partnerPresenceService } from './partnerPresence.js';
-import { evaluateDeliveryCandidates, type CandidateMatch } from './matchingEngine.js';
+import { evaluateDeliveryCandidates } from './matchingEngine.js';
 
 export type DispatchStageState =
   | 'idle'
@@ -159,7 +159,7 @@ export class DispatchService {
   /**
    * Stop dispatching (when accepted, cancelled, or expired) and clear all timers
    */
-  stopDispatch(requestId: string, reason: 'assigned' | 'cancelled' | 'expired', io?: any): void {
+  stopDispatch(requestId: string, reason: 'assigned' | 'cancelled' | 'expired' = 'assigned', io?: any): void {
     const job = this.jobs.get(requestId);
     if (!job) return;
 
