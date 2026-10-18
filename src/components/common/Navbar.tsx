@@ -30,7 +30,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { currentView, setCurrentView, theme, toggleTheme, activeRoleMode, setActiveRoleMode } = useApp();
   const { user, isAuthenticated } = useAuth();
 
-  const isBothRole = !user || user.role === 'both';
+  // Allow all users and testers to freely toggle between Requester and Delivery Partner roles
+  const isBothRole = true;
 
   return (
     <header style={{
@@ -123,8 +124,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           ) : (
             <div className="badge badge-brand desktop-only" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              {user.role === 'requester' ? <Package size={13} /> : <Car size={13} />}
-              <span>{user.role === 'requester' ? 'Requester' : 'Delivery Partner'}</span>
+              {user?.role === 'requester' ? <Package size={13} /> : <Car size={13} />}
+              <span>{user?.role === 'requester' ? 'Requester' : 'Delivery Partner'}</span>
             </div>
           )}
         </div>

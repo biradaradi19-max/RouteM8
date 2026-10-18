@@ -17,6 +17,9 @@ export async function connectDB(uri?: string): Promise<typeof mongoose | null> {
 
   const mongoUri = uri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/routem8';
 
+  // Never buffer queries indefinitely when disconnected; fail fast or use fallback
+  mongoose.set('bufferCommands', false);
+
   try {
     const conn = await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 3000,

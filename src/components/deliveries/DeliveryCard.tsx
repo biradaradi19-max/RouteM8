@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { DeliveryRequest } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { useTransporterLocation } from '../../hooks/useTransporterLocation';
 import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { AudioCallModal } from '../audio/AudioCallModal';
@@ -15,6 +16,7 @@ import {
   Radio,
   ChevronDown,
   ChevronUp,
+  X,
 } from 'lucide-react';
 
 interface DeliveryCardProps {
@@ -29,6 +31,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
   onUpdateStatus,
 }) => {
   const { user } = useAuth();
+  const { activeRoleMode, acceptDeliveryMatch, rejectDelivery, acceptError } = useApp();
   const [isMapExpanded, setIsMapExpanded] = useState<boolean>(
     req.status === 'matched' || req.status === 'in_transit'
   );
@@ -37,6 +40,9 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
   const [isVerifyingOpen, setIsVerifyingOpen] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Check roles
   const isAssignedTransporter = Boolean(user && req.transporterId && user.id === req.transporterId);
@@ -97,6 +103,36 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
       }
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const handleAcceptDelivery = async () => {
+    setActionError(null);
+    setIsAccepting(true);
+    try {
+      const ok = await acceptDeliveryMatch(req.id);
+      if (!ok) {
+        setActionError(acceptError || 'Could not accept delivery. It may have already been claimed.');
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to accept delivery.');
+    } finally {
+      setIsAccepting(false);
+    }
+  };
+
+  const handleRejectDelivery = async () => {
+    setActionError(null);
+    setIsRejecting(true);
+    try {
+      const ok = await rejectDelivery(req.id);
+      if (!ok) {
+        setActionError('Could not decline delivery.');
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to decline delivery.');
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -382,9 +418,58 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
           )}
 
           {req.status === 'open' && (
-            <button onClick={() => onInspectMatch(req)} className="btn btn-secondary btn-sm">
-              Find Route Match
-            </button>
+            <>
+              {activeRoleMode === 'transporter' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleRejectDelivery}
+                    disabled={isAccepting || isRejecting}
+                    className="btn btn-secondary btn-sm"
+                    data-testid="reject-delivery-button"
+                    title="Decline / Reject this delivery opportunity"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      color: 'var(--color-charcoal-700)',
+                    }}
+                  >
+                    {isRejecting ? (
+                      <span className="spinner" style={{ width: 14, height: 14 }} />
+                    ) : (
+                      <X size={14} />
+                    )}
+                    <span>{isRejecting ? 'Declining...' : 'Decline / Reject'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleAcceptDelivery}
+                    disabled={isAccepting || isRejecting}
+                    className="btn btn-primary btn-sm"
+                    data-testid="accept-delivery-button"
+                    title="Accept this delivery and assign it to yourself"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    {isAccepting ? (
+                      <span className="spinner" style={{ width: 14, height: 14 }} />
+                    ) : (
+                      <CheckCircle2 size={14} />
+                    )}
+                    <span>{isAccepting ? 'Accepting...' : 'Accept Delivery'}</span>
+                  </button>
+                </>
+              )}
+
+              <button onClick={() => onInspectMatch(req)} className="btn btn-secondary btn-sm">
+                Find Route Match
+              </button>
+            </>
           )}
 
           {req.status === 'matched' && (
@@ -407,6 +492,26 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Action Error Banner */}
+      {actionError && (
+        <div
+          style={{
+            backgroundColor: 'var(--status-danger-bg, #FEE2E2)',
+            color: 'var(--status-danger-text, #991B1B)',
+            border: '1px solid var(--status-danger-border, #F87171)',
+            borderRadius: 'var(--radius-md)',
+            padding: '0.625rem 0.875rem',
+            fontSize: '0.8125rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <AlertCircle size={15} style={{ flexShrink: 0 }} />
+          <span>{actionError}</span>
+        </div>
+      )}
 
       {/* Verify Handover PIN Drawer */}
       {isVerifyingOpen && (

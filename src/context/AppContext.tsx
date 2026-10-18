@@ -169,7 +169,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [requests, setRequests] = useState<DeliveryRequest[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_REQS_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch {
       // Ignore
     }
@@ -179,7 +182,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [journeys, setJourneys] = useState<PublishedJourney[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_JRNS_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
     } catch {
       // Ignore
     }

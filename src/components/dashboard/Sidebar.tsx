@@ -45,7 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setPartnerAvailable,
   } = useApp();
   const { user, isAuthenticated, signOut } = useAuth();
-  const isBothRole = !user || user.role === 'both';
+  // Allow all users to freely toggle between Requester and Delivery Partner roles
+  const isBothRole = true;
 
   interface SidebarNavItem {
     id: string;

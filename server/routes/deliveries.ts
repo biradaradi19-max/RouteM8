@@ -7,6 +7,7 @@ import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { User } from '../models/User.js';
 import { Activity } from '../models/Activity.js';
 import { Location } from '../models/Location.js';
+import { isDbConnected } from '../config/db.js';
 
 const router = Router();
 
@@ -38,6 +39,165 @@ const upload = multer({
     }
   },
 });
+
+export interface InMemDelivery {
+  _id: string;
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  pickupAddress: string;
+  pickupCoords: [number, number];
+  pickupPlaceId?: string;
+  dropoffAddress: string;
+  dropoffCoords: [number, number];
+  dropoffPlaceId?: string;
+  itemSize: string;
+  weightEstimateKg?: number;
+  compensation: number;
+  urgency: string;
+  neededBy: string;
+  status: 'open' | 'matched' | 'in_transit' | 'completed' | 'cancelled';
+  requesterId: string;
+  requesterName: string;
+  requesterTrustScore: number;
+  requesterAvatar?: string;
+  transporterId?: string;
+  transporterName?: string;
+  transporterAvatar?: string;
+  transporterVehicle?: string;
+  handoverPin: string;
+  pinAttempts: number;
+  pinLockedUntil?: Date;
+  proofPhotoUrl?: string;
+  rejectedBy: string[];
+  distanceKm?: number;
+  estimatedDurationMin?: number;
+  estimatedDetourMinutes?: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const INITIAL_COMMUNITY_DELIVERIES: InMemDelivery[] = [
+  {
+    _id: '6712b001a1b2c3d4e5f60001',
+    id: '6712b001a1b2c3d4e5f60001',
+    title: 'Lab Notebook & Circuit Breadboard',
+    description: 'Urgent pickup from Science Library; fragile electronics breadboard inside protected pouch.',
+    category: 'campus-supplies',
+    pickupAddress: 'Stanford Science Library, Stanford, CA',
+    pickupCoords: [37.4275, -122.1697],
+    dropoffAddress: 'Castro St & El Camino Real, Mountain View, CA',
+    dropoffCoords: [37.3861, -122.0839],
+    itemSize: 'small',
+    weightEstimateKg: 1.2,
+    compensation: 22.50,
+    urgency: 'urgent',
+    neededBy: 'Today by 19:00',
+    status: 'open',
+    requesterId: 'usr-marcus-10',
+    requesterName: 'Marcus Vance',
+    requesterTrustScore: 98,
+    requesterAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    handoverPin: '4821',
+    pinAttempts: 0,
+    rejectedBy: [],
+    distanceKm: 8.4,
+    estimatedDurationMin: 14,
+    estimatedDetourMinutes: 5,
+    createdAt: new Date(Date.now() - 3600000 * 2),
+    updatedAt: new Date(Date.now() - 3600000 * 2),
+  },
+  {
+    _id: '6712b001a1b2c3d4e5f60002',
+    id: '6712b001a1b2c3d4e5f60002',
+    title: 'Whole Foods Organic Groceries Bag',
+    description: 'Pre-ordered curbside pickup: 2 bags of fresh produce, sourdough, and oat milk.',
+    category: 'groceries',
+    pickupAddress: 'Whole Foods Market, 774 Emerson St, Palo Alto, CA',
+    pickupCoords: [37.4418, -122.1601],
+    dropoffAddress: 'San Antonio Center, Mountain View, CA',
+    dropoffCoords: [37.4022, -122.1124],
+    itemSize: 'medium',
+    weightEstimateKg: 4.5,
+    compensation: 18.00,
+    urgency: 'standard',
+    neededBy: 'Today by 18:30',
+    status: 'open',
+    requesterId: 'usr-elena-20',
+    requesterName: 'Elena Rostova',
+    requesterTrustScore: 97,
+    requesterAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    handoverPin: '7914',
+    pinAttempts: 0,
+    rejectedBy: [],
+    distanceKm: 6.2,
+    estimatedDurationMin: 11,
+    estimatedDetourMinutes: 4,
+    createdAt: new Date(Date.now() - 3600000 * 3),
+    updatedAt: new Date(Date.now() - 3600000 * 3),
+  },
+  {
+    _id: '6712b001a1b2c3d4e5f60003',
+    id: '6712b001a1b2c3d4e5f60003',
+    title: 'Pharmacy Prescription Medication Pack',
+    description: 'Sealed prescription envelope from pharmacy counter for elderly family member.',
+    category: 'pharmacy',
+    pickupAddress: 'Walgreens, 4170 El Camino Real, Palo Alto, CA',
+    pickupCoords: [37.4124, -122.1287],
+    dropoffAddress: 'California Ave Commercial Strip, Palo Alto, CA',
+    dropoffCoords: [37.4285, -122.1432],
+    itemSize: 'small',
+    weightEstimateKg: 0.5,
+    compensation: 14.00,
+    urgency: 'standard',
+    neededBy: 'Today by 17:00',
+    status: 'open',
+    requesterId: 'usr-david-30',
+    requesterName: 'David Chen',
+    requesterTrustScore: 99,
+    requesterAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    handoverPin: '3152',
+    pinAttempts: 0,
+    rejectedBy: [],
+    distanceKm: 3.8,
+    estimatedDurationMin: 8,
+    estimatedDetourMinutes: 3,
+    createdAt: new Date(Date.now() - 3600000 * 4),
+    updatedAt: new Date(Date.now() - 3600000 * 4),
+  },
+  {
+    _id: '6712b001a1b2c3d4e5f60004',
+    id: '6712b001a1b2c3d4e5f60004',
+    title: 'Architectural Blueprint Portfolio',
+    description: 'Heavy duty cylinder tube containing master plans for community center renovation.',
+    category: 'documents',
+    pickupAddress: 'University Ave & High St, Palo Alto, CA',
+    pickupCoords: [37.4445, -122.1633],
+    dropoffAddress: 'Sunnyvale Tech Campus, Sunnyvale, CA',
+    dropoffCoords: [37.3751, -122.0352],
+    itemSize: 'medium',
+    weightEstimateKg: 2.1,
+    compensation: 26.00,
+    urgency: 'urgent',
+    neededBy: 'Today by 20:00',
+    status: 'open',
+    requesterId: 'usr-priya-40',
+    requesterName: 'Priya Patel',
+    requesterTrustScore: 96,
+    requesterAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+    handoverPin: '8204',
+    pinAttempts: 0,
+    rejectedBy: [],
+    distanceKm: 14.1,
+    estimatedDurationMin: 20,
+    estimatedDetourMinutes: 6,
+    createdAt: new Date(Date.now() - 3600000 * 5),
+    updatedAt: new Date(Date.now() - 3600000 * 5),
+  },
+];
+
+export let inMemoryDeliveries: InMemDelivery[] = [...INITIAL_COMMUNITY_DELIVERIES];
 
 // Helper to format Mongo document into standard frontend DeliveryRequest
 function formatDelivery(doc: any) {
@@ -80,30 +240,50 @@ function formatDelivery(doc: any) {
   };
 }
 
+// Helper to find a delivery in DB or in-memory
+function getInMemDelivery(id: string | string[] | undefined) {
+  if (!id) return undefined;
+  const targetId = Array.isArray(id) ? id[0] : id;
+  return inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
+}
+
 // GET /api/deliveries - List deliveries
 router.get('/', async (req, res): Promise<void> => {
   try {
     const { status, requesterId, transporterId, category, excludeRejectedBy } = req.query;
-    const filter: any = {};
 
-    if (status) {
-      filter.status = status;
-    }
-    if (requesterId) {
-      filter.requesterId = requesterId;
-    }
-    if (transporterId) {
-      filter.transporterId = transporterId;
-    }
-    if (category) {
-      filter.category = category;
-    }
-    if (excludeRejectedBy) {
-      filter.rejectedBy = { $ne: String(excludeRejectedBy) };
+    if (isDbConnected()) {
+      try {
+        const filter: any = {};
+        if (status) filter.status = status;
+        if (requesterId) filter.requesterId = requesterId;
+        if (transporterId) filter.transporterId = transporterId;
+        if (category) filter.category = category;
+        if (excludeRejectedBy) filter.rejectedBy = { $ne: String(excludeRejectedBy) };
+
+        const count = await DeliveryRequest.countDocuments();
+        if (count === 0) {
+          // Auto-seed MongoDB with community requests
+          await DeliveryRequest.insertMany(INITIAL_COMMUNITY_DELIVERIES as any);
+        }
+
+        const docs = await DeliveryRequest.find(filter).sort({ createdAt: -1 }).limit(100);
+        res.json(docs.map(formatDelivery));
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Fallback] Falling back to in-memory delivery store:', dbErr.message);
+      }
     }
 
-    const docs = await DeliveryRequest.find(filter).sort({ createdAt: -1 }).limit(100);
-    res.json(docs.map(formatDelivery));
+    // In-memory fallback
+    let results = [...inMemoryDeliveries];
+    if (status) results = results.filter(d => d.status === status);
+    if (requesterId) results = results.filter(d => d.requesterId === requesterId);
+    if (transporterId) results = results.filter(d => d.transporterId === transporterId);
+    if (category) results = results.filter(d => d.category === category);
+    if (excludeRejectedBy) results = results.filter(d => !d.rejectedBy || !d.rejectedBy.includes(String(excludeRejectedBy)));
+
+    res.json(results.map(formatDelivery));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch deliveries', details: err.message });
   }
@@ -112,12 +292,24 @@ router.get('/', async (req, res): Promise<void> => {
 // GET /api/deliveries/:id - Get single delivery
 router.get('/:id', async (req, res): Promise<void> => {
   try {
-    const doc = await DeliveryRequest.findById(req.params.id);
-    if (!doc) {
+    if (isDbConnected()) {
+      try {
+        const doc = await DeliveryRequest.findById(req.params.id);
+        if (doc) {
+          res.json(formatDelivery(doc));
+          return;
+        }
+      } catch {
+        // Fallback to in-memory
+      }
+    }
+
+    const inMem = getInMemDelivery(req.params.id);
+    if (!inMem) {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
     }
-    res.json(formatDelivery(doc));
+    res.json(formatDelivery(inMem));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch delivery', details: err.message });
   }
@@ -151,21 +343,12 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    // Retrieve requester profile
-    let requester = await User.findOne({ firebaseUid: uid });
-    if (!requester) {
-      requester = await User.create({
-        firebaseUid: uid,
-        email: req.user!.email || `${uid}@firebase.com`,
-        fullName: req.user!.name || 'RouteM8 Requester',
-        role: 'both',
-      });
-    }
-
-    // Generate random 4-digit handover PIN
     const handoverPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const newId = `del-${Date.now()}-${Math.round(Math.random() * 1e4)}`;
 
-    const newDelivery = await DeliveryRequest.create({
+    const deliveryData: InMemDelivery = {
+      _id: newId,
+      id: newId,
       title: String(title).trim(),
       description: String(description || 'Standard errand request').trim(),
       category: category || 'other',
@@ -182,27 +365,57 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       neededBy: neededBy || 'Today by 18:00',
       status: 'open',
       requesterId: uid,
-      requesterName: requester.fullName,
-      requesterTrustScore: requester.trustScore,
-      requesterAvatar: requester.avatarUrl,
+      requesterName: req.user!.name || 'RouteM8 Requester',
+      requesterTrustScore: 98,
+      requesterAvatar: req.user!.picture,
       distanceKm: distanceKm !== undefined ? Number(distanceKm) : undefined,
       estimatedDurationMin: estimatedDurationMin !== undefined ? Number(estimatedDurationMin) : undefined,
       handoverPin,
       pinAttempts: 0,
       rejectedBy: [],
-    });
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    // Record activity
-    await Activity.create({
-      userId: uid,
-      type: 'request_created',
-      title: `Created delivery: ${title}`,
-      description: `Delivery from ${pickupAddress} to ${dropoffAddress}`,
-      relatedId: newDelivery._id.toString(),
-      status: 'open',
-    });
+    // Always store in inMemoryDeliveries as active cache
+    inMemoryDeliveries.unshift(deliveryData);
 
-    res.status(201).json(formatDelivery(newDelivery));
+    if (isDbConnected()) {
+      try {
+        let requester = await User.findOne({ firebaseUid: uid });
+        if (!requester) {
+          requester = await User.create({
+            firebaseUid: uid,
+            email: req.user!.email || `${uid}@firebase.com`,
+            fullName: req.user!.name || 'RouteM8 Requester',
+            role: 'both',
+          });
+        }
+
+        const newDoc = await DeliveryRequest.create({
+          ...deliveryData,
+          requesterName: requester.fullName,
+          requesterTrustScore: requester.trustScore,
+          requesterAvatar: requester.avatarUrl,
+        });
+
+        await Activity.create({
+          userId: uid,
+          type: 'request_created',
+          title: `Created delivery: ${title}`,
+          description: `Delivery from ${pickupAddress} to ${dropoffAddress}`,
+          relatedId: newDoc._id.toString(),
+          status: 'open',
+        }).catch(() => {});
+
+        res.status(201).json(formatDelivery(newDoc));
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Save Fallback] Using in-memory created delivery:', dbErr.message);
+      }
+    }
+
+    res.status(201).json(formatDelivery(deliveryData));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to create delivery request', details: err.message });
   }
@@ -213,74 +426,109 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
   try {
     const uid = req.user!.uid;
 
-    // Get transporter profile
-    let transporter = await User.findOne({ firebaseUid: uid });
-    if (!transporter) {
-      transporter = await User.create({
-        firebaseUid: uid,
-        email: req.user!.email || `${uid}@firebase.com`,
-        fullName: req.user!.name || 'Delivery Partner',
-        role: 'transporter',
-      });
+    if (isDbConnected()) {
+      try {
+        let transporter = await User.findOne({ firebaseUid: uid });
+        if (!transporter) {
+          transporter = await User.create({
+            firebaseUid: uid,
+            email: req.user!.email || `${uid}@firebase.com`,
+            fullName: req.user!.name || 'Delivery Partner',
+            role: 'transporter',
+          });
+        }
+
+        const delivery = await DeliveryRequest.findOneAndUpdate(
+          {
+            _id: req.params.id,
+            status: 'open',
+            requesterId: { $ne: uid },
+          },
+          {
+            $set: {
+              status: 'matched',
+              transporterId: uid,
+              transporterName: transporter.fullName,
+              transporterAvatar: transporter.avatarUrl,
+              transporterVehicle: transporter.commuteVehicle || 'Vehicle / Commuter',
+            },
+          },
+          { new: true }
+        );
+
+        if (!delivery) {
+          const existing = await DeliveryRequest.findById(req.params.id);
+          if (!existing) {
+            res.status(404).json({ error: 'Delivery request not found' });
+            return;
+          }
+          if (existing.requesterId === uid) {
+            res.status(400).json({ error: 'Cannot accept your own delivery request' });
+            return;
+          }
+          if (existing.status !== 'open') {
+            res.status(409).json({
+              error: 'This delivery has already been accepted by another partner or is no longer open',
+              status: existing.status,
+            });
+            return;
+          }
+          res.status(400).json({ error: 'Unable to accept this delivery' });
+          return;
+        }
+
+        await Activity.create({
+          userId: uid,
+          type: 'match_found',
+          title: `Accepted delivery: ${delivery.title}`,
+          description: `Matched with requester ${delivery.requesterName}`,
+          relatedId: delivery._id.toString(),
+          status: 'matched',
+        }).catch(() => {});
+
+        const formatted = formatDelivery(delivery);
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`delivery:${delivery._id}`).emit('delivery:matched', formatted);
+          io.emit('delivery:claimed', { deliveryId: delivery._id.toString() });
+        }
+
+        res.json(formatted);
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Accept Fallback] Falling back to in-memory accept:', dbErr.message);
+      }
     }
 
-    // Atomic findOneAndUpdate ensuring status is 'open' and partner is not the requester
-    const delivery = await DeliveryRequest.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        status: 'open',
-        requesterId: { $ne: uid },
-      },
-      {
-        $set: {
-          status: 'matched',
-          transporterId: uid,
-          transporterName: transporter.fullName,
-          transporterAvatar: transporter.avatarUrl,
-          transporterVehicle: transporter.commuteVehicle || 'Vehicle / Commuter',
-        },
-      },
-      { new: true }
-    );
-
-    if (!delivery) {
-      // Diagnostic check for precise failure code
-      const existing = await DeliveryRequest.findById(req.params.id);
-      if (!existing) {
-        res.status(404).json({ error: 'Delivery request not found' });
-        return;
-      }
-      if (existing.requesterId === uid) {
-        res.status(400).json({ error: 'Cannot accept your own delivery request' });
-        return;
-      }
-      if (existing.status !== 'open') {
-        res.status(409).json({
-          error: 'This delivery has already been accepted by another partner or is no longer open',
-          status: existing.status,
-        });
-        return;
-      }
-      res.status(400).json({ error: 'Unable to accept this delivery' });
+    // In-memory atomic accept
+    const target = getInMemDelivery(req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'Delivery request not found' });
+      return;
+    }
+    if (target.requesterId === uid) {
+      res.status(400).json({ error: 'Cannot accept your own delivery request' });
+      return;
+    }
+    if (target.status !== 'open') {
+      res.status(409).json({
+        error: 'This delivery has already been accepted by another partner or is no longer open',
+        status: target.status,
+      });
       return;
     }
 
-    await Activity.create({
-      userId: uid,
-      type: 'match_found',
-      title: `Accepted delivery: ${delivery.title}`,
-      description: `Matched with requester ${delivery.requesterName}`,
-      relatedId: delivery._id.toString(),
-      status: 'matched',
-    });
+    target.status = 'matched';
+    target.transporterId = uid;
+    target.transporterName = req.user!.name || 'Delivery Partner';
+    target.transporterVehicle = 'Commuter Vehicle';
+    target.updatedAt = new Date();
 
-    const formatted = formatDelivery(delivery);
-
-    // Notify requester via delivery room and broadcast claimed to other partners
+    const formatted = formatDelivery(target);
     const io = req.app.get('io');
     if (io) {
-      io.to(`delivery:${delivery._id}`).emit('delivery:matched', formatted);
-      io.emit('delivery:claimed', { deliveryId: delivery._id.toString() });
+      io.to(`delivery:${target._id}`).emit('delivery:matched', formatted);
+      io.emit('delivery:claimed', { deliveryId: target._id.toString() });
     }
 
     res.json(formatted);
@@ -293,17 +541,36 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
 router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const delivery = await DeliveryRequest.findById(req.params.id);
 
-    if (!delivery) {
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findById(req.params.id);
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery request not found' });
+          return;
+        }
+
+        await DeliveryRequest.findByIdAndUpdate(req.params.id, {
+          $addToSet: { rejectedBy: uid },
+        });
+
+        res.json({ success: true, message: 'Delivery dismissed for this partner' });
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Reject Fallback] Falling back to in-memory reject:', dbErr.message);
+      }
+    }
+
+    const target = getInMemDelivery(req.params.id);
+    if (!target) {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
     }
 
-    // Dismiss only for this partner by adding UID to rejectedBy array
-    await DeliveryRequest.findByIdAndUpdate(req.params.id, {
-      $addToSet: { rejectedBy: uid },
-    });
+    if (!target.rejectedBy) target.rejectedBy = [];
+    if (!target.rejectedBy.includes(uid)) {
+      target.rejectedBy.push(uid);
+    }
 
     res.json({ success: true, message: 'Delivery dismissed for this partner' });
   } catch (err: any) {

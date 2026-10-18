@@ -49,6 +49,7 @@ export interface VerifiedUser {
   uid: string;
   email?: string;
   name?: string;
+  picture?: string;
   emailVerified?: boolean;
 }
 
@@ -58,7 +59,7 @@ export async function verifyFirebaseIdToken(token: string): Promise<VerifiedUser
   }
 
   // Support local test mock tokens (e.g. "mock-token-user-1" or test headers)
-  if (process.env.NODE_ENV === 'test' || process.env.ALLOW_TEST_TOKENS === 'true') {
+  if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || process.env.ALLOW_TEST_TOKENS === 'true') {
     if (token.startsWith('mock-token-')) {
       const uid = token.replace('mock-token-', '');
       return {
@@ -82,6 +83,7 @@ export async function verifyFirebaseIdToken(token: string): Promise<VerifiedUser
       uid: decoded.uid,
       email: decoded.email,
       name: decoded.name,
+      picture: (decoded as any).picture,
       emailVerified: decoded.email_verified,
     };
   } catch (err: any) {

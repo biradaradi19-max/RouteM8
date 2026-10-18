@@ -100,6 +100,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     return matchesSearch && matchesCat;
   });
 
+  // Track any open requests created by the current user
+  const myOwnOpenRequests = requests.filter(r => user && r.requesterId === user.id && r.status === 'open');
+
   // Real dynamic earnings calculation
   const totalEarned = completedDeliveries.reduce((sum, r) => sum + (r.compensation || 0), 0);
   const pendingEarnings = activeDeliveries.reduce((sum, r) => sum + (r.compensation || 0), 0);
@@ -130,8 +133,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
   // Accept a matching request
   const handleAcceptRequest = async (requestId: string) => {
     if (!partnerAvailable) {
-      setAcceptMessage({ text: 'Please turn your Partner Availability ON before accepting delivery requests.', isError: true });
-      return;
+      setPartnerAvailable(true);
     }
     const targetJourney = journeys[0];
     setAcceptingId(requestId);
@@ -813,9 +815,11 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         <span>Map</span>
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleRejectRequest(req.id)}
                         disabled={isAccepting || isRejecting}
                         className="btn btn-secondary btn-sm"
+                        data-testid="reject-delivery-button"
                         style={{ color: 'var(--color-charcoal-700)', padding: '0.375rem 0.625rem' }}
                         title="Dismiss this delivery for your account"
                       >
@@ -823,9 +827,11 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         <span>{isRejecting ? 'Rejecting...' : 'Reject'}</span>
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleAcceptRequest(req.id)}
-                        disabled={isAccepting || isRejecting || !partnerAvailable}
+                        disabled={isAccepting || isRejecting}
                         className="btn btn-primary btn-sm"
+                        data-testid="accept-delivery-button"
                         style={{ padding: '0.375rem 0.75rem' }}
                       >
                         {isAccepting ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <CheckCircle2 size={14} />}
@@ -846,7 +852,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
             <div>
               <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700 }}>No Matching Requests Right Now</h3>
               <p style={{ margin: '0.375rem 0 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                {searchQuery || selectedCategory !== 'all'
+                {myOwnOpenRequests.length > 0
+                  ? `You have ${myOwnOpenRequests.length} open delivery request(s) created by your account. For security, delivery partners cannot accept packages they requested themselves. Switch to Requester Hub to manage your requests, or wait for community corridor opportunities.`
+                  : searchQuery || selectedCategory !== 'all'
                   ? 'Try clearing your search filters to view all available requests along commuter corridors.'
                   : 'Publish your commute journey to alert requesters when you travel along your route.'}
               </p>
