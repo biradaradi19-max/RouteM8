@@ -18,12 +18,14 @@ import {
   ChevronUp,
   Copy,
   Check,
+  Radio,
 } from 'lucide-react';
 import type { DeliveryRequest, DeliveryStatus } from '../../types';
 import { MapView } from '../map/MapView';
 import { CallButton } from '../audio/CallButton';
 import { AudioCallModal } from '../audio/AudioCallModal';
 import { useLiveKitCall } from '../../hooks/useLiveKitCall';
+import { useTransporterLocation } from '../../hooks/useTransporterLocation';
 
 interface RequesterDashboardProps {
   onOpenCreateRequest: () => void;
@@ -412,20 +414,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
 
                   {/* Expandable Live GPS Map */}
                   {isMapOpen && (
-                    <div style={{
-                      height: '280px',
-                      borderRadius: 'var(--radius-md)',
-                      overflow: 'hidden',
-                      border: '1px solid var(--border-medium)',
-                      animation: 'modal-fade-in 0.2s ease'
-                    }}>
-                      <MapView
-                        pickupCoords={del.pickupCoords}
-                        dropoffCoords={del.dropoffCoords}
-                        pickupAddress={del.pickupAddress}
-                        dropoffAddress={del.dropoffAddress}
-                      />
-                    </div>
+                    <RequesterLiveTrackingMap delivery={del} />
                   )}
 
                   {/* Handover PIN Display Banner */}
@@ -751,5 +740,62 @@ const RequesterAudioCallWrapper: React.FC<{
       deliveryTitle={delivery.title}
       call={call}
     />
+  );
+};
+
+// Sub-component wrapper for Live GPS Map in Requester context
+const RequesterLiveTrackingMap: React.FC<{ delivery: DeliveryRequest }> = ({ delivery }) => {
+  const { location, isStale } = useTransporterLocation({
+    deliveryId: delivery.id,
+    deliveryStatus: delivery.status,
+    isTransporter: false,
+  });
+
+  const isLive = delivery.status === 'in_transit' && !!location && !isStale;
+
+  return (
+    <div style={{
+      border: '1px solid var(--border-medium)',
+      borderRadius: 'var(--radius-md)',
+      overflow: 'hidden',
+      animation: 'modal-fade-in 0.2s ease'
+    }}>
+      <div style={{
+        padding: '0.5rem 1rem',
+        backgroundColor: 'var(--bg-surface-subtle)',
+        borderBottom: '1px solid var(--border-subtle)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.5rem',
+        fontSize: '0.8125rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Radio size={14} color={isLive ? 'var(--color-mint-500)' : 'var(--text-tertiary)'} className={isLive ? 'pulse-animation' : ''} />
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            {delivery.status === 'in_transit'
+              ? (location ? (isStale ? 'Last recorded transporter location' : 'Live Transporter GPS Streaming') : 'Waiting for transporter GPS signal...')
+              : 'Delivery assigned • Transporter preparing pickup'}
+          </span>
+        </div>
+        {delivery.estimatedDurationMin && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            Est. transit time: ~{Math.round(delivery.estimatedDurationMin)} mins
+          </span>
+        )}
+      </div>
+
+      <div style={{ height: '280px' }}>
+        <MapView
+          pickupCoords={delivery.pickupCoords}
+          dropoffCoords={delivery.dropoffCoords}
+          pickupAddress={delivery.pickupAddress}
+          dropoffAddress={delivery.dropoffAddress}
+          transporterLocation={location}
+          isLiveTracking={isLive}
+        />
+      </div>
+    </div>
   );
 };

@@ -7,11 +7,8 @@ import {
   shouldBroadcastLocation,
   type BroadcastCoordinate,
 } from '../services/geolocation';
-import {
-  updateTransporterLocationInDb,
-  fetchTransporterLocationFromDb,
-  subscribeToTransporterLocation,
-} from '../services/supabase';
+import { deliveriesApi } from '../services/api';
+import { joinDeliveryRoom, emitLocationUpdate } from '../services/socket';
 
 export type GeolocationPermissionState = 'prompt' | 'granted' | 'denied' | 'unavailable' | 'unknown';
 
@@ -38,8 +35,8 @@ export function useTransporterLocation({
   deliveryId,
   deliveryStatus,
   isTransporter = false,
-  minIntervalMs = 5000,
-  minDistanceMeters = 15,
+  minIntervalMs = 3000,
+  minDistanceMeters = 10,
 }: UseTransporterLocationOptions): UseTransporterLocationResult {
   const [isSharing, setIsSharing] = useState<boolean>(false);
   const [permissionState, setPermissionState] = useState<GeolocationPermissionState>('unknown');
@@ -66,7 +63,6 @@ export function useTransporterLocation({
           };
         })
         .catch(() => {
-          // Permissions API query not supported for geolocation in some environments
           setPermissionState('prompt');
         });
     } else {
@@ -74,7 +70,7 @@ export function useTransporterLocation({
     }
   }, []);
 
-  // Fetch initial recorded location from database & subscribe to Realtime updates
+  // Fetch initial recorded location from MongoDB & subscribe to Socket.IO room updates
   useEffect(() => {
     if (!deliveryId) {
       setLocation(null);
@@ -82,25 +78,36 @@ export function useTransporterLocation({
     }
 
     let isMounted = true;
+    let cleanupSocket: (() => void) | null = null;
 
-    // Fetch initial state
-    fetchTransporterLocationFromDb(deliveryId).then((res) => {
-      if (isMounted && res.data) {
-        setLocation(res.data);
+    // Fetch initial state from Express/MongoDB
+    deliveriesApi.getLatestLocation(deliveryId).then((loc) => {
+      if (isMounted && loc) {
+        setLocation(loc);
       }
     });
 
-    // Subscribe to live Realtime updates
-    const unsubscribe = subscribeToTransporterLocation(deliveryId, (updatedLoc) => {
+    // Subscribe to live Socket.IO delivery room updates
+    joinDeliveryRoom(deliveryId, {
+      onLocation: (updatedLoc) => {
+        if (isMounted) {
+          setLocation(updatedLoc);
+          setError(null);
+        }
+      },
+    }).then((unsubscribe) => {
       if (isMounted) {
-        setLocation(updatedLoc);
-        setError(null);
+        cleanupSocket = unsubscribe;
+      } else {
+        unsubscribe();
       }
     });
 
     return () => {
       isMounted = false;
-      unsubscribe();
+      if (cleanupSocket) {
+        cleanupSocket();
+      }
     };
   }, [deliveryId]);
 
@@ -184,7 +191,7 @@ export function useTransporterLocation({
         // Optimistically update local view
         setLocation({
           deliveryId,
-          transporterId: '', // Filled by backend / profile
+          transporterId: '',
           latitude,
           longitude,
           heading: currentCoord.heading ?? undefined,
@@ -192,13 +199,14 @@ export function useTransporterLocation({
           updatedAt: new Date(now).toISOString(),
         });
 
-        // Broadcast to database
-        updateTransporterLocationInDb(deliveryId, {
+        // Broadcast to Express + Socket.IO server (which persists to MongoDB)
+        emitLocationUpdate(
+          deliveryId,
           latitude,
           longitude,
-          heading: currentCoord.heading ?? undefined,
-          speed: currentCoord.speed ?? undefined,
-        }).then((res) => {
+          currentCoord.heading ?? undefined,
+          currentCoord.speed ?? undefined
+        ).then((res) => {
           if (!res.success && res.error) {
             setError(res.error);
           }
@@ -219,7 +227,7 @@ export function useTransporterLocation({
       const id = navigator.geolocation.watchPosition(onWatchSuccess, onWatchError, {
         enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 10000,
+        maximumAge: 5000,
       });
       watchIdRef.current = id;
       setIsSharing(true);

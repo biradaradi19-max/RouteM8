@@ -2,24 +2,24 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import type { ItemSize, RequestCategory, RequestUrgency } from '../../types';
 import { X, Package, DollarSign, Clock, AlertCircle } from 'lucide-react';
-
+import { LocationPickerInput } from './LocationPickerInput';
+import { CreateRequestRouteMap } from './CreateRequestRouteMap';
 
 interface CreateRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-// Coordinate presets in Bay Area corridor for realistic road routing
-const ADDRESS_PRESETS: Array<{ label: string; address: string; coords: [number, number] }> = [
-  { label: 'Stanford Green Library', address: 'Green Library, 557 Escondido Mall, Stanford, CA', coords: [37.4275, -122.1668] },
-  { label: 'Stanford Gates CS Bldg', address: 'Gates Computer Science Building, Palo Alto, CA', coords: [37.4302, -122.1733] },
-  { label: 'Whole Foods Palo Alto', address: 'Whole Foods Market, 774 Emerson St, Palo Alto, CA', coords: [37.4418, -122.1601] },
-  { label: 'Walgreens Pharmacy El Camino', address: 'Walgreens, 4170 El Camino Real, Palo Alto, CA', coords: [37.4095, -122.1278] },
-  { label: 'Mountain View Downtown (Castro St)', address: 'Castro St & El Camino Real, Mountain View, CA', coords: [37.3861, -122.0839] },
-  { label: 'San Antonio Shopping Center', address: 'San Antonio Center, Mountain View, CA', coords: [37.4022, -122.1124] },
-  { label: 'Googleplex / Charleston', address: '1600 Amphitheatre Pkwy, Mountain View, CA', coords: [37.4220, -122.0841] },
-  { label: 'Sunnyvale Caltrain Station', address: 'Sunnyvale Caltrain, Sunnyvale, CA', coords: [37.3784, -122.0308] },
-];
+// Initial default locations in Bay Area corridor
+const DEFAULT_PICKUP: { address: string; coords: [number, number] } = {
+  address: 'Green Library, 557 Escondido Mall, Stanford, CA',
+  coords: [37.4275, -122.1668],
+};
+
+const DEFAULT_DROPOFF: { address: string; coords: [number, number] } = {
+  address: 'Castro St & El Camino Real, Mountain View, CA',
+  coords: [37.3861, -122.0839],
+};
 
 export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, onClose }) => {
   const { createRequest, setCurrentView } = useApp();
@@ -27,8 +27,12 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<RequestCategory>('campus-supplies');
-  const [pickupPresetIndex, setPickupPresetIndex] = useState(0);
-  const [dropoffPresetIndex, setDropoffPresetIndex] = useState(4);
+  const [pickupAddress, setPickupAddress] = useState(DEFAULT_PICKUP.address);
+  const [pickupCoords, setPickupCoords] = useState<[number, number] | null>(DEFAULT_PICKUP.coords);
+  const [dropoffAddress, setDropoffAddress] = useState(DEFAULT_DROPOFF.address);
+  const [dropoffCoords, setDropoffCoords] = useState<[number, number] | null>(DEFAULT_DROPOFF.coords);
+  const [routeStats, setRouteStats] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+
   const [itemSize, setItemSize] = useState<ItemSize>('small');
   const [compensation, setCompensation] = useState(15);
   const [urgency, setUrgency] = useState<RequestUrgency>('standard');
@@ -42,23 +46,30 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMsg(null);
-    try {
-      const pickup = ADDRESS_PRESETS[pickupPresetIndex];
-      const dropoff = ADDRESS_PRESETS[dropoffPresetIndex];
 
+    // Coordinate validation requirement
+    if (!pickupCoords || !dropoffCoords) {
+      setErrorMsg('Please select a verified pickup location and destination with valid coordinates.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
       await createRequest({
         title,
         description,
         category,
-        pickupAddress: pickup.address,
-        pickupCoords: pickup.coords,
-        dropoffAddress: dropoff.address,
-        dropoffCoords: dropoff.coords,
+        pickupAddress,
+        pickupCoords,
+        dropoffAddress,
+        dropoffCoords,
         itemSize,
         compensation: Number(compensation),
         urgency,
         neededBy,
-      });
+        distanceKm: routeStats?.distanceKm,
+        estimatedDurationMin: routeStats?.durationMin,
+      } as any);
 
       onClose();
       setCurrentView('matching');
@@ -192,32 +203,55 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
             />
           </div>
 
-          {/* Pickup Address Selector */}
-          <div>
-            <label className="form-label">Pickup Location (Along Highway/Local Corridor)</label>
-            <select
-              value={pickupPresetIndex}
-              onChange={e => setPickupPresetIndex(Number(e.target.value))}
-              className="form-select"
-            >
-              {ADDRESS_PRESETS.map((item, idx) => (
-                <option key={idx} value={idx}>{item.label} — {item.address}</option>
-              ))}
-            </select>
-          </div>
+          {/* Google Places Autocomplete Pickup Picker */}
+          <LocationPickerInput
+            id="req-pickup-loc"
+            label="Pickup Location (Along Highway/Local Corridor)"
+            placeholder="Search pickup address, store, or campus building..."
+            value={pickupAddress}
+            coords={pickupCoords}
+            onChange={(address, coords) => {
+              setPickupAddress(address);
+              setPickupCoords(coords);
+            }}
+            showCurrentLocation={true}
+            required={true}
+          />
 
-          {/* Dropoff Address Selector */}
+          {/* Google Places Autocomplete Dropoff Picker */}
+          <LocationPickerInput
+            id="req-dropoff-loc"
+            label="Destination / Dropoff Location"
+            placeholder="Search dropoff destination address..."
+            value={dropoffAddress}
+            coords={dropoffCoords}
+            onChange={(address, coords) => {
+              setDropoffAddress(address);
+              setDropoffCoords(coords);
+            }}
+            showCurrentLocation={false}
+            required={true}
+          />
+
+          {/* Interactive Google Map Route Preview with markers & distance/ETA */}
           <div>
-            <label className="form-label">Destination / Dropoff Location</label>
-            <select
-              value={dropoffPresetIndex}
-              onChange={e => setDropoffPresetIndex(Number(e.target.value))}
-              className="form-select"
-            >
-              {ADDRESS_PRESETS.map((item, idx) => (
-                <option key={idx} value={idx}>{item.label} — {item.address}</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+              <label className="form-label" style={{ margin: 0 }}>
+                Interactive Route & Road Geometry Preview
+              </label>
+              {routeStats && (
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-mint-600)' }}>
+                  {routeStats.distanceKm} km • ~{routeStats.durationMin} mins
+                </span>
+              )}
+            </div>
+            <CreateRequestRouteMap
+              pickupCoords={pickupCoords}
+              dropoffCoords={dropoffCoords}
+              pickupAddress={pickupAddress}
+              dropoffAddress={dropoffAddress}
+              onRouteComputed={(stats) => setRouteStats(stats)}
+            />
           </div>
 
           {/* Compensation & Urgency */}

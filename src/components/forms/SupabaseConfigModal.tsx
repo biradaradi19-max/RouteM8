@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   getGoogleMapsApiKey,
   getGoogleMapsMapId,
@@ -11,17 +12,17 @@ import {
   isLiveKitConfigured,
   setRuntimeLiveKitUrl,
 } from '../../services/livekitConfig';
-import { X, Database, CheckCircle2, Copy, AlertCircle, ExternalLink, Map, Save, PhoneCall } from 'lucide-react';
+import { X, Server, CheckCircle2, Copy, AlertCircle, Map, Save, PhoneCall, ShieldCheck, Database } from 'lucide-react';
 
-interface SupabaseConfigModalProps {
+interface BackendStatusModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({ isOpen, onClose }) => {
-  const { supabaseStatus, backendError } = useApp();
+export const BackendStatusModal: React.FC<BackendStatusModalProps> = ({ isOpen, onClose }) => {
+  const { backendStatus, backendError } = useApp();
+  const { isFirebaseConnected } = useAuth();
   const [copiedEnv, setCopiedEnv] = useState(false);
-  const [copiedSchema, setCopiedSchema] = useState(false);
 
   const [mapsKeyInput, setMapsKeyInput] = useState<string>(() => getGoogleMapsApiKey());
   const [mapsMapIdInput, setMapsMapIdInput] = useState<string>(() => getGoogleMapsMapId());
@@ -32,11 +33,20 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({ isOpen
 
   if (!isOpen) return null;
 
-  const envSnippet = `# Route M8 — Supabase & Google Maps Configuration
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-# Server-side admin key (NEVER prefix with VITE_)
-SUPABASE_SERVICE_ROLE_KEY=
+  const envSnippet = `# Route M8 — Express, MongoDB, Firebase & LiveKit Configuration
+PORT=5000
+MONGODB_URI=mongodb+srv://<user>:<password>@cluster0.mongodb.net/routem8?retryWrites=true&w=majority
+FIREBASE_PROJECT_ID=routem8-36895
+# Optional: path to serviceAccountKey.json or inline JSON string
+FIREBASE_SERVICE_ACCOUNT_KEY=
+
+# LiveKit Audio Calling (Minted exclusively on Express backend)
+LIVEKIT_URL=wss://your-livekit-server.livekit.cloud
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+
+# Client Variables (VITE_)
+VITE_FIREBASE_PROJECT_ID=routem8-36895
 VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
 VITE_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
 VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
@@ -45,12 +55,6 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
     navigator.clipboard.writeText(envSnippet);
     setCopiedEnv(true);
     setTimeout(() => setCopiedEnv(false), 2000);
-  };
-
-  const copySchemaReference = () => {
-    navigator.clipboard.writeText('supabase/migrations/20261015000001_transporter_location_tracking.sql');
-    setCopiedSchema(true);
-    setTimeout(() => setCopiedSchema(false), 2000);
   };
 
   const handleSaveMapsConfig = (e: React.FormEvent) => {
@@ -72,7 +76,7 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="backend-cfg-title">
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: '2rem', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: '2rem', maxWidth: '620px', maxHeight: '90vh', overflowY: 'auto' }}>
         <button
           onClick={onClose}
           aria-label="Close"
@@ -94,24 +98,24 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
               color: 'var(--color-mint-400)',
             }}
           >
-            <Database size={22} />
+            <Server size={22} />
           </div>
           <div>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-mint-600)', textTransform: 'uppercase' }}>
-              Database & Infrastructure
+              Architecture & Infrastructure
             </span>
             <h2 id="backend-cfg-title" style={{ fontSize: '1.375rem', margin: 0 }}>
-              Supabase & Cloud Status
+              Route M8 Backend Status
             </h2>
           </div>
         </div>
 
-        {/* Supabase Status Banner */}
+        {/* Backend Status Banner */}
         <div
           style={{
-            backgroundColor: supabaseStatus === 'connected' ? 'var(--status-active-bg)' : 'var(--bg-surface-subtle)',
+            backgroundColor: backendStatus === 'connected' ? 'var(--status-active-bg)' : 'var(--bg-surface-subtle)',
             border: '1px solid',
-            borderColor: supabaseStatus === 'connected' ? 'var(--status-active-border)' : 'var(--border-medium)',
+            borderColor: backendStatus === 'connected' ? 'var(--status-active-border)' : 'var(--border-medium)',
             borderRadius: 'var(--radius-md)',
             padding: '1rem',
             marginBottom: '1rem',
@@ -120,27 +124,27 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
             gap: '0.75rem',
           }}
         >
-          {supabaseStatus === 'connected' ? (
+          {backendStatus === 'connected' ? (
             <>
               <CheckCircle2 size={18} style={{ color: 'var(--status-active-text)', marginTop: '2px', flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--status-active-text)' }}>
-                  Connected to Supabase PostgreSQL Database
+                  Express + MongoDB + Socket.IO Active
                 </div>
                 <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                  PostgreSQL database, Row-Level Security, and Realtime location streaming are verified active.
+                  Node.js API, MongoDB persistent store, and Socket.IO real-time GPS & audio calling signaling are connected.
                 </div>
               </div>
             </>
-          ) : supabaseStatus === 'connecting' ? (
+          ) : backendStatus === 'connecting' ? (
             <>
               <div className="spinner" style={{ width: 18, height: 18, marginTop: '2px', flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Verifying Supabase Connection...
+                  Checking Express Backend Health...
                 </div>
                 <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                  Probing database endpoint and access credentials.
+                  Probing <code>/api/health</code> endpoint and Socket.IO connection.
                 </div>
               </div>
             </>
@@ -149,14 +153,39 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
               <AlertCircle size={18} style={{ color: '#F59E0B', marginTop: '2px', flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Supabase Backend Offline
+                  Express Backend Offline / Dev Mode
                 </div>
                 <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                  {backendError || 'No live Supabase connection detected. Running in client mode with local state persistence.'}
+                  {backendError || 'Express server (port 5000) not responding. Running with local client cache. Start server via "npm run server".'}
                 </div>
               </div>
             </>
           )}
+        </div>
+
+        {/* Stack Component Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          {/* Firebase Auth */}
+          <div style={{ padding: '0.875rem', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
+              <ShieldCheck size={16} color="var(--color-mint-600)" />
+              <strong style={{ fontSize: '0.8125rem' }}>Firebase Auth</strong>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              {isFirebaseConnected ? 'Identity & Tokens verified' : 'Configured'}
+            </div>
+          </div>
+
+          {/* MongoDB */}
+          <div style={{ padding: '0.875rem', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
+              <Database size={16} color="var(--color-mint-600)" />
+              <strong style={{ fontSize: '0.8125rem' }}>MongoDB Atlas</strong>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              Users, Deliveries, Journeys, GPS
+            </div>
+          </div>
         </div>
 
         {/* Google Maps Platform Status & Configuration */}
@@ -178,21 +207,10 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
               <Map size={18} color="var(--color-mint-600)" />
               <strong style={{ fontSize: '0.9375rem' }}>Google Maps Platform</strong>
             </div>
-            <a
-              href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1"
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}
-            >
-              Get Free Maps Demo Key <ExternalLink size={12} />
-            </a>
+            <span className={`badge badge-${isMapsConfigured ? 'active' : 'pending'}`} style={{ fontSize: '0.75rem' }}>
+              {isMapsConfigured ? 'Google Maps Active' : 'Leaflet Fallback Active'}
+            </span>
           </div>
-
-          <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            {isMapsConfigured
-              ? 'Google Maps is active with Advanced Markers and vector road styling. You can also fall back to Leaflet OSM anytime from the map toolbar.'
-              : 'Google Maps API key not found. Leaflet OpenStreetMap is active as the fallback. Enter an API key or a free Maps Demo Key to enable Google Maps.'}
-          </p>
 
           <form onSubmit={handleSaveMapsConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
             <div>
@@ -260,7 +278,7 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
           </div>
 
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-            Route M8 provides encrypted real-time audio calls between requesters and transporters via LiveKit WebRTC.
+            Route M8 provides encrypted real-time audio calls between requesters and transporters. Tokens are minted strictly on the Express backend.
           </p>
 
           <form onSubmit={handleSaveLivekitConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
@@ -294,10 +312,7 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
         {/* Configuration Instructions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
-            <label className="form-label">Production Environment (.env)</label>
-            <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              Configure Supabase and platform keys in <code>.env</code>:
-            </div>
+            <label className="form-label">Production Environment Template (.env)</label>
             <pre
               style={{
                 backgroundColor: 'var(--bg-surface-subtle)',
@@ -322,39 +337,6 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
             </button>
           </div>
 
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.875rem',
-              border: '1px solid var(--border-subtle)',
-              fontSize: '0.8125rem',
-            }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Database Migrations & Realtime Setup</span>
-              <a
-                href="https://supabase.com/dashboard"
-                target="_blank"
-                rel="noreferrer"
-                style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              >
-                Supabase Dashboard <ExternalLink size={12} />
-              </a>
-            </div>
-            <div style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              Transporter live location tracking and Realtime publication schema is in <code>supabase/migrations/20261015000001_transporter_location_tracking.sql</code>.
-            </div>
-            <button
-              type="button"
-              onClick={copySchemaReference}
-              className="btn btn-secondary btn-sm"
-              style={{ width: '100%' }}
-            >
-              <Copy size={14} /> {copiedSchema ? 'Copied File Reference!' : 'Copy Schema File Path'}
-            </button>
-          </div>
-
           <button
             type="button"
             onClick={onClose}
@@ -368,3 +350,6 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
     </div>
   );
 };
+
+// Backwards-compatibility alias
+export const SupabaseConfigModal = BackendStatusModal;

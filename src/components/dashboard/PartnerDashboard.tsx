@@ -17,8 +17,10 @@ import {
   ChevronUp,
   Power,
   Navigation,
+  X,
 } from 'lucide-react';
 import type { DeliveryRequest, PublishedJourney } from '../../types';
+import { calculateHaversineDistance } from '../../services/routing';
 import { MapView } from '../map/MapView';
 import { CallButton } from '../audio/CallButton';
 import { AudioCallModal } from '../audio/AudioCallModal';
@@ -41,6 +43,8 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     partnerAvailable,
     setPartnerAvailable,
     acceptDeliveryMatch,
+    rejectDelivery,
+    acceptError,
     updateRequestStatus,
     backendError,
     isLoadingData,
@@ -49,6 +53,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
   // Search & Filter state for Matching Opportunities
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
   // Active delivery PIN verification state
   const [verifyingRequestId, setVerifyingRequestId] = useState<string | null>(null);
@@ -61,8 +66,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
   // Audio call modal state for contacting customer
   const [activeCallDelivery, setActiveCallDelivery] = useState<DeliveryRequest | null>(null);
 
-  // Accepting match feedback state
+  // Accepting & Rejecting match feedback state
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [acceptMessage, setAcceptMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
   // Active deliveries for this partner (or all in demo mode)
@@ -82,6 +88,10 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     if (r.status !== 'open') return false;
     // Security check: cannot accept own request
     if (user && r.requesterId === user.id) return false;
+    // Dismissal check: dismiss for this partner if rejected
+    if (user && r.rejectedBy && r.rejectedBy.includes(user.id)) return false;
+    if (dismissedIds.has(r.id)) return false;
+
     const matchesSearch =
       r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.pickupAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -124,22 +134,39 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
       return;
     }
     const targetJourney = journeys[0];
-    if (!targetJourney) {
-      setAcceptMessage({ text: 'Please publish a commute route first so we can map your corridor.', isError: true });
-      return;
-    }
     setAcceptingId(requestId);
     setAcceptMessage(null);
     try {
-      const success = await acceptDeliveryMatch(requestId, targetJourney.id);
+      const success = await acceptDeliveryMatch(requestId, targetJourney?.id);
       if (success) {
         setAcceptMessage({ text: 'Delivery request accepted! It is now in your active deliveries list.', isError: false });
         setTimeout(() => setAcceptMessage(null), 3500);
       } else {
-        setAcceptMessage({ text: 'Unable to accept this delivery. You cannot accept your own request.', isError: true });
+        setAcceptMessage({
+          text: acceptError || 'Unable to accept this delivery. It may have already been accepted by another partner.',
+          isError: true,
+        });
       }
     } finally {
       setAcceptingId(null);
+    }
+  };
+
+  // Reject / dismiss a request for this partner only
+  const handleRejectRequest = async (requestId: string) => {
+    setRejectingId(requestId);
+    setAcceptMessage(null);
+    try {
+      setDismissedIds(prev => new Set(prev).add(requestId));
+      const success = await rejectDelivery(requestId);
+      if (success) {
+        setAcceptMessage({ text: 'Delivery opportunity dismissed for your account.', isError: false });
+        setTimeout(() => setAcceptMessage(null), 2500);
+      } else {
+        setAcceptMessage({ text: 'Could not dismiss delivery opportunity on server.', isError: true });
+      }
+    } finally {
+      setRejectingId(null);
     }
   };
 
@@ -668,6 +695,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           }}>
             {openRequests.map(req => {
               const isAccepting = acceptingId === req.id;
+              const isRejecting = rejectingId === req.id;
               return (
                 <div
                   key={req.id}
@@ -720,6 +748,39 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         </span>
                       </div>
                     </div>
+
+                    {/* Trip Distance, ETA, and Needed By */}
+                    <div style={{
+                      marginTop: '0.875rem',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '0.5rem',
+                      padding: '0.5rem 0.75rem',
+                      backgroundColor: 'var(--bg-surface-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: '0.75rem',
+                      textAlign: 'center'
+                    }}>
+                      <div>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.6875rem' }}>Distance</div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {req.distanceKm != null ? `${req.distanceKm.toFixed(1)} km` : (req.pickupCoords && req.dropoffCoords ? `${calculateHaversineDistance(req.pickupCoords, req.dropoffCoords).toFixed(1)} km` : '—')}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.6875rem' }}>Est. Time</div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {req.estimatedDurationMin != null ? `~${Math.round(req.estimatedDurationMin)}m` : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.6875rem' }}>Needed By</div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.neededBy}>
+                          {req.neededBy || 'Today'}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Compensation & Accept Action */}
@@ -728,7 +789,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     paddingTop: '0.875rem',
-                    borderTop: '1px solid var(--border-subtle)'
+                    borderTop: '1px solid var(--border-subtle)',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem'
                   }}>
                     <div>
                       <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>
@@ -739,21 +802,34 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
                         onClick={() => onInspectMatch(req, defaultJourney)}
                         className="btn btn-secondary btn-sm"
                         title="Inspect Route Map"
+                        style={{ padding: '0.375rem 0.625rem' }}
                       >
-                        Inspect
+                        <Navigation size={13} />
+                        <span>Map</span>
+                      </button>
+                      <button
+                        onClick={() => handleRejectRequest(req.id)}
+                        disabled={isAccepting || isRejecting}
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: 'var(--color-charcoal-700)', padding: '0.375rem 0.625rem' }}
+                        title="Dismiss this delivery for your account"
+                      >
+                        {isRejecting ? <span className="spinner" style={{ width: 13, height: 13 }} /> : <X size={13} />}
+                        <span>{isRejecting ? 'Rejecting...' : 'Reject'}</span>
                       </button>
                       <button
                         onClick={() => handleAcceptRequest(req.id)}
-                        disabled={isAccepting || !partnerAvailable}
+                        disabled={isAccepting || isRejecting || !partnerAvailable}
                         className="btn btn-primary btn-sm"
+                        style={{ padding: '0.375rem 0.75rem' }}
                       >
                         {isAccepting ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <CheckCircle2 size={14} />}
-                        <span>{isAccepting ? 'Accepting...' : 'Accept Job'}</span>
+                        <span>{isAccepting ? 'Accepting...' : 'Accept Delivery'}</span>
                       </button>
                     </div>
                   </div>

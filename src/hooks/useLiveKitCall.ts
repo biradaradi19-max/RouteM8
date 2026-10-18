@@ -25,6 +25,7 @@ import {
 } from 'livekit-client';
 import type { DeliveryStatus } from '../types';
 import { requestLiveKitToken } from '../services/livekit';
+import { getSocket } from '../services/socket';
 
 export type CallState =
   | 'idle'
@@ -133,6 +134,9 @@ export function useLiveKitCall({
 
   // Public End Call method
   const endCall = useCallback(() => {
+    if (deliveryId) {
+      getSocket().then((s) => s.emit('call:hangup', { deliveryId })).catch(() => {});
+    }
     cleanupCall();
     setCallState('disconnected');
     setTimeout(() => {
@@ -141,7 +145,7 @@ export function useLiveKitCall({
         onCallEnded();
       }
     }, 1500);
-  }, [cleanupCall, onCallEnded]);
+  }, [cleanupCall, deliveryId, onCallEnded]);
 
   // Auto-hangup when delivery finishes or gets cancelled
   useEffect(() => {
@@ -308,6 +312,9 @@ export function useLiveKitCall({
 
       // Connect to LiveKit SFU
       await room.connect(serverUrl, token);
+
+      // Signal incoming call to delivery room participants via Socket.IO
+      getSocket().then((s) => s.emit('call:initiate', { deliveryId })).catch(() => {});
 
       // Enable local microphone
       await room.localParticipant.setMicrophoneEnabled(true);

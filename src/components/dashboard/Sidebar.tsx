@@ -299,7 +299,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onOpenSupabaseConfig}
             role="button"
             tabIndex={0}
-            title="Supabase Database Settings"
+            title="Backend System Status"
             style={{
               padding: '0.625rem 0.75rem',
               borderRadius: 'var(--radius-md)',
@@ -320,14 +320,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }`} />
               <div>
                 <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-primary)' }}>
-                  {supabaseStatus === 'connected' ? 'Supabase Connected' :
-                   supabaseStatus === 'connecting' ? 'Supabase Connecting...' :
-                   'Supabase Offline'}
+                  {supabaseStatus === 'connected' ? 'Express + MongoDB' :
+                   supabaseStatus === 'connecting' ? 'Express Connecting...' :
+                   'Express Offline'}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                  {supabaseStatus === 'connected' ? 'PostgreSQL & Realtime' :
-                   supabaseStatus === 'connecting' ? 'Probing database' :
-                   'Client mode active'}
+                  {supabaseStatus === 'connected' ? 'API & Socket.IO Active' :
+                   supabaseStatus === 'connecting' ? 'Probing backend' :
+                   'Local cache active'}
                 </div>
               </div>
             </div>

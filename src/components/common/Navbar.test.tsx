@@ -63,6 +63,7 @@ describe('Navbar Component — Clean Supabase Architecture & No Firebase Pills',
       isLoadingData: false,
       backendError: null,
       supabaseStatus: 'connected',
+      backendStatus: 'connected',
       refreshData: vi.fn(),
       selectedRequest: null,
       selectedJourney: null,
@@ -73,6 +74,8 @@ describe('Navbar Component — Clean Supabase Architecture & No Firebase Pills',
       publishJourney: vi.fn(),
       updateRequestStatus: vi.fn(),
       acceptDeliveryMatch: vi.fn(),
+      rejectDelivery: vi.fn(),
+      acceptError: null,
     });
   });
 

@@ -10,21 +10,14 @@ import type {
   RequestUrgency 
 } from '../types';
 
-import { 
-  isSupabaseConfigured,
-  fetchDeliveryRequestsFromDb,
-  fetchPublishedJourneysFromDb,
-  createDeliveryRequestInDb,
-  createPublishedJourneyInDb,
-  updateDeliveryRequestStatusInDb,
-  checkSupabaseConnection,
-  type SupabaseConnectionStatus,
-} from '../services/supabase';
+import { deliveriesApi, journeysApi, activitiesApi } from '../services/api';
 import { calculateRouteMatch } from '../services/routing';
+import { getSocket } from '../services/socket';
 import { useAuth } from './AuthContext';
 
 export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile';
 export type RoleMode = 'requester' | 'transporter';
+export type BackendConnectionStatus = 'connected' | 'connecting' | 'offline';
 
 export interface AppContextType {
   // Theme & Views
@@ -45,7 +38,8 @@ export interface AppContextType {
   activities: ActivityItem[];
   isLoadingData: boolean;
   backendError: string | null;
-  supabaseStatus: SupabaseConnectionStatus;
+  supabaseStatus: BackendConnectionStatus; // Retained for backwards compatibility
+  backendStatus: BackendConnectionStatus;
   refreshData: () => Promise<void>;
   
   // Selection & Real Matching
@@ -81,7 +75,9 @@ export interface AppContextType {
     recurringDays?: string[];
     notes?: string;
   }) => Promise<PublishedJourney>;
-  acceptDeliveryMatch: (requestId: string, journeyId: string) => Promise<boolean>;
+  acceptDeliveryMatch: (requestId: string, journeyId?: string) => Promise<boolean>;
+  rejectDelivery: (requestId: string) => Promise<boolean>;
+  acceptError: string | null;
   updateRequestStatus: (requestId: string, nextStatus: DeliveryStatus, pinAttempt?: string) => Promise<{ success: boolean; message?: string }>;
 }
 
@@ -169,7 +165,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Data State with initial seed (empty by default unless saved in local storage)
+  // Data State with initial local fallback
   const [requests, setRequests] = useState<DeliveryRequest[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_REQS_KEY);
@@ -193,20 +189,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [backendError, setBackendError] = useState<string | null>(null);
-  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseConnectionStatus>(
-    isSupabaseConfigured ? 'connecting' : 'offline'
-  );
+  const [backendStatus, setBackendStatus] = useState<BackendConnectionStatus>('connecting');
 
-  // Probe real Supabase backend connection state
+  // Probe Express API health
   useEffect(() => {
     let isMounted = true;
-    checkSupabaseConnection().then(status => {
-      if (isMounted) {
-        setSupabaseStatus(status);
-      }
-    });
+    fetch('/api/health')
+      .then(res => {
+        if (isMounted) {
+          setBackendStatus(res.ok ? 'connected' : 'offline');
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setBackendStatus('offline');
+        }
+      });
+
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+
+  // Real-time synchronization via Socket.IO
+  useEffect(() => {
+    let isMounted = true;
+    let unsubSocket: (() => void) | null = null;
+
+    getSocket()
+      .then((s) => {
+        if (!isMounted) return;
+
+        const handleClaimed = ({ deliveryId }: { deliveryId: string }) => {
+          setRequests((prev) =>
+            prev.map((r) => (r.id === deliveryId ? { ...r, status: 'matched' as DeliveryStatus } : r))
+          );
+        };
+
+        const handleMatched = (updatedDelivery: DeliveryRequest) => {
+          setRequests((prev) =>
+            prev.map((r) => (r.id === updatedDelivery.id ? updatedDelivery : r))
+          );
+        };
+
+        s.on('delivery:claimed', handleClaimed);
+        s.on('delivery:matched', handleMatched);
+
+        unsubSocket = () => {
+          s.off('delivery:claimed', handleClaimed);
+          s.off('delivery:matched', handleMatched);
+        };
+      })
+      .catch((err) => {
+        console.warn('[AppContext Socket notice]', err);
+      });
+
+    return () => {
+      isMounted = false;
+      if (unsubSocket) unsubSocket();
     };
   }, []);
 
@@ -216,7 +258,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeMatch, setActiveMatch] = useState<RouteMatchResult | null>(null);
   const [isMatchComputing, setIsMatchComputing] = useState<boolean>(false);
 
-  // Helper to save requests and journeys to localStorage
   const persistRequests = (newReqs: DeliveryRequest[]) => {
     try {
       localStorage.setItem(LOCAL_STORAGE_REQS_KEY, JSON.stringify(newReqs));
@@ -257,42 +298,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Sync data: fetch from Supabase if configured, otherwise use persistent local fixtures
+  // Sync data: fetch from Express + MongoDB backend
   const refreshData = useCallback(async () => {
-    if (isSupabaseConfigured) {
-      setIsLoadingData(true);
-      setBackendError(null);
+    setIsLoadingData(true);
+    setBackendError(null);
 
-      try {
-        const [reqResult, jrnResult] = await Promise.all([
-          fetchDeliveryRequestsFromDb(),
-          fetchPublishedJourneysFromDb(),
-        ]);
+    try {
+      const [fetchedReqs, fetchedJourneys, fetchedActs] = await Promise.all([
+        deliveriesApi.getDeliveries(),
+        journeysApi.getJourneys(),
+        activitiesApi.getActivities(),
+      ]);
 
-        if (reqResult.error || jrnResult.error) {
-          setBackendError(reqResult.error || jrnResult.error);
-        }
-
-        if (reqResult.data.length > 0) setRequests(reqResult.data);
-        if (jrnResult.data.length > 0) setJourneys(jrnResult.data);
-
-        const activeReqs = reqResult.data.length > 0 ? reqResult.data : requests;
-        const activeJrns = jrnResult.data.length > 0 ? jrnResult.data : journeys;
-
-        if (activeReqs.length > 0 && activeJrns.length > 0) {
-          selectRequestAndJourney(activeReqs[0], activeJrns[0]);
-        }
-      } catch (err: any) {
-        setBackendError(err?.message || 'Failed to synchronize with backend.');
-      } finally {
-        setIsLoadingData(false);
+      if (fetchedReqs.length > 0) {
+        setRequests(fetchedReqs);
+        persistRequests(fetchedReqs);
       }
-    } else {
-      if (requests.length > 0 && journeys.length > 0 && !selectedRequest) {
-        selectRequestAndJourney(requests[0], journeys[0]);
+      if (fetchedJourneys.length > 0) {
+        setJourneys(fetchedJourneys);
+        persistJourneys(fetchedJourneys);
       }
+      if (fetchedActs.length > 0) {
+        setActivities(fetchedActs);
+      }
+
+      setBackendStatus('connected');
+
+      const activeReqs = fetchedReqs.length > 0 ? fetchedReqs : requests;
+      const activeJrns = fetchedJourneys.length > 0 ? fetchedJourneys : journeys;
+
+      if (activeReqs.length > 0 && activeJrns.length > 0) {
+        selectRequestAndJourney(activeReqs[0], activeJrns[0]);
+      }
+    } catch (err: any) {
+      console.warn('[Sync] Express backend offline, preserving local cache:', err.message);
+      setBackendError(err.message || 'Failed to synchronize with backend.');
+    } finally {
+      setIsLoadingData(false);
     }
-  }, [requests, journeys, selectedRequest, selectRequestAndJourney]);
+  }, [requests, journeys, selectRequestAndJourney]);
 
   useEffect(() => {
     refreshData();
@@ -316,33 +360,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('Authentication required. Please sign in to create a delivery request.');
     }
 
-    const pin = Math.floor(1000 + Math.random() * 9000).toString();
-    const newReqData: Omit<DeliveryRequest, 'id' | 'createdAt'> = {
-      ...data,
-      status: 'open',
-      requesterId: user.id,
-      requesterName: user.fullName || 'Community Requester',
-      requesterTrustScore: user.trustScore || 85,
-      requesterAvatar: user.avatarUrl,
-      handoverPin: pin,
-      estimatedDetourMinutes: 5,
-    };
-
-    let createdReq: DeliveryRequest = {
-      id: `req-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      ...newReqData,
-    };
-
-    if (isSupabaseConfigured) {
-      try {
-        const { data: dbReq, error } = await createDeliveryRequestInDb(newReqData);
-        if (dbReq && !error) {
-          createdReq = dbReq;
-        }
-      } catch {
-        // Fallback to local
+    const { data: serverReq, error } = await deliveriesApi.createDelivery(data);
+    let createdReq: DeliveryRequest;
+    if (serverReq) {
+      createdReq = serverReq;
+    } else {
+      if (error && !error.includes('Network') && !error.includes('Failed to fetch') && !error.includes('Unexpected end of JSON')) {
+        throw new Error(error);
       }
+      createdReq = {
+        id: `req-${Date.now()}`,
+        ...data,
+        status: 'open',
+        requesterId: user.id,
+        requesterName: user.fullName || 'Requester',
+        requesterAvatar: user.avatarUrl,
+        requesterTrustScore: user.trustScore || 98,
+        createdAt: new Date().toISOString(),
+        handoverPin: Math.floor(1000 + Math.random() * 9000).toString(),
+      };
     }
 
     setRequests(prev => {
@@ -388,30 +424,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('Authentication required. Please sign in to publish a commute route.');
     }
 
-    const newJourneyData: Omit<PublishedJourney, 'id' | 'createdAt'> = {
-      transporterId: user.id,
-      transporterName: user.fullName || 'Commuter',
-      transporterAvatar: user.avatarUrl,
-      transporterTrustScore: user.trustScore || 85,
-      ...data,
-      isActive: true,
-    };
-
-    let createdJourney: PublishedJourney = {
-      id: `jrn-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      ...newJourneyData,
-    };
-
-    if (isSupabaseConfigured) {
-      try {
-        const { data: dbJourney, error } = await createPublishedJourneyInDb(newJourneyData);
-        if (dbJourney && !error) {
-          createdJourney = dbJourney;
-        }
-      } catch {
-        // Fallback to local
-      }
+    const { data: createdJourney, error } = await journeysApi.publishJourney(data);
+    if (error || !createdJourney) {
+      throw new Error(error || 'Failed to publish commute route on server');
     }
 
     setJourneys(prev => {
@@ -441,35 +456,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Accept Match
-  const acceptDeliveryMatch = async (requestId: string, journeyId: string): Promise<boolean> => {
-    const journey = journeys.find(j => j.id === journeyId);
-    if (!journey) return false;
+  const acceptDeliveryMatch = async (requestId: string, journeyId?: string): Promise<boolean> => {
+    const journey = journeyId ? journeys.find(j => j.id === journeyId) : journeys[0];
+    setAcceptError(null);
 
     // Security check: requester cannot accept their own delivery request
     const targetReq = requests.find(r => r.id === requestId);
     if (targetReq && user && targetReq.requesterId === user.id) {
-      console.warn('[Security] Unauthorized: Cannot accept your own delivery request.');
+      setAcceptError('You cannot accept your own delivery request.');
       return false;
     }
 
-    if (isSupabaseConfigured) {
-      try {
-        await updateDeliveryRequestStatusInDb(requestId, 'matched', journey.transporterId);
-      } catch {
-        // Fallback
+    const { data: updatedDoc, error } = await deliveriesApi.acceptDelivery(requestId);
+    if (error || !updatedDoc) {
+      // If already accepted/conflict, mark as matched locally
+      if (error && (error.includes('already been accepted') || error.includes('no longer open'))) {
+        setAcceptError(error);
+        setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'matched' as DeliveryStatus } : r));
+        return false;
       }
+      // If network error on deployed preview without backend reachable, accept optimistically:
+      if (!updatedDoc && (error?.includes('Failed to fetch') || error?.includes('Network') || error?.includes('Unexpected end of JSON'))) {
+        const fallbackDoc: DeliveryRequest = {
+          ...targetReq!,
+          status: 'matched' as DeliveryStatus,
+          transporterId: user?.id || journey?.transporterId || 'demo-partner',
+          transporterName: user?.fullName || journey?.transporterName || 'Verified Commuter',
+          transporterAvatar: user?.avatarUrl || journey?.transporterAvatar,
+          transporterVehicle: user?.commuteVehicle || journey?.vehicle || 'Commuter Vehicle',
+        };
+        setRequests(prev => {
+          const updated = prev.map(r => r.id === requestId ? fallbackDoc : r);
+          persistRequests(updated);
+          return updated;
+        });
+        return true;
+      }
+      setAcceptError(error || 'Failed to accept delivery.');
+      return false;
     }
 
     setRequests(prev => {
       const updated = prev.map(req => {
         if (req.id === requestId) {
-          return {
+          return updatedDoc || {
             ...req,
             status: 'matched' as DeliveryStatus,
-            transporterId: journey.transporterId,
-            transporterName: journey.transporterName,
-            transporterAvatar: journey.transporterAvatar,
-            transporterVehicle: journey.vehicle,
+            transporterId: journey?.transporterId,
+            transporterName: journey?.transporterName,
+            transporterAvatar: journey?.transporterAvatar,
+            transporterVehicle: journey?.vehicle,
           };
         }
         return req;
@@ -483,13 +519,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `act-${Date.now()}`,
         type: 'match_found',
         title: 'Delivery Match Confirmed',
-        description: `${journey.transporterName} accepted request. Detour estimated at ${activeMatch?.additionalDetourMin || 5} mins.`,
+        description: `Accepted delivery: ${updatedDoc.title}`,
         timestamp: 'Just now',
         relatedId: requestId,
         status: 'matched',
       },
       ...prev
     ]);
+
+    return true;
+  };
+
+  // Reject / Dismiss Delivery Opportunity for this partner
+  const rejectDelivery = async (requestId: string): Promise<boolean> => {
+    // 1. Immediately dismiss locally for instant UX
+    setRequests(prev => prev.filter(r => r.id !== requestId));
+
+    // 2. Persist dismissal to MongoDB
+    const res = await deliveriesApi.rejectDelivery(requestId);
+    if (!res.success) {
+      console.warn('[Reject Delivery Notice]', res.error);
+      return false;
+    }
 
     return true;
   };
@@ -503,28 +554,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const req = requests.find(r => r.id === requestId);
     if (!req) return { success: false, message: 'Request not found.' };
 
-    if (nextStatus === 'completed') {
+    if (nextStatus === 'in_transit') {
+      const { data: transitDoc, error } = await deliveriesApi.startTransit(requestId);
+      if (error) {
+        return { success: false, message: error };
+      }
+      setRequests(prev => {
+        const updated = prev.map(r => (r.id === requestId ? transitDoc || { ...r, status: nextStatus } : r));
+        persistRequests(updated);
+        return updated;
+      });
+    } else if (nextStatus === 'completed') {
       if (!pinAttempt || pinAttempt.trim().length !== 4) {
         return { success: false, message: 'Please enter the 4-digit handover PIN provided by the recipient.' };
       }
-      if (req.handoverPin && pinAttempt.trim() !== req.handoverPin) {
-        return { success: false, message: 'Invalid handover PIN. Please check the PIN provided by the recipient.' };
-      }
-    }
 
-    if (isSupabaseConfigured) {
-      try {
-        await updateDeliveryRequestStatusInDb(requestId, nextStatus, undefined, pinAttempt);
-      } catch {
-        // Fallback
+      const res = await deliveriesApi.verifyPin(requestId, pinAttempt.trim());
+      if (!res.success) {
+        return { success: false, message: res.error || 'PIN verification failed.' };
       }
-    }
 
-    setRequests(prev => {
-      const updated = prev.map(r => (r.id === requestId ? { ...r, status: nextStatus } : r));
-      persistRequests(updated);
-      return updated;
-    });
+      setRequests(prev => {
+        const updated = prev.map(r => (r.id === requestId ? res.delivery || { ...r, status: nextStatus } : r));
+        persistRequests(updated);
+        return updated;
+      });
+    } else if (nextStatus === 'cancelled') {
+      const res = await deliveriesApi.cancelDelivery(requestId);
+      if (!res.success) {
+        return { success: false, message: res.error || 'Failed to cancel delivery.' };
+      }
+      setRequests(prev => {
+        const updated = prev.map(r => (r.id === requestId ? { ...r, status: nextStatus } : r));
+        persistRequests(updated);
+        return updated;
+      });
+    } else {
+      setRequests(prev => {
+        const updated = prev.map(r => (r.id === requestId ? { ...r, status: nextStatus } : r));
+        persistRequests(updated);
+        return updated;
+      });
+    }
 
     const statusTitleMap: Record<DeliveryStatus, string> = {
       open: 'Request Reopened',
@@ -568,7 +639,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activities,
         isLoadingData,
         backendError,
-        supabaseStatus,
+        supabaseStatus: backendStatus, // Backwards compatible alias
+        backendStatus,
         refreshData,
         selectedRequest,
         selectedJourney,
@@ -578,6 +650,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createRequest,
         publishJourney,
         acceptDeliveryMatch,
+        rejectDelivery,
+        acceptError,
         updateRequestStatus,
       }}
     >

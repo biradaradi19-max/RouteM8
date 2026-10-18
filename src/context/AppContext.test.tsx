@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { AppProvider, useApp } from './AppContext';
-import * as supabaseService from '../services/supabase';
+import { deliveriesApi, journeysApi } from '../services/api';
 
 // Mock AuthContext
 vi.mock('./AuthContext', () => ({
@@ -12,24 +12,29 @@ vi.mock('./AuthContext', () => ({
   })),
 }));
 
-// Mock Supabase service functions
-vi.mock('../services/supabase', async (importOriginal) => {
-  const actual = await importOriginal<typeof supabaseService>();
-  return {
-    ...actual,
-    isSupabaseConfigured: false,
-    fetchDeliveryRequestsFromDb: vi.fn(),
-    fetchPublishedJourneysFromDb: vi.fn(),
-    createDeliveryRequestInDb: vi.fn(),
-    createPublishedJourneyInDb: vi.fn(),
-    updateDeliveryRequestStatusInDb: vi.fn(),
-  };
-});
+// Mock API service functions
+vi.mock('../services/api', () => ({
+  deliveriesApi: {
+    getDeliveries: vi.fn().mockResolvedValue([]),
+    createDelivery: vi.fn(),
+    acceptDelivery: vi.fn(),
+    startTransit: vi.fn(),
+    verifyPin: vi.fn(),
+    cancelDelivery: vi.fn(),
+  },
+  journeysApi: {
+    getJourneys: vi.fn().mockResolvedValue([]),
+    publishJourney: vi.fn(),
+    deleteJourney: vi.fn(),
+  },
+  activitiesApi: {
+    getActivities: vi.fn().mockResolvedValue([]),
+  },
+}));
 
-describe('Route M8 AppContext — Empty Datasets & Unconfigured Backend Tests', () => {
+describe('Route M8 AppContext — Empty Datasets & Backend Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (supabaseService as any).isSupabaseConfigured = false;
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -99,16 +104,9 @@ describe('Route M8 AppContext — Empty Datasets & Unconfigured Backend Tests', 
     expect(result.current.journeys).toEqual([]);
   });
 
-  it('4. should handle empty database responses cleanly when Supabase is configured', async () => {
-    (supabaseService as any).isSupabaseConfigured = true;
-    (supabaseService.fetchDeliveryRequestsFromDb as any).mockResolvedValue({
-      data: [],
-      error: null,
-    });
-    (supabaseService.fetchPublishedJourneysFromDb as any).mockResolvedValue({
-      data: [],
-      error: null,
-    });
+  it('4. should handle empty database responses cleanly when backend is configured', async () => {
+    vi.mocked(deliveriesApi.getDeliveries).mockResolvedValueOnce([]);
+    vi.mocked(journeysApi.getJourneys).mockResolvedValueOnce([]);
 
     const { result } = renderHook(() => useApp(), { wrapper });
 
@@ -122,15 +120,9 @@ describe('Route M8 AppContext — Empty Datasets & Unconfigured Backend Tests', 
   });
 
   it('5. should capture database query errors cleanly and expose them via backendError', async () => {
-    (supabaseService as any).isSupabaseConfigured = true;
-    (supabaseService.fetchDeliveryRequestsFromDb as any).mockResolvedValue({
-      data: [],
-      error: 'Network connectivity timeout to database.',
-    });
-    (supabaseService.fetchPublishedJourneysFromDb as any).mockResolvedValue({
-      data: [],
-      error: null,
-    });
+    vi.mocked(deliveriesApi.getDeliveries).mockRejectedValueOnce(
+      new Error('Network connectivity timeout to database.')
+    );
 
     const { result } = renderHook(() => useApp(), { wrapper });
 

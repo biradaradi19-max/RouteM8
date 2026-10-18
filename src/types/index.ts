@@ -94,6 +94,9 @@ export interface DeliveryRequest {
   handoverPin: string; // 4 digit verification PIN for physical exchange
   createdAt: string;
   estimatedDetourMinutes?: number;
+  rejectedBy?: string[];
+  distanceKm?: number;
+  estimatedDurationMin?: number;
 }
 
 export interface PublishedJourney {

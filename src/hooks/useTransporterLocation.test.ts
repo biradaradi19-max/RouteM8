@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useTransporterLocation } from './useTransporterLocation';
-import * as supabaseService from '../services/supabase';
+import { deliveriesApi } from '../services/api';
+import * as socketService from '../services/socket';
 
-vi.mock('../services/supabase', () => ({
-  updateTransporterLocationInDb: vi.fn().mockResolvedValue({ success: true, error: null }),
-  fetchTransporterLocationFromDb: vi.fn().mockResolvedValue({ data: null, error: null }),
-  subscribeToTransporterLocation: vi.fn().mockImplementation((_deliveryId, _cb) => {
-    return vi.fn(); // unsubscribe
-  }),
+vi.mock('../services/api', () => ({
+  deliveriesApi: {
+    getLatestLocation: vi.fn().mockResolvedValue(null),
+  },
+}));
+
+vi.mock('../services/socket', () => ({
+  joinDeliveryRoom: vi.fn().mockResolvedValue(vi.fn()),
+  emitLocationUpdate: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 describe('useTransporterLocation Hook', () => {
@@ -50,10 +54,7 @@ describe('useTransporterLocation Hook', () => {
       longitude: -122.1668,
       updatedAt: new Date().toISOString(),
     };
-    vi.mocked(supabaseService.fetchTransporterLocationFromDb).mockResolvedValueOnce({
-      data: mockInitial,
-      error: null,
-    });
+    vi.mocked(deliveriesApi.getLatestLocation).mockResolvedValueOnce(mockInitial);
 
     const { result } = renderHook(() =>
       useTransporterLocation({
@@ -69,9 +70,9 @@ describe('useTransporterLocation Hook', () => {
       expect(result.current.location).toEqual(mockInitial);
     });
 
-    expect(supabaseService.subscribeToTransporterLocation).toHaveBeenCalledWith(
+    expect(socketService.joinDeliveryRoom).toHaveBeenCalledWith(
       'del-1',
-      expect.any(Function)
+      expect.objectContaining({ onLocation: expect.any(Function) })
     );
   });
 
@@ -106,12 +107,13 @@ describe('useTransporterLocation Hook', () => {
     });
 
     await waitFor(() => {
-      expect(supabaseService.updateTransporterLocationInDb).toHaveBeenCalledWith('del-1', {
-        latitude: 37.43,
-        longitude: -122.17,
-        heading: 180,
-        speed: 15,
-      });
+      expect(socketService.emitLocationUpdate).toHaveBeenCalledWith(
+        'del-1',
+        37.43,
+        -122.17,
+        180,
+        15
+      );
     });
 
     expect(result.current.location?.latitude).toBe(37.43);

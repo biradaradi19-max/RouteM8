@@ -68,7 +68,7 @@ function generateFallbackPolyline(waypoints: [number, number][]): [number, numbe
 /**
  * Fetch real route from OSRM public service
  */
-async function fetchOSRMRoute(waypoints: [number, number][]): Promise<{
+export async function fetchOSRMRoute(waypoints: [number, number][]): Promise<{
   polyline: [number, number][];
   distanceKm: number;
   durationMin: number;
@@ -175,4 +175,18 @@ export async function calculateRouteMatch(
     directPolyline: directRoute.polyline,
     detourPolyline: detourRoute.polyline
   };
+}
+
+/**
+ * Fetch direct road routing geometry, distance (km), and estimated driving duration (min) between two coordinates.
+ */
+export async function fetchRouteBetween(
+  origin: [number, number],
+  destination: [number, number]
+): Promise<{
+  polyline: [number, number][];
+  distanceKm: number;
+  durationMin: number;
+}> {
+  return fetchOSRMRoute([origin, destination]);
 }

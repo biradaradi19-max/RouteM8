@@ -133,6 +133,7 @@ describe('DashboardView Component — Separate Requester and Delivery Partner Ex
       isLoadingData: false,
       backendError: null,
       supabaseStatus: 'connected',
+      backendStatus: 'connected',
       refreshData: vi.fn(),
       selectedRequest: null,
       selectedJourney: null,
@@ -143,6 +144,8 @@ describe('DashboardView Component — Separate Requester and Delivery Partner Ex
       publishJourney: vi.fn(),
       updateRequestStatus: mockUpdateRequestStatus,
       acceptDeliveryMatch: mockAcceptDeliveryMatch,
+      rejectDelivery: vi.fn(),
+      acceptError: null,
     });
   };
 
@@ -324,12 +327,15 @@ describe('DashboardView Component — Separate Requester and Delivery Partner Ex
       expect(screen.getByText('Find Delivery Requests (Corridor Opportunities)')).toBeDefined();
       expect(screen.getByText('Architectural Scale Model Blueprint')).toBeDefined();
 
-      const acceptBtn = screen.getByRole('button', { name: /accept job/i });
+      const acceptBtn = screen.getByRole('button', { name: /accept (delivery|job)/i });
       fireEvent.click(acceptBtn);
 
       await waitFor(() => {
         expect(mockAcceptDeliveryMatch).toHaveBeenCalledWith('req-2', 'jrn-1');
       });
+
+      const rejectBtn = screen.getByRole('button', { name: /reject/i });
+      expect(rejectBtn).toBeDefined();
     });
   });
 });

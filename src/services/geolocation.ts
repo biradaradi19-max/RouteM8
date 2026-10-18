@@ -101,3 +101,132 @@ export function shouldBroadcastLocation(
 
   return distanceMoved >= minDistance;
 }
+
+/**
+ * Promise-based current position retrieval with browser geolocation.
+ */
+export async function getCurrentPositionAsync(options?: PositionOptions): Promise<[number, number]> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    throw new Error('Geolocation is not supported by your browser.');
+  }
+
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve([pos.coords.latitude, pos.coords.longitude]);
+      },
+      (err) => {
+        reject(new Error(formatGeolocationError(err)));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+        ...options,
+      }
+    );
+  });
+}
+
+/**
+ * Reverse geocode [lat, lng] into a human-readable formatted address.
+ * Prefers Google Maps Geocoder, with fallback to OpenStreetMap Nominatim.
+ */
+export async function reverseGeocode(coords: [number, number]): Promise<string> {
+  const [lat, lng] = coords;
+
+  // 1. Try Google Maps Geocoder if Google Maps JS SDK is active
+  if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+    try {
+      const geocoder = new (window as any).google.maps.Geocoder();
+      const res = await geocoder.geocode({ location: { lat, lng } });
+      if (res.results && res.results.length > 0 && res.results[0].formatted_address) {
+        return res.results[0].formatted_address;
+      }
+    } catch (err) {
+      console.warn('[ReverseGeocode] Google Geocoder error, trying fallback:', err);
+    }
+  }
+
+  // 2. Fallback to public OpenStreetMap Nominatim
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}`;
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Accept-Language': 'en' },
+    });
+    clearTimeout(timer);
+
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.display_name) {
+        return data.display_name;
+      }
+    }
+  } catch (err) {
+    console.warn('[ReverseGeocode] Nominatim fallback error:', err);
+  }
+
+  // 3. Coordinate string fallback
+  return `Location near ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
+
+/**
+ * Geocode text address into formatted address and [lat, lng].
+ */
+export async function geocodeAddress(
+  address: string
+): Promise<{ address: string; coords: [number, number] } | null> {
+  if (!address || !address.trim()) return null;
+
+  // 1. Try Google Maps Geocoder
+  if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder) {
+    try {
+      const geocoder = new (window as any).google.maps.Geocoder();
+      const res = await geocoder.geocode({ address: address.trim() });
+      if (res.results && res.results.length > 0) {
+        const item = res.results[0];
+        const lat = item.geometry.location.lat();
+        const lng = item.geometry.location.lng();
+        return {
+          address: item.formatted_address,
+          coords: [lat, lng],
+        };
+      }
+    } catch (err) {
+      console.warn('[GeocodeAddress] Google Geocoder error, trying fallback:', err);
+    }
+  }
+
+  // 2. Fallback to Nominatim
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address.trim())}&limit=1`;
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Accept-Language': 'en' },
+    });
+    clearTimeout(timer);
+
+    if (resp.ok) {
+      const results = await resp.json();
+      if (results && results.length > 0) {
+        const lat = parseFloat(results[0].lat);
+        const lon = parseFloat(results[0].lon);
+        if (isValidCoordinate(lat, lon)) {
+          return {
+            address: results[0].display_name,
+            coords: [lat, lon],
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[GeocodeAddress] Nominatim error:', err);
+  }
+
+  return null;
+}

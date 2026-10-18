@@ -62,10 +62,26 @@ const MapController: React.FC<{
       polylines.push(detourLine);
     }
 
+    // 3. Delivery Route Polyline between Pickup and Dropoff (when match object is not present)
+    if (!match && pickupCoords && dropoffCoords) {
+      const deliveryPath = [
+        { lat: pickupCoords[0], lng: pickupCoords[1] },
+        { lat: dropoffCoords[0], lng: dropoffCoords[1] },
+      ];
+      const deliveryLine = new google.maps.Polyline({
+        path: deliveryPath,
+        strokeColor: '#059669',
+        strokeOpacity: 0.85,
+        strokeWeight: 4,
+        map,
+      });
+      polylines.push(deliveryLine);
+    }
+
     return () => {
       polylines.forEach((line) => line.setMap(null));
     };
-  }, [map, match]);
+  }, [map, match, pickupCoords, dropoffCoords]);
 
   // Adjust camera bounds smoothly to frame all active locations
   useEffect(() => {
