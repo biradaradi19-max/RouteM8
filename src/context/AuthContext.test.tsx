@@ -1064,5 +1064,135 @@ describe('Route M8 AuthContext — Audited Security & Authorization Suite', () =
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.error).toContain('Your session has expired. Please sign in again.');
   });
+
+  describe('SignUp Flow & Error Handling', () => {
+    it('24. should successfully sign up a new user requiring email confirmation', async () => {
+      mockSupabase.auth.signUp.mockResolvedValue({
+        data: {
+          user: { id: 'usr-new-1', email: 'newuser@stanford.edu' },
+          session: null, // session null implies confirmation needed
+        },
+        error: null,
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      let res: any;
+      await act(async () => {
+        res = await result.current.signUp(
+          'newuser@stanford.edu',
+          'Password123!',
+          'New User',
+          'requester',
+          'Stanford University',
+          'new_user'
+        );
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.requiresEmailConfirmation).toBe(true);
+      expect(result.current.error).toBeNull();
+      expect(mockSupabase.auth.signUp).toHaveBeenCalledWith({
+        email: 'newuser@stanford.edu',
+        password: 'Password123!',
+        options: {
+          data: {
+            full_name: 'New User',
+            role: 'requester',
+            organization: 'Stanford University',
+            username: 'new_user',
+          },
+        },
+      });
+    });
+
+    it('25. should handle signup error when email already exists', async () => {
+      mockSupabase.auth.signUp.mockResolvedValue({
+        data: { user: null, session: null },
+        error: { message: 'User already registered' },
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      let res: any;
+      await act(async () => {
+        res = await result.current.signUp(
+          'existing@stanford.edu',
+          'Password123!',
+          'Existing User',
+          'both'
+        );
+      });
+
+      expect(res.success).toBe(false);
+      expect(result.current.error).toContain('already exists');
+    });
+
+    it('26. should handle signup error when username is already taken', async () => {
+      mockSupabase.auth.signUp.mockResolvedValue({
+        data: { user: null, session: null },
+        error: { message: 'duplicate key value violates unique constraint "profiles_username_lower_idx"' },
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      let res: any;
+      await act(async () => {
+        res = await result.current.signUp(
+          'taken@stanford.edu',
+          'Password123!',
+          'Taken User',
+          'both',
+          undefined,
+          'taken_username'
+        );
+      });
+
+      expect(res.success).toBe(false);
+      expect(result.current.error).toContain('This username is already taken');
+    });
+
+    it('27. should handle signup database update error and set user-friendly error message', async () => {
+      mockSupabase.auth.signUp.mockResolvedValue({
+        data: { user: null, session: null },
+        error: { message: 'Database error updating user', status: 500 },
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      let res: any;
+      await act(async () => {
+        res = await result.current.signUp(
+          'error@stanford.edu',
+          'Password123!',
+          'Error User',
+          'both'
+        );
+      });
+
+      expect(res.success).toBe(false);
+      expect(result.current.error).toBe('Database error updating user');
+    });
+
+    it('28. should validate username format before submitting signup', async () => {
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      let res: any;
+      await act(async () => {
+        res = await result.current.signUp(
+          'invalid@stanford.edu',
+          'Password123!',
+          'Invalid User',
+          'both',
+          undefined,
+          'ab' // Too short (< 3)
+        );
+      });
+
+      expect(res.success).toBe(false);
+      expect(result.current.error).toContain('between 3 and 30 characters');
+      expect(mockSupabase.auth.signUp).not.toHaveBeenCalled();
+    });
+  });
 });
 
