@@ -9,16 +9,19 @@
 const LOCAL_STORAGE_KEY = 'routem8_google_maps_key_v1';
 const LOCAL_STORAGE_MAP_ID_KEY = 'routem8_google_maps_map_id_v1';
 
+export const DEFAULT_GOOGLE_MAPS_API_KEY = 'AIzaSyBGd5npLdnbQRZSWyO6lhbo7FoiI02OmsY';
+export const DEFAULT_GOOGLE_MAPS_MAP_ID = 'DEMO_MAP_ID';
+
 export function getGoogleMapsApiKey(): string {
   const envKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
   if (envKey) return envKey;
 
   if (typeof window !== 'undefined' && window.localStorage) {
-    const saved = (window.localStorage.getItem(LOCAL_STORAGE_KEY) || '').trim();
-    if (saved) return saved;
+    const saved = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (saved !== null && saved !== undefined && saved.trim()) return saved.trim();
   }
 
-  return '';
+  return DEFAULT_GOOGLE_MAPS_API_KEY;
 }
 
 export function getGoogleMapsMapId(): string {
@@ -31,7 +34,7 @@ export function getGoogleMapsMapId(): string {
   }
 
   // Required DEMO_MAP_ID for AdvancedMarkerElement prototyping
-  return 'DEMO_MAP_ID';
+  return DEFAULT_GOOGLE_MAPS_MAP_ID;
 }
 
 export function isGoogleMapsConfigured(): boolean {
