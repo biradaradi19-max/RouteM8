@@ -12,9 +12,9 @@ import {
   Moon, 
   LogOut, 
   Settings, 
-  Compass
+  Compass,
+  X
 } from 'lucide-react';
-
 
 interface SidebarProps {
   onOpenCreateRequest: () => void;
@@ -33,8 +33,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onCloseMobile
 }) => {
-  const { currentView, setCurrentView, theme, toggleTheme } = useApp();
-  const { user, isAuthenticated, signOut, isFirebaseConnected } = useAuth();
+  const { currentView, setCurrentView, theme, toggleTheme, supabaseStatus } = useApp();
+  const { user, isAuthenticated, signOut } = useAuth();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -52,9 +52,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
+            backgroundColor: 'rgba(6, 21, 15, 0.5)',
+            backdropFilter: 'blur(4px)',
             zIndex: 90,
           }}
+          aria-hidden="true"
         />
       )}
 
@@ -68,14 +70,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           height: isMobileOpen ? '100vh' : 'calc(100vh - var(--header-height))',
           position: isMobileOpen ? 'fixed' : 'sticky',
           top: isMobileOpen ? 0 : 'var(--header-height)',
+          left: 0,
           zIndex: isMobileOpen ? 150 : 40,
           flexShrink: 0,
           transition: 'transform var(--transition-normal), background-color var(--transition-normal)',
+          overflowY: 'auto',
         }}
       >
         {/* Sidebar Header */}
         <div style={{
-          padding: '1.25rem 1.25rem 1rem',
+          padding: '1.125rem 1.25rem 0.875rem',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           alignItems: 'center',
@@ -84,9 +88,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
             <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '9px',
+              width: '30px',
+              height: '30px',
+              borderRadius: '8px',
               backgroundColor: 'var(--bg-brand-subtle)',
               border: '1px solid rgba(45, 212, 191, 0.25)',
               display: 'flex',
@@ -95,7 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               color: 'var(--color-forest-800)',
               flexShrink: 0
             }}>
-              <Compass size={18} />
+              <Compass size={16} />
             </div>
             <div>
               <div style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
@@ -106,35 +110,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
           </div>
-          <span className="badge badge-brand" style={{ fontSize: '0.625rem', padding: '0.2rem 0.45rem' }}>
-            Active
-          </span>
+
+          {isMobileOpen ? (
+            <button
+              onClick={onCloseMobile}
+              className="icon-btn"
+              aria-label="Close Sidebar"
+              style={{ width: 30, height: 30 }}
+            >
+              <X size={16} />
+            </button>
+          ) : (
+            <span className="badge badge-brand" style={{ fontSize: '0.625rem', padding: '0.15rem 0.4rem' }}>
+              Corridors
+            </span>
+          )}
         </div>
 
         {/* Quick Action Buttons */}
-        <div style={{ padding: '1rem 1.25rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ padding: '0.875rem 1rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <button
             onClick={() => { onOpenCreateRequest(); onCloseMobile?.(); }}
             className="btn btn-primary btn-sm"
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '0.625rem 0.875rem' }}
+            style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
           >
-            <PlusCircle size={16} />
+            <PlusCircle size={15} />
             <span>Request an Item</span>
           </button>
 
           <button
             onClick={() => { onOpenPublishJourney(); onCloseMobile?.(); }}
             className="btn btn-secondary btn-sm"
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '0.625rem 0.875rem' }}
+            style={{ width: '100%', justifyContent: 'flex-start', padding: '0.5625rem 0.8125rem' }}
           >
-            <Car size={16} />
-            <span>Publish Journey</span>
+            <Car size={15} />
+            <span>Publish Commute</span>
           </button>
         </div>
 
         {/* Navigation Menu */}
-        <nav style={{ padding: '0.75rem 0.875rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', padding: '0.5rem 0.625rem' }}>
+        <nav style={{ padding: '0.625rem 0.75rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem' }} aria-label="Sidebar Navigation">
+          <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', padding: '0.375rem 0.5rem' }}>
             Navigation
           </div>
 
@@ -152,22 +168,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '0.625rem 0.75rem',
+                  padding: '0.5625rem 0.6875rem',
                   borderRadius: 'var(--radius-md)',
                   color: isActive ? 'var(--color-forest-850)' : 'var(--text-secondary)',
                   backgroundColor: isActive ? 'var(--bg-brand-subtle)' : 'transparent',
                   border: isActive ? '1px solid rgba(45, 212, 191, 0.25)' : '1px solid transparent',
                   fontWeight: isActive ? 700 : 500,
-                  fontSize: '0.875rem',
-                  transition: 'all var(--transition-fast)'
+                  fontSize: '0.8125rem',
+                  transition: 'all var(--transition-fast)',
+                  textAlign: 'left'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <Icon size={18} color={isActive ? 'var(--color-forest-700)' : 'var(--text-tertiary)'} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                  <Icon size={16} color={isActive ? 'var(--color-forest-700)' : 'var(--text-tertiary)'} />
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
-                  <span className="badge badge-active" style={{ fontSize: '0.625rem', padding: '0.125rem 0.375rem' }}>
+                  <span className="badge badge-active" style={{ fontSize: '0.5625rem', padding: '0.1rem 0.35rem' }}>
                     {item.badge}
                   </span>
                 )}
@@ -176,12 +193,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Backend & Security Status Box */}
-        <div style={{ padding: '0 1.25rem 1rem' }}>
+        {/* Supabase Connection Status Card */}
+        <div style={{ padding: '0 0.875rem 0.625rem' }}>
           <div
             onClick={onOpenSupabaseConfig}
+            role="button"
+            tabIndex={0}
+            title="Supabase Database Settings"
             style={{
-              padding: '0.75rem',
+              padding: '0.625rem 0.75rem',
               borderRadius: 'var(--radius-md)',
               backgroundColor: 'var(--bg-surface-subtle)',
               border: '1px solid var(--border-subtle)',
@@ -189,22 +209,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              fontSize: '0.75rem'
+              transition: 'all var(--transition-fast)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: isFirebaseConnected ? 'var(--color-mint-500)' : '#F59E0B'
-              }} />
+              <span className={`status-dot ${
+                supabaseStatus === 'connected' ? 'status-dot-connected' :
+                supabaseStatus === 'connecting' ? 'status-dot-connecting' :
+                'status-dot-offline'
+              }`} />
               <div>
-                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {isFirebaseConnected ? 'Firebase Active' : 'Local Persistence'}
+                <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                  {supabaseStatus === 'connected' ? 'Supabase Connected' :
+                   supabaseStatus === 'connecting' ? 'Supabase Connecting...' :
+                   'Supabase Offline'}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                  {isFirebaseConnected ? 'Cloud Auth Connected' : 'Zero-config mode'}
+                  {supabaseStatus === 'connected' ? 'PostgreSQL & Realtime' :
+                   supabaseStatus === 'connecting' ? 'Probing database' :
+                   'Client mode active'}
                 </div>
               </div>
             </div>
@@ -214,7 +237,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Card & Settings Footer */}
         <div style={{
-          padding: '1rem 1.25rem',
+          padding: '0.875rem 1rem',
           borderTop: '1px solid var(--border-subtle)',
           backgroundColor: 'var(--bg-surface-subtle)'
         }}>
@@ -225,19 +248,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <img
                     src={user.avatarUrl}
                     alt={user.fullName}
-                    style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
                   />
                 ) : (
                   <div style={{
-                    width: '36px',
-                    height: '36px',
+                    width: '32px',
+                    height: '32px',
                     borderRadius: '50%',
                     backgroundColor: 'var(--color-forest-800)',
                     color: 'white',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontWeight: 700
+                    fontWeight: 700,
+                    fontSize: '0.75rem'
                   }}>
                     {user.fullName[0]}
                   </div>
@@ -256,16 +280,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={toggleTheme}
                   aria-label="Toggle Theme"
-                  style={{ padding: '0.375rem', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)' }}
+                  className="icon-btn"
+                  style={{ width: 28, height: 28 }}
                 >
-                  {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+                  {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
                 </button>
                 <button
                   onClick={() => signOut()}
                   aria-label="Sign Out"
-                  style={{ padding: '0.375rem', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)' }}
+                  className="icon-btn"
+                  style={{ width: 28, height: 28 }}
                 >
-                  <LogOut size={16} />
+                  <LogOut size={15} />
                 </button>
               </div>
             </div>
@@ -281,7 +307,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 onClick={toggleTheme}
                 aria-label="Toggle Theme"
-                className="btn btn-secondary btn-sm"
+                className="icon-btn"
               >
                 {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
               </button>

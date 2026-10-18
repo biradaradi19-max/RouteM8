@@ -16,6 +16,8 @@ import {
   fetchTransporterLocationFromDb,
   subscribeToTransporterLocation,
   mapDbLocationToTransporterLocation,
+  checkSupabaseConnection,
+  setSupabaseClientForTesting,
 } from './supabase';
 
 describe('Route M8 Supabase Service — Security, Error Handling & Empty Dataset Verification', () => {
@@ -487,6 +489,43 @@ describe('Route M8 Supabase Service — Security, Error Handling & Empty Dataset
 
       unsubscribe();
       expect(mockRemoveChannel).toHaveBeenCalledWith(mockChannelObj);
+    });
+  });
+
+  describe('9. Live Backend Connection Probe Verification', () => {
+    beforeEach(() => {
+      setSupabaseClientForTesting(null);
+    });
+
+    it('should report offline when backend is not configured', async () => {
+      const status = await checkSupabaseConnection();
+      expect(status).toBe('offline');
+    });
+
+    it('should report connected only when probe query succeeds without error', async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({ data: [{ id: 'req-1' }], error: null }),
+      });
+      const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
+      const mockClient = { from: mockFrom } as any;
+
+      setSupabaseClientForTesting(mockClient);
+
+      const status = await checkSupabaseConnection();
+      expect(status).toBe('connected');
+    });
+
+    it('should report offline when probe query returns a database or network error', async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({ data: null, error: { message: 'Database connection refused' } }),
+      });
+      const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
+      const mockClient = { from: mockFrom } as any;
+
+      setSupabaseClientForTesting(mockClient);
+
+      const status = await checkSupabaseConnection();
+      expect(status).toBe('offline');
     });
   });
 });

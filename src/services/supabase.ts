@@ -46,6 +46,42 @@ export function setSupabaseClientForTesting(client: SupabaseClient | null): void
   customClient = client;
 }
 
+export function getActiveSupabaseClient(): SupabaseClient | null {
+  return customClient || supabase;
+}
+
+export type SupabaseConnectionStatus = 'connected' | 'connecting' | 'offline';
+
+/**
+ * Checks the real Supabase database connection state with a bounded probe.
+ * Never reports 'connected' merely because environment variables are present.
+ */
+export async function checkSupabaseConnection(): Promise<SupabaseConnectionStatus> {
+  const client = customClient || supabase;
+  if (!client || (!isSupabaseConfigured && !customClient)) {
+    return 'offline';
+  }
+
+  try {
+    let timeoutId: any;
+    const timeoutPromise = new Promise<{ error: Error }>((resolve) => {
+      timeoutId = setTimeout(() => resolve({ error: new Error('probe timeout') }), 3500);
+    });
+
+    const probePromise = client.from('delivery_requests').select('id').limit(1);
+
+    const result = await Promise.race([probePromise, timeoutPromise]) as { error?: any };
+    clearTimeout(timeoutId);
+
+    if (result && result.error) {
+      return 'offline';
+    }
+    return 'connected';
+  } catch {
+    return 'offline';
+  }
+}
+
 // ============================================================================
 // DATABASE SCHEMA ROW TYPES & SECURE MAPPINGS
 // ============================================================================

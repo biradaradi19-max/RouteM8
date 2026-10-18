@@ -17,6 +17,8 @@ import {
   createDeliveryRequestInDb,
   createPublishedJourneyInDb,
   updateDeliveryRequestStatusInDb,
+  checkSupabaseConnection,
+  type SupabaseConnectionStatus,
 } from '../services/supabase';
 import { calculateRouteMatch } from '../services/routing';
 import { useAuth } from './AuthContext';
@@ -36,6 +38,7 @@ export interface AppContextType {
   activities: ActivityItem[];
   isLoadingData: boolean;
   backendError: string | null;
+  supabaseStatus: SupabaseConnectionStatus;
   refreshData: () => Promise<void>;
   
   // Selection & Real Matching
@@ -133,6 +136,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseConnectionStatus>(
+    isSupabaseConfigured ? 'connecting' : 'offline'
+  );
+
+  // Probe real Supabase backend connection state
+  useEffect(() => {
+    let isMounted = true;
+    checkSupabaseConnection().then(status => {
+      if (isMounted) {
+        setSupabaseStatus(status);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Selections & Match Engine State
   const [selectedRequest, setSelectedRequest] = useState<DeliveryRequest | null>(null);
@@ -481,6 +500,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activities,
         isLoadingData,
         backendError,
+        supabaseStatus,
         refreshData,
         selectedRequest,
         selectedJourney,
