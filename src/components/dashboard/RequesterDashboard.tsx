@@ -598,14 +598,50 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                 >
                   <div>
                     {/* Status & Category */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.375rem' }}>
                       <span className={`badge ${statusBadgeClass}`}>
-                        {req.status.replace('_', ' ')}
+                        {req.status === 'open' ? (
+                          req.dispatchStatus === 'expanding_search'
+                            ? 'Finding More Partners'
+                            : req.dispatchStatus === 'no_partner_available'
+                            ? 'No Partner Available'
+                            : 'Searching for a partner'
+                        ) : req.status === 'matched' ? (
+                          'Partner Assigned'
+                        ) : (
+                          req.status.replace('_', ' ')
+                        )}
                       </span>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
                         {req.category || 'Package'}
                       </span>
                     </div>
+
+                    {/* Progressive Dispatch Progress Callout */}
+                    {req.status === 'open' && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.4rem 0.625rem',
+                        marginBottom: '0.5rem',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: req.dispatchStatus === 'no_partner_available' ? 'var(--status-cancelled-bg)' : 'var(--color-mint-50)',
+                        border: `1px solid ${req.dispatchStatus === 'no_partner_available' ? 'var(--status-cancelled-border)' : 'var(--color-mint-200)'}`,
+                        fontSize: '0.75rem',
+                        color: req.dispatchStatus === 'no_partner_available' ? 'var(--status-cancelled-text)' : 'var(--color-mint-700)',
+                        fontWeight: 600
+                      }}>
+                        <Radio size={13} className={req.dispatchStatus !== 'no_partner_available' ? 'animate-pulse' : ''} style={{ flexShrink: 0 }} />
+                        <span>
+                          {req.dispatchStatus === 'expanding_search'
+                            ? 'Expanding radius to 6 km and matching commute routes...'
+                            : req.dispatchStatus === 'no_partner_available'
+                            ? 'No partner available currently. Expand offer or retry.'
+                            : 'Searching for a partner within 3 km pickup radius...'}
+                        </span>
+                      </div>
+                    )}
 
                     <h3 style={{ fontSize: '1.0625rem', margin: '0 0 0.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                       {req.title}
