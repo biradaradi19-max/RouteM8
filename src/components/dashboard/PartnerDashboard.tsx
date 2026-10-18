@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { getSocket } from '../../services/socket';
 import {
   Car,
   Package,
@@ -107,6 +108,55 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
   const totalEarned = completedDeliveries.reduce((sum, r) => sum + (r.compensation || 0), 0);
   const pendingEarnings = activeDeliveries.reduce((sum, r) => sum + (r.compensation || 0), 0);
   const defaultJourney = journeys[0];
+
+  // Broadcast partner availability and location to Socket.IO backend for smart dispatch
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+
+    getSocket().then((s) => {
+      if (!isMounted) return;
+      s.emit('partner:presence', { isAvailable: partnerAvailable });
+
+      if (defaultJourney) {
+        s.emit('partner:journey', {
+          originCoords: defaultJourney.originCoords,
+          destCoords: defaultJourney.destCoords,
+          maxDetourMinutes: defaultJourney.maxDetourMinutes,
+        });
+      }
+
+      if (partnerAvailable && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (!isMounted) return;
+            s.emit('partner:location', {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              heading: pos.coords.heading ?? undefined,
+              speed: pos.coords.speed ?? undefined,
+              isAvailable: true,
+            });
+          },
+          () => {
+            // If GPS denied, fallback to default journey origin if available
+            if (defaultJourney && isMounted) {
+              s.emit('partner:location', {
+                latitude: defaultJourney.originCoords[0],
+                longitude: defaultJourney.originCoords[1],
+                isAvailable: true,
+              });
+            }
+          },
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+      }
+    }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, partnerAvailable, defaultJourney]);
 
   // Verify PIN submission
   const handleVerifyPin = async (requestId: string) => {
@@ -711,17 +761,46 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                 >
                   <div>
                     {/* Detour badge & category */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                      <span className="tabular-nums" style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        color: 'var(--color-mint-600)',
-                        backgroundColor: 'var(--color-mint-50)',
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: 'var(--radius-full)'
-                      }}>
-                        +{req.estimatedDetourMinutes || 5} min detour
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.375rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+                        <span className="tabular-nums" style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          color: 'var(--color-mint-600)',
+                          backgroundColor: 'var(--color-mint-50)',
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: 'var(--radius-full)'
+                        }}>
+                          +{req.estimatedDetourMinutes || 5} min detour
+                        </span>
+
+                        {req.matchType === 'corridor' && (
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 700,
+                            color: 'var(--color-forest-900)',
+                            backgroundColor: 'var(--color-mint-100)',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: 'var(--radius-full)',
+                            border: '1px solid var(--color-mint-300)'
+                          }}>
+                            ⚡ Route Match
+                          </span>
+                        )}
+                        {req.matchType === 'nearby' && (
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 700,
+                            color: 'var(--color-forest-800)',
+                            backgroundColor: 'var(--bg-surface-subtle)',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: 'var(--radius-full)',
+                            border: '1px solid var(--border-medium)'
+                          }}>
+                            📍 Nearby Match
+                          </span>
+                        )}
+                      </div>
 
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
                         {req.itemSize} item • {req.urgency}
@@ -821,10 +900,10 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         className="btn btn-secondary btn-sm"
                         data-testid="reject-delivery-button"
                         style={{ color: 'var(--color-charcoal-700)', padding: '0.375rem 0.625rem' }}
-                        title="Dismiss this delivery for your account"
+                        title="Decline / dismiss this delivery opportunity for your account"
                       >
                         {isRejecting ? <span className="spinner" style={{ width: 13, height: 13 }} /> : <X size={13} />}
-                        <span>{isRejecting ? 'Rejecting...' : 'Reject'}</span>
+                        <span>{isRejecting ? 'Declining...' : 'Decline'}</span>
                       </button>
                       <button
                         type="button"

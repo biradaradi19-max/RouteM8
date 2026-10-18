@@ -7,7 +7,9 @@ import type {
   DeliveryStatus, 
   ItemSize, 
   RequestCategory, 
-  RequestUrgency 
+  RequestUrgency,
+  DispatchOpportunityPayload,
+  DispatchStatusPayload,
 } from '../types';
 
 import { deliveriesApi, journeysApi, activitiesApi } from '../services/api';
@@ -240,12 +242,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           );
         };
 
+        const handleDispatchOpportunity = (payload: DispatchOpportunityPayload) => {
+          if (!payload?.delivery?.id) return;
+          const incoming: DeliveryRequest = {
+            ...payload.delivery,
+            matchType: payload.matchType,
+          };
+          setRequests((prev) => {
+            const exists = prev.some((r) => r.id === incoming.id);
+            if (exists) {
+              return prev.map((r) => (r.id === incoming.id ? { ...r, ...incoming } : r));
+            }
+            return [incoming, ...prev];
+          });
+        };
+
+        const handleDispatchStatus = (payload: DispatchStatusPayload) => {
+          if (!payload?.deliveryId) return;
+          setRequests((prev) =>
+            prev.map((r) =>
+              r.id === payload.deliveryId ? { ...r, dispatchStatus: payload.state } : r
+            )
+          );
+        };
+
+        const handleCancelled = ({ deliveryId }: { deliveryId: string }) => {
+          setRequests((prev) =>
+            prev.map((r) =>
+              r.id === deliveryId ? { ...r, status: 'cancelled' as DeliveryStatus } : r
+            )
+          );
+        };
+
         s.on('delivery:claimed', handleClaimed);
         s.on('delivery:matched', handleMatched);
+        s.on('delivery:cancelled', handleCancelled);
+        s.on('dispatch:opportunity', handleDispatchOpportunity);
+        s.on('dispatch:status', handleDispatchStatus);
 
         unsubSocket = () => {
           s.off('delivery:claimed', handleClaimed);
           s.off('delivery:matched', handleMatched);
+          s.off('delivery:cancelled', handleCancelled);
+          s.off('dispatch:opportunity', handleDispatchOpportunity);
+          s.off('dispatch:status', handleDispatchStatus);
         };
       })
       .catch((err) => {

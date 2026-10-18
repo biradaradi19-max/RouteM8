@@ -99,6 +99,27 @@ export interface DeliveryRequest {
   rejectedBy?: string[];
   distanceKm?: number;
   estimatedDurationMin?: number;
+  matchType?: 'nearby' | 'corridor';
+  dispatchStatus?: 'idle' | 'searching_partner' | 'expanding_search' | 'partner_assigned' | 'no_partner_available' | 'cancelled';
+}
+
+export interface DispatchOpportunityPayload {
+  delivery: DeliveryRequest;
+  matchType: 'nearby' | 'corridor';
+  distanceToPickupKm: number;
+  estimatedEtaMinutes: number;
+  score: number;
+  directionalAlignment?: number;
+  stage?: number;
+}
+
+export interface DispatchStatusPayload {
+  deliveryId: string;
+  state: 'idle' | 'searching_partner' | 'expanding_search' | 'partner_assigned' | 'no_partner_available' | 'cancelled';
+  stage?: number;
+  radiusKm?: number;
+  candidateCount?: number;
+  reason?: string;
 }
 
 export interface PublishedJourney {
