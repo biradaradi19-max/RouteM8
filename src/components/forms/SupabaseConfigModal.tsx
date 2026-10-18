@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { isSupabaseConfigured } from '../../services/supabase';
+import { isFirebaseConfigured, getFirebaseConfig } from '../../services/firebase';
 import {
   getGoogleMapsApiKey,
   getGoogleMapsMapId,
@@ -11,7 +11,7 @@ import {
   isLiveKitConfigured,
   setRuntimeLiveKitUrl,
 } from '../../services/livekitConfig';
-import { X, Database, CheckCircle2, Copy, AlertCircle, ExternalLink, Map, Save, PhoneCall } from 'lucide-react';
+import { X, CheckCircle2, Copy, AlertCircle, ExternalLink, Map, Save, PhoneCall, Flame } from 'lucide-react';
 
 interface SupabaseConfigModalProps {
   isOpen: boolean;
@@ -20,7 +20,7 @@ interface SupabaseConfigModalProps {
 
 export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({ isOpen, onClose }) => {
   const [copiedEnv, setCopiedEnv] = useState(false);
-  const [copiedSchema, setCopiedSchema] = useState(false);
+  const [copiedProjectId, setCopiedProjectId] = useState(false);
 
   const [mapsKeyInput, setMapsKeyInput] = useState<string>(() => getGoogleMapsApiKey());
   const [mapsMapIdInput, setMapsMapIdInput] = useState<string>(() => getGoogleMapsMapId());
@@ -31,11 +31,17 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({ isOpen
 
   if (!isOpen) return null;
 
-  const envSnippet = `# Route M8 — .env Configuration
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-# Server-side admin key (NEVER prefix with VITE_)
-SUPABASE_SERVICE_ROLE_KEY=
+  const currentFbConfig = getFirebaseConfig();
+  const isFbConnected = isFirebaseConfigured();
+
+  const envSnippet = `# Route M8 — Firebase & Google Maps Configuration
+VITE_FIREBASE_API_KEY=${currentFbConfig.apiKey || 'AIzaSyCxPYT1biGr5-pqmbKSTzD4ZJs-RQ4lFBs'}
+VITE_FIREBASE_AUTH_DOMAIN=${currentFbConfig.authDomain || 'routem8-36895.firebaseapp.com'}
+VITE_FIREBASE_PROJECT_ID=${currentFbConfig.projectId || 'routem8-36895'}
+VITE_FIREBASE_STORAGE_BUCKET=${currentFbConfig.storageBucket || 'routem8-36895.firebasestorage.app'}
+VITE_FIREBASE_MESSAGING_SENDER_ID=${currentFbConfig.messagingSenderId || '236126555492'}
+VITE_FIREBASE_APP_ID=${currentFbConfig.appId || '1:236126555492:web:7b117e8ec53972bc86be71'}
+VITE_FIREBASE_MEASUREMENT_ID=${currentFbConfig.measurementId || 'G-4GGKRSS4G9'}
 VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
 VITE_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
 VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
@@ -46,10 +52,10 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
     setTimeout(() => setCopiedEnv(false), 2000);
   };
 
-  const copySchemaReference = () => {
-    navigator.clipboard.writeText('supabase/migrations/20261015000001_transporter_location_tracking.sql');
-    setCopiedSchema(true);
-    setTimeout(() => setCopiedSchema(false), 2000);
+  const copyProjectId = () => {
+    navigator.clipboard.writeText(currentFbConfig.projectId || 'routem8-36895');
+    setCopiedProjectId(true);
+    setTimeout(() => setCopiedProjectId(false), 2000);
   };
 
   const handleSaveMapsConfig = (e: React.FormEvent) => {
@@ -93,24 +99,24 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
               color: 'var(--color-mint-400)',
             }}
           >
-            <Database size={22} />
+            <Flame size={22} color="#F59E0B" />
           </div>
           <div>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-mint-600)', textTransform: 'uppercase' }}>
               Cloud & Mapping Infrastructure
             </span>
             <h2 id="backend-cfg-title" style={{ fontSize: '1.375rem', margin: 0 }}>
-              Backend & Google Maps Status
+              Firebase & Google Maps Status
             </h2>
           </div>
         </div>
 
-        {/* Supabase Status Banner */}
+        {/* Firebase Status Banner */}
         <div
           style={{
-            backgroundColor: isSupabaseConfigured ? 'var(--status-active-bg)' : 'var(--bg-surface-subtle)',
+            backgroundColor: isFbConnected ? 'var(--status-active-bg)' : 'var(--bg-surface-subtle)',
             border: '1px solid',
-            borderColor: isSupabaseConfigured ? 'var(--status-active-border)' : 'var(--border-medium)',
+            borderColor: isFbConnected ? 'var(--status-active-border)' : 'var(--border-medium)',
             borderRadius: 'var(--radius-md)',
             padding: '1rem',
             marginBottom: '1rem',
@@ -119,15 +125,15 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
             gap: '0.75rem',
           }}
         >
-          {isSupabaseConfigured ? (
+          {isFbConnected ? (
             <>
               <CheckCircle2 size={18} style={{ color: 'var(--status-active-text)', marginTop: '2px', flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--status-active-text)' }}>
-                  Connected to Live Supabase Backend
+                  Connected to Firebase Cloud ({currentFbConfig.projectId || 'routem8-36895'})
                 </div>
                 <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                  PostgreSQL database, Row-Level Security, and Realtime GPS streaming are active.
+                  Firebase Authentication (Google OAuth & Email/Password) and Analytics are active.
                 </div>
               </div>
             </>
@@ -136,10 +142,10 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
               <AlertCircle size={18} style={{ color: '#F59E0B', marginTop: '2px', flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Supabase Backend Unconfigured
+                  Firebase Local Configuration Active
                 </div>
                 <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                  No backend credentials detected in environment variables. Database operations fail safely with zero fabricated data.
+                  Default Firebase credentials active. Add custom VITE_FIREBASE_* variables to override if needed.
                 </div>
               </div>
             </>
@@ -242,12 +248,12 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
               className={`badge badge-${isLiveKitReady ? 'active' : 'pending'}`}
               style={{ fontSize: '0.75rem' }}
             >
-              {isLiveKitReady ? 'LiveKit URL Configured' : 'URL Unset (Edge Function Default)'}
+              {isLiveKitReady ? 'LiveKit URL Configured' : 'URL Unset'}
             </span>
           </div>
 
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-            Route M8 generates scoped LiveKit tokens via the <code>livekit-token</code> Supabase Edge Function to protect server secrets.
+            Route M8 provides encrypted real-time audio calls between requesters and transporters.
           </p>
 
           <form onSubmit={handleSaveLivekitConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
@@ -281,9 +287,9 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
         {/* Configuration Instructions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
-            <label className="form-label">Production Environment (.env)</label>
+            <label className="form-label">Firebase & Environment (.env)</label>
             <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              Add your credentials to <code>.env</code> or <code>.env.local</code> in the project root:
+              Firebase credentials loaded for project <code>{currentFbConfig.projectId || 'routem8-36895'}</code>:
             </div>
             <pre
               style={{
@@ -319,26 +325,26 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
             }}
           >
             <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Database Migrations & Realtime Setup</span>
+              <span>Firebase Console & Authorized Domains</span>
               <a
-                href="https://supabase.com/dashboard"
+                href="https://console.firebase.google.com/project/routem8-36895/authentication"
                 target="_blank"
                 rel="noreferrer"
                 style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
               >
-                Dashboard <ExternalLink size={12} />
+                Firebase Console <ExternalLink size={12} />
               </a>
             </div>
             <div style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              Transporter live location tracking and Realtime publication schema is in <code>supabase/migrations/20261015000001_transporter_location_tracking.sql</code>.
+              Project ID: <code>{currentFbConfig.projectId || 'routem8-36895'}</code>. Ensure <code>localhost</code> and your production Vercel domain are authorized in Authentication &gt; Settings &gt; Authorized domains.
             </div>
             <button
               type="button"
-              onClick={copySchemaReference}
+              onClick={copyProjectId}
               className="btn btn-secondary btn-sm"
               style={{ width: '100%' }}
             >
-              <Copy size={14} /> {copiedSchema ? 'Copied File Reference!' : 'Copy Schema File Path'}
+              <Copy size={14} /> {copiedProjectId ? 'Copied Project ID!' : 'Copy Project ID'}
             </button>
           </div>
 

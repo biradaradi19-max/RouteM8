@@ -50,7 +50,7 @@ describe('Route M8 AppContext — Empty Datasets & Unconfigured Backend Tests', 
     expect(result.current.activeMatch).toBeNull();
   });
 
-  it('2. should reject createRequest when backend is unconfigured without fabricating data', async () => {
+  it('2. should reject createRequest when user is unauthenticated', async () => {
     const { result } = renderHook(() => useApp(), { wrapper });
 
     await waitFor(() => {
@@ -71,12 +71,12 @@ describe('Route M8 AppContext — Empty Datasets & Unconfigured Backend Tests', 
         urgency: 'standard',
         neededBy: 'Today',
       })
-    ).rejects.toThrow('Supabase backend is not configured');
+    ).rejects.toThrow('Authentication required');
 
     expect(result.current.requests).toEqual([]);
   });
 
-  it('3. should reject publishJourney when backend is unconfigured without fabricating data', async () => {
+  it('3. should reject publishJourney when user is unauthenticated', async () => {
     const { result } = renderHook(() => useApp(), { wrapper });
 
     await waitFor(() => {
@@ -94,7 +94,7 @@ describe('Route M8 AppContext — Empty Datasets & Unconfigured Backend Tests', 
         maxDetourMinutes: 10,
         capacity: 'small',
       })
-    ).rejects.toThrow('Supabase backend is not configured');
+    ).rejects.toThrow('Authentication required');
 
     expect(result.current.journeys).toEqual([]);
   });

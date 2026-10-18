@@ -34,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile
 }) => {
   const { currentView, setCurrentView, theme, toggleTheme } = useApp();
-  const { user, isAuthenticated, signOut, isSupabaseConnected } = useAuth();
+  const { user, isAuthenticated, signOut, isFirebaseConnected } = useAuth();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -197,14 +197,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 width: '8px',
                 height: '8px',
                 borderRadius: '50%',
-                backgroundColor: isSupabaseConnected ? 'var(--color-mint-500)' : '#F59E0B'
+                backgroundColor: isFirebaseConnected ? 'var(--color-mint-500)' : '#F59E0B'
               }} />
               <div>
                 <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {isSupabaseConnected ? 'Supabase Connected' : 'Local Persistence'}
+                  {isFirebaseConnected ? 'Firebase Active' : 'Local Persistence'}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                  {isSupabaseConnected ? 'RLS Active' : 'Zero-config mode'}
+                  {isFirebaseConnected ? 'Cloud Auth Connected' : 'Zero-config mode'}
                 </div>
               </div>
             </div>

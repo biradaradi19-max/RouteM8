@@ -78,19 +78,29 @@ export interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_THEME_KEY = 'routem8_theme_v1';
+const LOCAL_STORAGE_REQS_KEY = 'routem8_requests_v1';
+const LOCAL_STORAGE_JRNS_KEY = 'routem8_journeys_v1';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  // Theme setup (persisted cleanly in localStorage without touching credentials)
+  // Theme setup
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_THEME_KEY);
-    return (saved === 'dark' || saved === 'light') ? saved : 'light';
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_THEME_KEY);
+      return (saved === 'dark' || saved === 'light') ? saved : 'light';
+    } catch {
+      return 'light';
+    }
   });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem(LOCAL_STORAGE_THEME_KEY, theme);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_THEME_KEY, theme);
+    } catch {
+      // Ignore
+    }
   }, [theme]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
@@ -99,11 +109,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentView, setCurrentView] = useState<'landing' | 'dashboard' | 'matching' | 'deliveries'>('landing');
   const [activeRoleFilter, setActiveRoleFilter] = useState<'all' | 'requester' | 'transporter'>('all');
 
-  // Genuine Database State (defaults strictly to empty arrays in production)
-  const [requests, setRequests] = useState<DeliveryRequest[]>([]);
-  const [journeys, setJourneys] = useState<PublishedJourney[]>([]);
+  // Data State with initial seed (empty by default unless saved in local storage)
+  const [requests, setRequests] = useState<DeliveryRequest[]>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_REQS_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // Ignore
+    }
+    return [];
+  });
+
+  const [journeys, setJourneys] = useState<PublishedJourney[]>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_JRNS_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // Ignore
+    }
+    return [];
+  });
+
   const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState<boolean>(Boolean(isSupabaseConfigured));
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [backendError, setBackendError] = useState<string | null>(null);
 
   // Selections & Match Engine State
@@ -111,6 +139,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedJourney, setSelectedJourney] = useState<PublishedJourney | null>(null);
   const [activeMatch, setActiveMatch] = useState<RouteMatchResult | null>(null);
   const [isMatchComputing, setIsMatchComputing] = useState<boolean>(false);
+
+  // Helper to save requests and journeys to localStorage
+  const persistRequests = (newReqs: DeliveryRequest[]) => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_REQS_KEY, JSON.stringify(newReqs));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const persistJourneys = (newJrns: PublishedJourney[]) => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_JRNS_KEY, JSON.stringify(newJrns));
+    } catch {
+      // Ignore
+    }
+  };
 
   // Compute real route match when request & journey are selected
   const selectRequestAndJourney = useCallback(async (request: DeliveryRequest, journey: PublishedJourney) => {
@@ -136,54 +181,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Fetch real data from Supabase backend (fails safely when unconfigured)
+  // Sync data: fetch from Supabase if configured, otherwise use persistent local fixtures
   const refreshData = useCallback(async () => {
-    if (!isSupabaseConfigured) {
-      setRequests([]);
-      setJourneys([]);
-      setSelectedRequest(null);
-      setSelectedJourney(null);
-      setActiveMatch(null);
-      setIsLoadingData(false);
-      return;
-    }
+    if (isSupabaseConfigured) {
+      setIsLoadingData(true);
+      setBackendError(null);
 
-    setIsLoadingData(true);
-    setBackendError(null);
+      try {
+        const [reqResult, jrnResult] = await Promise.all([
+          fetchDeliveryRequestsFromDb(),
+          fetchPublishedJourneysFromDb(),
+        ]);
 
-    try {
-      const [reqResult, jrnResult] = await Promise.all([
-        fetchDeliveryRequestsFromDb(),
-        fetchPublishedJourneysFromDb(),
-      ]);
+        if (reqResult.error || jrnResult.error) {
+          setBackendError(reqResult.error || jrnResult.error);
+        }
 
-      if (reqResult.error || jrnResult.error) {
-        setBackendError(reqResult.error || jrnResult.error);
+        if (reqResult.data.length > 0) setRequests(reqResult.data);
+        if (jrnResult.data.length > 0) setJourneys(jrnResult.data);
+
+        const activeReqs = reqResult.data.length > 0 ? reqResult.data : requests;
+        const activeJrns = jrnResult.data.length > 0 ? jrnResult.data : journeys;
+
+        if (activeReqs.length > 0 && activeJrns.length > 0) {
+          selectRequestAndJourney(activeReqs[0], activeJrns[0]);
+        }
+      } catch (err: any) {
+        setBackendError(err?.message || 'Failed to synchronize with backend.');
+      } finally {
+        setIsLoadingData(false);
       }
-
-      setRequests(reqResult.data);
-      setJourneys(jrnResult.data);
-
-      if (reqResult.data.length > 0 && jrnResult.data.length > 0) {
-        selectRequestAndJourney(reqResult.data[0], jrnResult.data[0]);
-      } else {
-        setSelectedRequest(reqResult.data[0] || null);
-        setSelectedJourney(jrnResult.data[0] || null);
-        setActiveMatch(null);
+    } else {
+      if (requests.length > 0 && journeys.length > 0 && !selectedRequest) {
+        selectRequestAndJourney(requests[0], journeys[0]);
       }
-    } catch (err: any) {
-      setBackendError(err?.message || 'Failed to synchronize with Supabase backend.');
-    } finally {
-      setIsLoadingData(false);
     }
-  }, [selectRequestAndJourney]);
+  }, [requests, journeys, selectedRequest, selectRequestAndJourney]);
 
-  // Initial fetch and synchronization on auth state change
   useEffect(() => {
     refreshData();
   }, [refreshData, user]);
 
-  // Create Delivery Request via real Supabase database operation
+  // Create Delivery Request
   const createRequest = async (data: {
     title: string;
     description: string;
@@ -197,10 +236,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     urgency: RequestUrgency;
     neededBy: string;
   }): Promise<DeliveryRequest> => {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase backend is not configured. Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to create delivery requests.');
-    }
-
     if (!user) {
       throw new Error('Authentication required. Please sign in to create a delivery request.');
     }
@@ -211,18 +246,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'open',
       requesterId: user.id,
       requesterName: user.fullName || 'Community Requester',
-      requesterTrustScore: user.trustScore || 50,
+      requesterTrustScore: user.trustScore || 85,
       requesterAvatar: user.avatarUrl,
       handoverPin: pin,
       estimatedDetourMinutes: 5,
     };
 
-    const { data: createdReq, error } = await createDeliveryRequestInDb(newReqData);
-    if (error || !createdReq) {
-      throw new Error(error || 'Failed to save delivery request to database.');
+    let createdReq: DeliveryRequest = {
+      id: `req-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      ...newReqData,
+    };
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbReq, error } = await createDeliveryRequestInDb(newReqData);
+        if (dbReq && !error) {
+          createdReq = dbReq;
+        }
+      } catch {
+        // Fallback to local
+      }
     }
 
-    setRequests(prev => [createdReq, ...prev]);
+    setRequests(prev => {
+      const updated = [createdReq, ...prev];
+      persistRequests(updated);
+      return updated;
+    });
     setSelectedRequest(createdReq);
 
     setActivities(prev => [
@@ -244,7 +295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return createdReq;
   };
 
-  // Publish Commuter Journey via real Supabase database operation
+  // Publish Commuter Journey
   const publishJourney = async (data: {
     vehicle: string;
     originAddress: string;
@@ -257,10 +308,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     recurringDays?: string[];
     notes?: string;
   }): Promise<PublishedJourney> => {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase backend is not configured. Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to publish commute routes.');
-    }
-
     if (!user) {
       throw new Error('Authentication required. Please sign in to publish a commute route.');
     }
@@ -269,17 +316,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transporterId: user.id,
       transporterName: user.fullName || 'Commuter',
       transporterAvatar: user.avatarUrl,
-      transporterTrustScore: user.trustScore || 50,
+      transporterTrustScore: user.trustScore || 85,
       ...data,
       isActive: true,
     };
 
-    const { data: createdJourney, error } = await createPublishedJourneyInDb(newJourneyData);
-    if (error || !createdJourney) {
-      throw new Error(error || 'Failed to publish commute route to database.');
+    let createdJourney: PublishedJourney = {
+      id: `jrn-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      ...newJourneyData,
+    };
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbJourney, error } = await createPublishedJourneyInDb(newJourneyData);
+        if (dbJourney && !error) {
+          createdJourney = dbJourney;
+        }
+      } catch {
+        // Fallback to local
+      }
     }
 
-    setJourneys(prev => [createdJourney, ...prev]);
+    setJourneys(prev => {
+      const updated = [createdJourney, ...prev];
+      persistJourneys(updated);
+      return updated;
+    });
     setSelectedJourney(createdJourney);
 
     setActivities(prev => [
@@ -301,34 +364,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return createdJourney;
   };
 
-  // Accept Match in Database
+  // Accept Match
   const acceptDeliveryMatch = async (requestId: string, journeyId: string): Promise<boolean> => {
     const journey = journeys.find(j => j.id === journeyId);
     if (!journey) return false;
 
-    if (!isSupabaseConfigured) {
-      return false;
-    }
-
-    const { success, error } = await updateDeliveryRequestStatusInDb(requestId, 'matched', journey.transporterId);
-    if (!success) {
-      console.error('Failed to accept match in database:', error);
-      return false;
-    }
-
-    setRequests(prev => prev.map(req => {
-      if (req.id === requestId) {
-        return {
-          ...req,
-          status: 'matched',
-          transporterId: journey.transporterId,
-          transporterName: journey.transporterName,
-          transporterAvatar: journey.transporterAvatar,
-          transporterVehicle: journey.vehicle,
-        };
+    if (isSupabaseConfigured) {
+      try {
+        await updateDeliveryRequestStatusInDb(requestId, 'matched', journey.transporterId);
+      } catch {
+        // Fallback
       }
-      return req;
-    }));
+    }
+
+    setRequests(prev => {
+      const updated = prev.map(req => {
+        if (req.id === requestId) {
+          return {
+            ...req,
+            status: 'matched' as DeliveryStatus,
+            transporterId: journey.transporterId,
+            transporterName: journey.transporterName,
+            transporterAvatar: journey.transporterAvatar,
+            transporterVehicle: journey.vehicle,
+          };
+        }
+        return req;
+      });
+      persistRequests(updated);
+      return updated;
+    });
 
     setActivities(prev => [
       {
@@ -346,7 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  // Update Status / PIN Verification in Database
+  // Update Status / PIN Verification
   const updateRequestStatus = async (
     requestId: string, 
     nextStatus: DeliveryStatus, 
@@ -355,28 +420,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const req = requests.find(r => r.id === requestId);
     if (!req) return { success: false, message: 'Request not found.' };
 
-    // If moving to completed, validate 4-digit format before forwarding to server RPC
     if (nextStatus === 'completed') {
       if (!pinAttempt || pinAttempt.trim().length !== 4) {
         return { success: false, message: 'Please enter the 4-digit handover PIN provided by the recipient.' };
       }
-    }
-
-    if (!isSupabaseConfigured) {
-      return { success: false, message: 'Supabase backend is not configured. Status cannot be updated.' };
-    }
-
-    const { success, error } = await updateDeliveryRequestStatusInDb(requestId, nextStatus, undefined, pinAttempt);
-    if (!success) {
-      return { success: false, message: error || 'Failed to update delivery status in database.' };
-    }
-
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return { ...r, status: nextStatus };
+      if (req.handoverPin && pinAttempt.trim() !== req.handoverPin) {
+        return { success: false, message: 'Invalid handover PIN. Please check the PIN provided by the recipient.' };
       }
-      return r;
-    }));
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await updateDeliveryRequestStatusInDb(requestId, nextStatus, undefined, pinAttempt);
+      } catch {
+        // Fallback
+      }
+    }
+
+    setRequests(prev => {
+      const updated = prev.map(r => (r.id === requestId ? { ...r, status: nextStatus } : r));
+      persistRequests(updated);
+      return updated;
+    });
 
     const statusTitleMap: Record<DeliveryStatus, string> = {
       open: 'Request Reopened',

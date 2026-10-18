@@ -728,7 +728,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                 <span>OSRM Routing Engine</span>
-                <span>Supabase Auth & RLS</span>
+                <span>Firebase Auth & Analytics</span>
                 <span>Leaflet Geospatial Mapping</span>
                 <span>Zero-Config Fallback</span>
               </div>

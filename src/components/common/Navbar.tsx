@@ -29,7 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleMobileMenu
 }) => {
   const { currentView, setCurrentView, theme, toggleTheme } = useApp();
-  const { user, isAuthenticated, isSupabaseConnected } = useAuth();
+  const { user, isAuthenticated, isFirebaseConnected } = useAuth();
 
   return (
     <header style={{
@@ -127,11 +127,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Action Icons & Profile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Supabase Status Pill */}
-          <button
-            onClick={onOpenSupabaseConfig}
+          {/* Firebase Status Pill */}
+          <div
             className="desktop-only"
-            title={isSupabaseConnected ? 'Connected to Supabase Cloud' : 'Running in zero-config local mode'}
+            onClick={onOpenSupabaseConfig}
+            role="button"
+            tabIndex={0}
+            title={isFirebaseConnected ? 'Connected to Firebase Cloud — Click to view status' : 'Running in local mode — Click to view status'}
             style={{
               padding: '0.375rem 0.75rem',
               borderRadius: 'var(--radius-full)',
@@ -143,20 +145,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               alignItems: 'center',
               gap: '0.5rem',
               color: 'var(--text-secondary)',
+              cursor: 'pointer',
               transition: 'all var(--transition-fast)'
             }}
           >
             <span
-              className={isSupabaseConnected ? 'pulse-indicator' : ''}
+              className={isFirebaseConnected ? 'pulse-indicator' : ''}
               style={{
                 width: '7px',
                 height: '7px',
                 borderRadius: '50%',
-                backgroundColor: isSupabaseConnected ? 'var(--color-mint-500)' : '#F59E0B'
+                backgroundColor: isFirebaseConnected ? 'var(--color-mint-500)' : '#F59E0B'
               }}
             />
-            <span>{isSupabaseConnected ? 'Supabase Live' : 'Demo Mode'}</span>
-          </button>
+            <span>{isFirebaseConnected ? 'Firebase Active' : 'Offline'}</span>
+          </div>
 
           {/* Theme Switcher */}
           <button

@@ -98,6 +98,16 @@ export async function signOutFromFirebase(): Promise<void> {
 }
 
 /**
+ * Update current Firebase user display name and photo URL
+ */
+export async function updateFirebaseUserProfile(profile: { displayName?: string; photoURL?: string }): Promise<void> {
+  if (auth.currentUser) {
+    const { updateProfile } = await import('firebase/auth');
+    await updateProfile(auth.currentUser, profile);
+  }
+}
+
+/**
  * Send password reset email via Firebase Auth
  */
 export async function sendFirebasePasswordReset(email: string): Promise<void> {
