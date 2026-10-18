@@ -1,0 +1,13 @@
+{
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "authorizedRedirectUris": [
+          "https://routem8-36895.firebaseapp.com/__/auth/handler",
+          "https://route-m8.vercel.app/__/auth/handler"
+        ]
+      }
+    }
+  }
+}

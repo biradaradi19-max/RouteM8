@@ -13,6 +13,14 @@ import {
   isForbiddenProfileUpdate,
   type DatabaseProfileRow 
 } from '../services/supabase';
+import {
+  signInWithGoogle as firebaseSignInWithGoogle,
+  signOutFromFirebase,
+  getFirebaseAuthErrorMessage,
+  auth as firebaseAuth,
+  onAuthStateChanged as onFirebaseAuthStateChanged,
+} from '../services/firebase';
+
 
 export interface SignUpResult {
   success: boolean;
@@ -41,6 +49,7 @@ export interface AuthContextType {
     organization?: string,
     username?: string
   ) => Promise<SignUpResult>;
+  signInWithGoogle: () => Promise<boolean>;
   signOut: () => Promise<boolean>;
   resetPassword: (email: string) => Promise<{ success: boolean; message: string }>;
   updateProfile: (updates: SafeProfileUpdates | Record<string, any>) => Promise<boolean>;
@@ -248,6 +257,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authListener?.subscription?.unsubscribe();
     };
   }, [loadProfileDeferred]);
+
+  // Listen for Firebase Auth state changes (e.g. Google Sign-In)
+  useEffect(() => {
+    let isMounted = true;
+
+    try {
+      const unsubscribe = onFirebaseAuthStateChanged(firebaseAuth, (fbUser) => {
+        if (!isMounted) return;
+        if (fbUser && !currentUserIdRef.current) {
+          const googleUser: UserProfile = {
+            id: fbUser.uid,
+            email: fbUser.email || '',
+            fullName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Community Member',
+            avatarUrl: fbUser.photoURL || undefined,
+            role: 'both',
+            verificationStatus: 'email_verified',
+            accountStatus: 'active',
+            trustScore: 85,
+            completedDeliveries: 0,
+            completedCommutes: 0,
+            rating: 5.0,
+            organization: fbUser.email?.endsWith('.edu') ? fbUser.email.split('@')[1] : undefined,
+          };
+          setUser(googleUser);
+          setIsLoading(false);
+        }
+      });
+
+      return () => {
+        isMounted = false;
+        unsubscribe();
+      };
+    } catch {
+      // In non-browser/mock test environments
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, []);
 
   const signIn = async (email: string, password?: string): Promise<boolean> => {
     setIsLoading(true);
@@ -461,6 +509,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInWithGoogle = async (): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+
+    // Invalidate in-flight loads
+    activeProfileLoadSeqRef.current++;
+
+    try {
+      const cred = await firebaseSignInWithGoogle();
+      const fbUser = cred.user;
+
+      const googleUser: UserProfile = {
+        id: fbUser.uid,
+        email: fbUser.email || '',
+        fullName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Community Member',
+        avatarUrl: fbUser.photoURL || undefined,
+        role: 'both',
+        verificationStatus: 'email_verified',
+        accountStatus: 'active',
+        trustScore: 85,
+        completedDeliveries: 0,
+        completedCommutes: 0,
+        rating: 5.0,
+        organization: fbUser.email?.endsWith('.edu') ? fbUser.email.split('@')[1] : undefined,
+      };
+
+      setUser(googleUser);
+      setError(null);
+      setIsLoading(false);
+      return true;
+    } catch (err: unknown) {
+      const msg = getFirebaseAuthErrorMessage(err);
+      setError(msg);
+      setIsLoading(false);
+      return false;
+    }
+  };
+
   const signOut = async (): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
@@ -477,6 +563,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return false;
         }
       }
+
+      await signOutFromFirebase().catch(() => {});
 
       setUser(null);
       setError(null);
@@ -687,6 +775,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearError,
         signIn,
         signUp,
+        signInWithGoogle,
         signOut,
         resetPassword,
         updateProfile,
