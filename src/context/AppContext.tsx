@@ -274,9 +274,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           );
         };
 
+        const handleInTransit = (updated: DeliveryRequest) => {
+          if (!updated?.id) return;
+          setRequests((prev) =>
+            prev.map((r) => (r.id === updated.id ? { ...r, ...updated, status: 'in_transit' as DeliveryStatus } : r))
+          );
+        };
+
+        const handleCompleted = (updated: DeliveryRequest) => {
+          if (!updated?.id) return;
+          setRequests((prev) =>
+            prev.map((r) => (r.id === updated.id ? { ...r, ...updated, status: 'completed' as DeliveryStatus } : r))
+          );
+        };
+
+        const handleStatusChanged = (payload: { deliveryId: string; status: DeliveryStatus; delivery?: DeliveryRequest }) => {
+          if (!payload?.deliveryId) return;
+          setRequests((prev) =>
+            prev.map((r) =>
+              r.id === payload.deliveryId
+                ? { ...r, ...(payload.delivery || {}), status: payload.status }
+                : r
+            )
+          );
+        };
+
+        const handleUpdated = (updated: DeliveryRequest) => {
+          if (!updated?.id) return;
+          setRequests((prev) =>
+            prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
+          );
+        };
+
         s.on('delivery:claimed', handleClaimed);
         s.on('delivery:matched', handleMatched);
         s.on('delivery:cancelled', handleCancelled);
+        s.on('delivery:in_transit', handleInTransit);
+        s.on('delivery:completed', handleCompleted);
+        s.on('delivery:status_changed', handleStatusChanged);
+        s.on('delivery:updated', handleUpdated);
         s.on('dispatch:opportunity', handleDispatchOpportunity);
         s.on('dispatch:status', handleDispatchStatus);
 
@@ -284,6 +320,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           s.off('delivery:claimed', handleClaimed);
           s.off('delivery:matched', handleMatched);
           s.off('delivery:cancelled', handleCancelled);
+          s.off('delivery:in_transit', handleInTransit);
+          s.off('delivery:completed', handleCompleted);
+          s.off('delivery:status_changed', handleStatusChanged);
+          s.off('delivery:updated', handleUpdated);
           s.off('dispatch:opportunity', handleDispatchOpportunity);
           s.off('dispatch:status', handleDispatchStatus);
         };

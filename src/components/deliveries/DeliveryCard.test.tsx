@@ -177,4 +177,174 @@ describe('DeliveryCard — Partner Accept & Decline Delivery Buttons', () => {
     expect(screen.queryByRole('button', { name: /accept delivery/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /decline|reject/i })).toBeNull();
   });
+
+  describe('Bug 1: Mark In Transit Role Isolation & Execution', () => {
+    const mockMatchedRequest: DeliveryRequest = {
+      ...mockOpenRequest,
+      id: 'req-matched-101',
+      status: 'matched',
+      transporterId: 'partner-user-1',
+      transporterName: 'David Commuter',
+    };
+
+    it('renders Mark In Transit button for the assigned delivery partner and triggers onUpdateStatus', async () => {
+      setupMocks('transporter');
+      mockOnUpdateStatus.mockResolvedValue({ success: true });
+
+      render(
+        <DeliveryCard
+          request={mockMatchedRequest}
+          onInspectMatch={mockOnInspectMatch}
+          onUpdateStatus={mockOnUpdateStatus}
+        />
+      );
+
+      const transitBtn = screen.getByTestId('mark-in-transit-button');
+      expect(transitBtn).toBeDefined();
+      expect(transitBtn.textContent).toContain('Mark In Transit');
+
+      fireEvent.click(transitBtn);
+
+      await waitFor(() => {
+        expect(mockOnUpdateStatus).toHaveBeenCalledWith('req-matched-101', 'in_transit');
+      });
+    });
+
+    it('displays error banner if Mark In Transit operation fails or is rejected', async () => {
+      setupMocks('transporter');
+      mockOnUpdateStatus.mockResolvedValue({
+        success: false,
+        message: 'Only the assigned delivery partner can start transit',
+      });
+
+      render(
+        <DeliveryCard
+          request={mockMatchedRequest}
+          onInspectMatch={mockOnInspectMatch}
+          onUpdateStatus={mockOnUpdateStatus}
+        />
+      );
+
+      const transitBtn = screen.getByTestId('mark-in-transit-button');
+      fireEvent.click(transitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Only the assigned delivery partner can start transit/i)).toBeDefined();
+      });
+    });
+
+    it('does NOT render Mark In Transit button for the requester; shows awaiting pickup indicator instead', () => {
+      // Current user is the Requester
+      vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
+        user: {
+          id: 'requester-user-2', // Matches mockMatchedRequest.requesterId
+          email: 'sarah@example.com',
+          fullName: 'Sarah Jenkins',
+          role: 'requester',
+          verificationStatus: 'email_verified',
+          trustScore: 95,
+          rating: 5.0,
+          completedDeliveries: 2,
+          completedCommutes: 0,
+        },
+        isAuthenticated: true,
+        isLoading: false,
+        isFirebaseConnected: true,
+        isSupabaseConnected: false,
+        error: null,
+        clearError: vi.fn(),
+        signIn: vi.fn(),
+        signUp: vi.fn(),
+        signInWithGoogle: vi.fn(),
+        signOut: vi.fn(),
+        resetPassword: vi.fn(),
+        updateProfile: vi.fn(),
+        submitVerificationRequest: vi.fn(),
+        verifyStudentOrWork: vi.fn(),
+      });
+
+      render(
+        <DeliveryCard
+          request={mockMatchedRequest}
+          onInspectMatch={mockOnInspectMatch}
+          onUpdateStatus={mockOnUpdateStatus}
+        />
+      );
+
+      // Must NOT show actionable Mark In Transit button to requester
+      expect(screen.queryByTestId('mark-in-transit-button')).toBeNull();
+
+      // Must show awaiting pickup status indicator
+      const awaitingBadge = screen.getByTestId('awaiting-pickup-badge');
+      expect(awaitingBadge).toBeDefined();
+      expect(awaitingBadge.textContent).toContain('Partner Assigned — Awaiting Pickup');
+    });
+  });
+
+  describe('Bug 2: Verify Handover PIN Drawer Flow', () => {
+    const mockInTransitRequest: DeliveryRequest = {
+      ...mockOpenRequest,
+      id: 'req-transit-202',
+      status: 'in_transit',
+      transporterId: 'partner-user-1',
+    };
+
+    it('opens drawer and handles PIN verification gracefully without JSON crash', async () => {
+      setupMocks('transporter');
+      mockOnUpdateStatus.mockResolvedValue({
+        success: true,
+        message: 'PIN verified successfully! Handover completed and compensation released.',
+      });
+
+      render(
+        <DeliveryCard
+          request={mockInTransitRequest}
+          onInspectMatch={mockOnInspectMatch}
+          onUpdateStatus={mockOnUpdateStatus}
+        />
+      );
+
+      const verifyBtn = screen.getByTestId('verify-handover-pin-button');
+      fireEvent.click(verifyBtn);
+
+      const pinInput = screen.getByPlaceholderText(/4-digit PIN/i);
+      expect(pinInput).toBeDefined();
+
+      fireEvent.change(pinInput, { target: { value: '4821' } });
+      const submitBtn = screen.getByTestId('submit-verify-pin-button');
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(mockOnUpdateStatus).toHaveBeenCalledWith('req-transit-202', 'completed', '4821');
+      });
+    });
+
+    it('displays error message gracefully when PIN verification returns an error', async () => {
+      setupMocks('transporter');
+      mockOnUpdateStatus.mockResolvedValue({
+        success: false,
+        message: 'Invalid handover PIN. 4 attempts remaining.',
+      });
+
+      render(
+        <DeliveryCard
+          request={mockInTransitRequest}
+          onInspectMatch={mockOnInspectMatch}
+          onUpdateStatus={mockOnUpdateStatus}
+        />
+      );
+
+      const verifyBtn = screen.getByTestId('verify-handover-pin-button');
+      fireEvent.click(verifyBtn);
+
+      const pinInput = screen.getByPlaceholderText(/4-digit PIN/i);
+      fireEvent.change(pinInput, { target: { value: '0000' } });
+      const submitBtn = screen.getByTestId('submit-verify-pin-button');
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Invalid handover PIN. 4 attempts remaining./i)).toBeDefined();
+      });
+    });
+  });
 });

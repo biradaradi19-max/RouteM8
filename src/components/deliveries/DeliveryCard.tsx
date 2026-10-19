@@ -17,6 +17,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Truck,
+  Clock,
 } from 'lucide-react';
 
 interface DeliveryCardProps {
@@ -43,6 +45,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
   const [isAccepting, setIsAccepting] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [isStartingTransit, setIsStartingTransit] = useState(false);
 
   // Check roles
   const isAssignedTransporter = Boolean(user && req.transporterId && user.id === req.transporterId);
@@ -133,6 +136,21 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
       setActionError(err?.message || 'Failed to decline delivery.');
     } finally {
       setIsRejecting(false);
+    }
+  };
+
+  const handleStartTransit = async () => {
+    setActionError(null);
+    setIsStartingTransit(true);
+    try {
+      const res = await onUpdateStatus(req.id, 'in_transit');
+      if (!res.success) {
+        setActionError(res.message || 'Failed to start transit.');
+      }
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to start transit.');
+    } finally {
+      setIsStartingTransit(false);
     }
   };
 
@@ -472,19 +490,53 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
             </>
           )}
 
-          {req.status === 'matched' && (
-            <button
-              onClick={() => onUpdateStatus(req.id, 'in_transit')}
-              className="btn btn-secondary btn-sm"
+          {/* Matched status: Requester sees awaiting pickup status, Partner sees Mark In Transit button */}
+          {req.status === 'matched' && isRequester && !isAssignedTransporter && (
+            <span
+              className="badge badge-warning"
+              data-testid="awaiting-pickup-badge"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.35rem 0.65rem',
+                fontSize: '0.8rem',
+              }}
             >
-              Mark In Transit
+              <Clock size={13} />
+              <span>Partner Assigned — Awaiting Pickup</span>
+            </span>
+          )}
+
+          {req.status === 'matched' && (isAssignedTransporter || (activeRoleMode === 'transporter' && !isRequester) || (!isRequester && !req.transporterId)) && (
+            <button
+              type="button"
+              onClick={handleStartTransit}
+              disabled={isStartingTransit}
+              className="btn btn-secondary btn-sm"
+              data-testid="mark-in-transit-button"
+              title="Mark package picked up and start transit route"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+              }}
+            >
+              {isStartingTransit ? (
+                <span className="spinner" style={{ width: 14, height: 14 }} />
+              ) : (
+                <Truck size={14} />
+              )}
+              <span>{isStartingTransit ? 'Updating...' : 'Mark In Transit'}</span>
             </button>
           )}
 
-          {req.status !== 'completed' && (
+          {req.status !== 'completed' && req.status !== 'open' && (
             <button
+              type="button"
               onClick={() => setIsVerifyingOpen((prev) => !prev)}
               className="btn btn-accent btn-sm"
+              data-testid="verify-handover-pin-button"
             >
               <CheckCircle2 size={15} />
               <span>Verify Handover PIN</span>
@@ -561,6 +613,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
               onClick={handleVerifyPin}
               disabled={pinCode.length !== 4 || isVerifying}
               className="btn btn-primary btn-sm"
+              data-testid="submit-verify-pin-button"
               style={{ minWidth: '85px' }}
             >
               {isVerifying ? <span className="spinner" style={{ width: 14, height: 14 }} /> : null}

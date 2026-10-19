@@ -4,6 +4,33 @@ import type { DeliveryRequest, PublishedJourney, SafeProfileUpdates, UserProfile
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '') : '') + '/api';
 
 /**
+ * Helper to safely extract JSON from a response, handling empty bodies and non-JSON payloads gracefully.
+ */
+export async function safeReadJson<T = any>(
+  res: Response
+): Promise<{ ok: boolean; status: number; data: T | null; error: string | null }> {
+  let data: any = null;
+  const text = await res.text();
+  if (text && text.trim().length > 0) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!res.ok) {
+    const errorMsg =
+      data?.error ||
+      data?.message ||
+      (res.statusText ? `${res.statusText} (${res.status})` : `Request failed with status ${res.status}`);
+    return { ok: false, status: res.status, data, error: errorMsg };
+  }
+
+  return { ok: true, status: res.status, data, error: null };
+}
+
+/**
  * Helper to execute authenticated HTTP requests with the current Firebase ID token.
  */
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
@@ -129,9 +156,9 @@ export const deliveriesApi = {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/accept`, {
         method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok) return { data: null, error: data.error || 'Failed to accept delivery' };
-      return { data, error: null };
+      const parsed = await safeReadJson<DeliveryRequest>(res);
+      if (!parsed.ok) return { data: null, error: parsed.error || 'Failed to accept delivery' };
+      return { data: parsed.data, error: null };
     } catch (err: any) {
       return { data: null, error: err.message };
     }
@@ -142,8 +169,8 @@ export const deliveriesApi = {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/reject`, {
         method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok) return { success: false, error: data.error || 'Failed to dismiss delivery' };
+      const parsed = await safeReadJson(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to dismiss delivery' };
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -155,9 +182,9 @@ export const deliveriesApi = {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/start-transit`, {
         method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok) return { data: null, error: data.error || 'Failed to start transit' };
-      return { data, error: null };
+      const parsed = await safeReadJson<DeliveryRequest>(res);
+      if (!parsed.ok) return { data: null, error: parsed.error || 'Failed to start transit' };
+      return { data: parsed.data, error: null };
     } catch (err: any) {
       return { data: null, error: err.message };
     }
@@ -180,17 +207,23 @@ export const deliveriesApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
       });
-      const data = await res.json();
-      if (!res.ok) {
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) {
         return {
           success: false,
-          error: data.error || 'Handover verification failed',
-          attemptsRemaining: data.attemptsRemaining,
-          isLocked: data.isLocked,
-          lockedUntil: data.lockedUntil,
+          error: parsed.error || 'Handover verification failed',
+          attemptsRemaining: parsed.data?.attemptsRemaining,
+          isLocked: parsed.data?.isLocked,
+          lockedUntil: parsed.data?.lockedUntil,
         };
       }
-      return { success: true, delivery: data.delivery };
+      if (!parsed.data || parsed.data.success === false) {
+        return {
+          success: false,
+          error: parsed.data?.error || 'Invalid verification response from server',
+        };
+      }
+      return { success: true, delivery: parsed.data.delivery };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
@@ -201,8 +234,8 @@ export const deliveriesApi = {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok) return { success: false, error: data.error || 'Failed to cancel delivery' };
+      const parsed = await safeReadJson(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to cancel delivery' };
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -221,9 +254,9 @@ export const deliveriesApi = {
         method: 'POST',
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) return { success: false, error: data.error || 'Failed to upload photo' };
-      return { success: true, proofPhotoUrl: data.proofPhotoUrl };
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to upload photo' };
+      return { success: true, proofPhotoUrl: parsed.data?.proofPhotoUrl };
     } catch (err: any) {
       return { success: false, error: err.message };
     }

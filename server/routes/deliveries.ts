@@ -594,36 +594,91 @@ router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: R
 router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const delivery = await DeliveryRequest.findById(req.params.id);
+    const deliveryId = String(req.params.id);
 
-    if (!delivery) {
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findById(deliveryId);
+
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
+        }
+
+        if (delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Only the assigned delivery partner can start transit' });
+          return;
+        }
+
+        if (delivery.status !== 'matched') {
+          res.status(400).json({ error: `Cannot start transit from status '${delivery.status}'. Delivery must be in 'matched' status.` });
+          return;
+        }
+
+        delivery.status = 'in_transit';
+        await delivery.save();
+
+        await Activity.create({
+          userId: uid,
+          type: 'in_transit',
+          title: `In transit: ${delivery.title}`,
+          description: `En route to pickup and drop-off`,
+          relatedId: delivery._id.toString(),
+          status: 'in_transit',
+        }).catch(() => {});
+
+        const formatted = formatDelivery(delivery);
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`delivery:${delivery._id}`).emit('delivery:in_transit', formatted);
+          io.to(`delivery:${delivery._id}`).emit('delivery:status_changed', {
+            deliveryId: delivery._id.toString(),
+            status: 'in_transit',
+            delivery: formatted,
+          });
+          io.emit('delivery:updated', formatted);
+        }
+
+        res.json(formatted);
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Start-Transit Fallback] Falling back to in-memory start-transit:', dbErr.message);
+      }
+    }
+
+    // In-memory fallback
+    const target = getInMemDelivery(deliveryId);
+    if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
     }
 
-    if (delivery.transporterId !== uid) {
+    if (target.transporterId !== uid) {
       res.status(403).json({ error: 'Only the assigned delivery partner can start transit' });
       return;
     }
 
-    if (delivery.status !== 'matched') {
-      res.status(400).json({ error: `Cannot start transit from status '${delivery.status}'` });
+    if (target.status !== 'matched') {
+      res.status(400).json({ error: `Cannot start transit from status '${target.status}'. Delivery must be in 'matched' status.` });
       return;
     }
 
-    delivery.status = 'in_transit';
-    await delivery.save();
+    target.status = 'in_transit';
+    target.updatedAt = new Date();
 
-    await Activity.create({
-      userId: uid,
-      type: 'in_transit',
-      title: `In transit: ${delivery.title}`,
-      description: `En route to pickup and drop-off`,
-      relatedId: delivery._id.toString(),
-      status: 'in_transit',
-    });
+    const formatted = formatDelivery(target);
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`delivery:${target._id}`).emit('delivery:in_transit', formatted);
+      io.to(`delivery:${target._id}`).emit('delivery:status_changed', {
+        deliveryId: target._id.toString(),
+        status: 'in_transit',
+        delivery: formatted,
+      });
+      io.emit('delivery:updated', formatted);
+    }
 
-    res.json(formatDelivery(delivery));
+    res.json(formatted);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to start transit', details: err.message });
   }
@@ -633,80 +688,178 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
 router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const { pin } = req.body;
-    const delivery = await DeliveryRequest.findById(req.params.id);
+    const deliveryId = String(req.params.id);
+    const { pin } = req.body || {};
 
-    if (!delivery) {
+    if (!pin || typeof pin !== 'string' || pin.trim().length !== 4) {
+      res.status(400).json({ error: 'Please provide a valid 4-digit handover PIN' });
+      return;
+    }
+
+    const cleanedPin = pin.trim();
+
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findById(deliveryId);
+
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
+        }
+
+        if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Only participants in this delivery can verify handover' });
+          return;
+        }
+
+        if (delivery.status === 'completed') {
+          res.status(400).json({ error: 'Delivery is already completed' });
+          return;
+        }
+
+        // Check lockout
+        if (delivery.pinLockedUntil && new Date() < new Date(delivery.pinLockedUntil)) {
+          const waitMinutes = Math.ceil((new Date(delivery.pinLockedUntil).getTime() - Date.now()) / 60000);
+          res.status(429).json({
+            error: `PIN verification locked due to too many failed attempts. Try again in ${waitMinutes} minute(s).`,
+            lockedUntil: delivery.pinLockedUntil,
+            isLocked: true,
+          });
+          return;
+        }
+
+        if (cleanedPin !== delivery.handoverPin) {
+          delivery.pinAttempts = (delivery.pinAttempts || 0) + 1;
+          const MAX_ATTEMPTS = 5;
+
+          if (delivery.pinAttempts >= MAX_ATTEMPTS) {
+            delivery.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+          }
+
+          await delivery.save();
+
+          const remaining = Math.max(0, MAX_ATTEMPTS - delivery.pinAttempts);
+          res.status(400).json({
+            error: 'Invalid handover PIN',
+            attemptsRemaining: remaining,
+            isLocked: delivery.pinAttempts >= MAX_ATTEMPTS,
+            lockedUntil: delivery.pinLockedUntil,
+          });
+          return;
+        }
+
+        // Correct PIN: complete the delivery
+        delivery.pinAttempts = 0;
+        delivery.pinLockedUntil = undefined;
+        delivery.status = 'completed';
+        await delivery.save();
+
+        // Increment completed counts
+        if (delivery.transporterId) {
+          await User.updateOne({ firebaseUid: delivery.transporterId }, { $inc: { completedDeliveries: 1 } }).catch(() => {});
+        }
+        await User.updateOne({ firebaseUid: delivery.requesterId }, { $inc: { completedDeliveries: 1 } }).catch(() => {});
+
+        await Activity.create({
+          userId: uid,
+          type: 'delivered',
+          title: `Delivery completed: ${delivery.title}`,
+          description: `Handover verified with secure PIN. Earned $${delivery.compensation.toFixed(2)}`,
+          relatedId: delivery._id.toString(),
+          status: 'completed',
+        }).catch(() => {});
+
+        const formatted = formatDelivery(delivery);
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`delivery:${delivery._id}`).emit('delivery:completed', formatted);
+          io.to(`delivery:${delivery._id}`).emit('delivery:status_changed', {
+            deliveryId: delivery._id.toString(),
+            status: 'completed',
+            delivery: formatted,
+          });
+          io.emit('delivery:updated', formatted);
+        }
+
+        res.json({
+          success: true,
+          message: 'Handover verified and delivery completed',
+          delivery: formatted,
+        });
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Verify-PIN Fallback] Falling back to in-memory verify-pin:', dbErr.message);
+      }
+    }
+
+    // In-memory fallback
+    const target = getInMemDelivery(deliveryId);
+    if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
     }
 
-    if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
+    if (target.requesterId !== uid && target.transporterId !== uid) {
       res.status(403).json({ error: 'Only participants in this delivery can verify handover' });
       return;
     }
 
-    if (delivery.status === 'completed') {
+    if (target.status === 'completed') {
       res.status(400).json({ error: 'Delivery is already completed' });
       return;
     }
 
     // Check lockout
-    if (delivery.pinLockedUntil && new Date() < new Date(delivery.pinLockedUntil)) {
-      const waitMinutes = Math.ceil((new Date(delivery.pinLockedUntil).getTime() - Date.now()) / 60000);
+    if (target.pinLockedUntil && new Date() < new Date(target.pinLockedUntil)) {
+      const waitMinutes = Math.ceil((new Date(target.pinLockedUntil).getTime() - Date.now()) / 60000);
       res.status(429).json({
         error: `PIN verification locked due to too many failed attempts. Try again in ${waitMinutes} minute(s).`,
-        lockedUntil: delivery.pinLockedUntil,
+        lockedUntil: target.pinLockedUntil,
+        isLocked: true,
       });
       return;
     }
 
-    const cleanedPin = String(pin).trim();
-    if (cleanedPin !== delivery.handoverPin) {
-      delivery.pinAttempts = (delivery.pinAttempts || 0) + 1;
+    if (cleanedPin !== target.handoverPin) {
+      target.pinAttempts = (target.pinAttempts || 0) + 1;
       const MAX_ATTEMPTS = 5;
 
-      if (delivery.pinAttempts >= MAX_ATTEMPTS) {
-        // Lock out for 15 minutes
-        delivery.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      if (target.pinAttempts >= MAX_ATTEMPTS) {
+        target.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
       }
 
-      await delivery.save();
-
-      const remaining = Math.max(0, MAX_ATTEMPTS - delivery.pinAttempts);
+      const remaining = Math.max(0, MAX_ATTEMPTS - target.pinAttempts);
       res.status(400).json({
         error: 'Invalid handover PIN',
         attemptsRemaining: remaining,
-        isLocked: delivery.pinAttempts >= MAX_ATTEMPTS,
+        isLocked: target.pinAttempts >= MAX_ATTEMPTS,
+        lockedUntil: target.pinLockedUntil,
       });
       return;
     }
 
-    // Correct PIN: complete the delivery
-    delivery.pinAttempts = 0;
-    delivery.pinLockedUntil = undefined;
-    delivery.status = 'completed';
-    await delivery.save();
+    // Correct PIN in-memory
+    target.pinAttempts = 0;
+    target.pinLockedUntil = undefined;
+    target.status = 'completed';
+    target.updatedAt = new Date();
 
-    // Increment completed counts
-    if (delivery.transporterId) {
-      await User.updateOne({ firebaseUid: delivery.transporterId }, { $inc: { completedDeliveries: 1 } });
+    const formatted = formatDelivery(target);
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`delivery:${target._id}`).emit('delivery:completed', formatted);
+      io.to(`delivery:${target._id}`).emit('delivery:status_changed', {
+        deliveryId: target._id.toString(),
+        status: 'completed',
+        delivery: formatted,
+      });
+      io.emit('delivery:updated', formatted);
     }
-    await User.updateOne({ firebaseUid: delivery.requesterId }, { $inc: { completedDeliveries: 1 } });
-
-    await Activity.create({
-      userId: uid,
-      type: 'delivered',
-      title: `Delivery completed: ${delivery.title}`,
-      description: `Handover verified with secure PIN. Earned $${delivery.compensation.toFixed(2)}`,
-      relatedId: delivery._id.toString(),
-      status: 'completed',
-    });
 
     res.json({
       success: true,
       message: 'Handover verified and delivery completed',
-      delivery: formatDelivery(delivery),
+      delivery: formatted,
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to verify PIN', details: err.message });
@@ -717,33 +870,69 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
 router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const delivery = await DeliveryRequest.findById(req.params.id);
+    const deliveryId = String(req.params.id);
 
-    if (!delivery) {
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findById(deliveryId);
+
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
+        }
+
+        if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Not authorized to cancel this delivery' });
+          return;
+        }
+
+        if (delivery.status === 'completed') {
+          res.status(400).json({ error: 'Cannot cancel a completed delivery' });
+          return;
+        }
+
+        delivery.status = 'cancelled';
+        await delivery.save();
+
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`delivery:${delivery._id}`).emit('delivery:cancelled', { deliveryId: delivery._id.toString() });
+        }
+        dispatchService.stopDispatch(delivery._id.toString(), 'cancelled', io);
+
+        res.json({ success: true, delivery: formatDelivery(delivery) });
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Cancel Fallback] Falling back to in-memory cancel:', dbErr.message);
+      }
+    }
+
+    const target = getInMemDelivery(deliveryId);
+    if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
     }
 
-    if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
+    if (target.requesterId !== uid && target.transporterId !== uid) {
       res.status(403).json({ error: 'Not authorized to cancel this delivery' });
       return;
     }
 
-    if (delivery.status === 'completed') {
+    if (target.status === 'completed') {
       res.status(400).json({ error: 'Cannot cancel a completed delivery' });
       return;
     }
 
-    delivery.status = 'cancelled';
-    await delivery.save();
+    target.status = 'cancelled';
+    target.updatedAt = new Date();
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`delivery:${delivery._id}`).emit('delivery:cancelled', { deliveryId: delivery._id.toString() });
+      io.to(`delivery:${target._id}`).emit('delivery:cancelled', { deliveryId: target._id.toString() });
     }
-    dispatchService.stopDispatch(delivery._id.toString(), 'cancelled', io);
+    dispatchService.stopDispatch(target._id.toString(), 'cancelled', io);
 
-    res.json({ success: true, delivery: formatDelivery(delivery) });
+    res.json({ success: true, delivery: formatDelivery(target) });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to cancel delivery', details: err.message });
   }
