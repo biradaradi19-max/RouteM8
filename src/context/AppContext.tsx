@@ -306,6 +306,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           );
         };
 
+        const handleDeliveryCreated = (incoming: DeliveryRequest) => {
+          if (!incoming?.id) return;
+          setRequests((prev) => {
+            const exists = prev.some((r) => r.id === incoming.id);
+            if (exists) {
+              return prev.map((r) => (r.id === incoming.id ? { ...r, ...incoming } : r));
+            }
+            const updated = [incoming, ...prev];
+            persistRequests(updated);
+            return updated;
+          });
+        };
+
+        const handleConnect = () => {
+          refreshData();
+        };
+
+        s.on('connect', handleConnect);
+        s.on('delivery:created', handleDeliveryCreated);
+        s.on('delivery:new', handleDeliveryCreated);
         s.on('delivery:claimed', handleClaimed);
         s.on('delivery:matched', handleMatched);
         s.on('delivery:cancelled', handleCancelled);
@@ -317,6 +337,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         s.on('dispatch:status', handleDispatchStatus);
 
         unsubSocket = () => {
+          s.off('connect', handleConnect);
+          s.off('delivery:created', handleDeliveryCreated);
+          s.off('delivery:new', handleDeliveryCreated);
           s.off('delivery:claimed', handleClaimed);
           s.off('delivery:matched', handleMatched);
           s.off('delivery:cancelled', handleCancelled);
@@ -426,7 +449,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     refreshData();
-  }, [refreshData, user]);
+
+    // Cross-device automatic synchronization: periodic refetch fallback
+    const interval = setInterval(() => {
+      refreshData();
+    }, 12000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refreshData, user, activeRoleMode, currentView]);
 
   // Create Delivery Request
   const createRequest = async (data: {

@@ -410,6 +410,11 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
         }).catch(() => {});
 
         const io = req.app.get('io');
+        if (io) {
+          const formattedDoc = formatDelivery(newDoc);
+          io.emit('delivery:created', formattedDoc);
+          io.emit('delivery:new', formattedDoc);
+        }
         dispatchService.startDispatch(newDoc, io);
 
         res.status(201).json(formatDelivery(newDoc));
@@ -420,6 +425,11 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
     }
 
     const io = req.app.get('io');
+    if (io) {
+      const formattedMem = formatDelivery(deliveryData);
+      io.emit('delivery:created', formattedMem);
+      io.emit('delivery:new', formattedMem);
+    }
     dispatchService.startDispatch(deliveryData, io);
 
     res.status(201).json(formatDelivery(deliveryData));
@@ -470,7 +480,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
             return;
           }
           if (existing.requesterId === uid) {
-            res.status(400).json({ error: 'Cannot accept your own delivery request' });
+            res.status(403).json({ error: 'Forbidden: cannot accept your own delivery request' });
             return;
           }
           if (existing.status !== 'open') {
@@ -515,7 +525,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
       return;
     }
     if (target.requesterId === uid) {
-      res.status(400).json({ error: 'Cannot accept your own delivery request' });
+      res.status(403).json({ error: 'Forbidden: cannot accept your own delivery request' });
       return;
     }
     if (target.status !== 'open') {

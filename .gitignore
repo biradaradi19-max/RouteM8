@@ -36,3 +36,6 @@ supabase/.temp/
 
 # Uploads & Media
 uploads/
+
+# Tooling
+.superpowers/

@@ -7,14 +7,16 @@ import {
   ArrowRight, 
   CheckCircle2, 
   Compass, 
+  X,
+  Package,
 } from 'lucide-react';
-
 
 interface RouteDetailsPanelProps {
   match: RouteMatchResult | null;
   request: DeliveryRequest | null;
   journey: PublishedJourney | null;
-  onAcceptMatch: (requestId: string, journeyId: string) => Promise<boolean>;
+  onAcceptMatch: (requestId: string, journeyId?: string) => Promise<boolean>;
+  onRejectRequest?: (requestId: string) => Promise<boolean>;
   isComputing?: boolean;
 }
 
@@ -23,12 +25,15 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
   request,
   journey,
   onAcceptMatch,
+  onRejectRequest,
   isComputing
 }) => {
   const [isAccepting, setIsAccepting] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
   const [acceptedSuccess, setAcceptedSuccess] = useState(false);
+  const [rejectedSuccess, setRejectedSuccess] = useState(false);
 
-  if (!request || !journey) {
+  if (!request) {
     return (
       <div style={{
         padding: '2rem',
@@ -39,7 +44,7 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
         color: 'var(--text-tertiary)'
       }}>
         <Compass size={32} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-        <p>Select a delivery request and commuter journey to inspect real route compatibility.</p>
+        <p>Select a delivery request from the list to inspect route details and compensation.</p>
       </div>
     );
   }
@@ -47,12 +52,25 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
   const handleAccept = async () => {
     setIsAccepting(true);
     try {
-      const ok = await onAcceptMatch(request.id, journey.id);
+      const ok = await onAcceptMatch(request.id, journey?.id);
       if (ok) {
         setAcceptedSuccess(true);
       }
     } finally {
       setIsAccepting(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!onRejectRequest) return;
+    setIsRejecting(true);
+    try {
+      const ok = await onRejectRequest(request.id);
+      if (ok) {
+        setRejectedSuccess(true);
+      }
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -74,18 +92,21 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
             <span className="badge badge-brand">
-              <Sparkles size={12} /> Real Route Analysis
+              <Sparkles size={12} /> {journey ? 'Real Route Analysis' : 'Direct Errand Drop'}
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-              via OSRM Engine
+              {journey ? 'via OSRM Engine' : 'No Commute Required'}
             </span>
           </div>
           <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
             {request.title}
           </h3>
+          <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+            {request.description}
+          </p>
         </div>
 
-        {match && (
+        {match ? (
           <div style={{
             backgroundColor: 'var(--bg-brand-subtle)',
             border: '1px solid var(--color-mint-200)',
@@ -100,11 +121,26 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
               {match.overallMatchScore}%
             </div>
           </div>
+        ) : (
+          <div style={{
+            backgroundColor: 'var(--bg-surface-subtle)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)',
+            padding: '0.5rem 0.75rem',
+            textAlign: 'right',
+            fontSize: '0.75rem',
+            color: 'var(--text-secondary)'
+          }}>
+            <span style={{ fontWeight: 700, color: 'var(--color-forest-800)', textTransform: 'capitalize' }}>
+              {request.urgency}
+            </span>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Needed {request.neededBy}</div>
+          </div>
         )}
       </div>
 
       {/* Primary Route Metrics Cards */}
-      {match ? (
+      {journey && match ? (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
@@ -151,13 +187,57 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
           </div>
         </div>
       ) : (
-        <div className="skeleton" style={{ height: '72px', width: '100%' }} />
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '0.75rem',
+          backgroundColor: 'var(--bg-surface-subtle)',
+          borderRadius: 'var(--radius-md)',
+          padding: '0.875rem',
+          border: '1px solid var(--border-subtle)'
+        }}>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Compass size={13} /> Distance
+            </div>
+            <div className="tabular-nums" style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--color-forest-800)', marginTop: '0.125rem' }}>
+              {request.distanceKm ? `${request.distanceKm} km` : 'Direct Trip'}
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+              Est. road travel
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Clock size={13} /> Est. Duration
+            </div>
+            <div className="tabular-nums" style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--color-forest-800)', marginTop: '0.125rem' }}>
+              {request.estimatedDurationMin ? `${request.estimatedDurationMin} min` : 'Standard'}
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+              Travel time
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Package size={13} /> Parcel Size
+            </div>
+            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--color-mint-600)', marginTop: '0.125rem', textTransform: 'capitalize' }}>
+              {request.itemSize}
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+              {request.weightEstimateKg ? `~${request.weightEstimateKg} kg` : 'Standard package'}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Sequential Route Waypoints */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ fontSize: '0.8125rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>
-          Sequential Commute Path
+          {journey ? 'Sequential Commute Path' : 'Delivery Route Coordinates'}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', position: 'relative' }}>
@@ -172,32 +252,34 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
             zIndex: 0
           }} />
 
-          {/* 1. Origin */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', zIndex: 1 }}>
-            <div style={{
-              width: '30px',
-              height: '30px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--color-forest-850)',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              flexShrink: 0
-            }}>
-              A
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
-                Commute Origin ({journey.departureTime})
+          {/* 1. Origin (if journey) */}
+          {journey && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', zIndex: 1 }}>
+              <div style={{
+                width: '30px',
+                height: '30px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--color-forest-850)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                flexShrink: 0
+              }}>
+                A
               </div>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {journey.originAddress}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                  Commute Origin ({journey.departureTime})
+                </div>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {journey.originAddress}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* 2. Pickup */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', zIndex: 1 }}>
@@ -245,7 +327,7 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600 }}>
-                Item Dropoff Location
+                Item Dropoff Destination
               </div>
               <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                 {request.dropoffAddress}
@@ -253,32 +335,34 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
             </div>
           </div>
 
-          {/* 4. Destination */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', zIndex: 1 }}>
-            <div style={{
-              width: '30px',
-              height: '30px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--color-charcoal-800)',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              flexShrink: 0
-            }}>
-              B
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
-                Commute Destination
+          {/* 4. Destination (if journey) */}
+          {journey && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', zIndex: 1 }}>
+              <div style={{
+                width: '30px',
+                height: '30px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--color-charcoal-800)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                flexShrink: 0
+              }}>
+                B
               </div>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {journey.destAddress}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                  Commute Destination
+                </div>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {journey.destAddress}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -301,15 +385,15 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
             />
           ) : (
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-forest-700)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-              {request.requesterName[0]}
+              {request.requesterName ? request.requesterName[0] : 'R'}
             </div>
           )}
           <div>
             <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              {request.requesterName}
+              {request.requesterName || 'Community Requester'}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <ShieldCheck size={12} /> Trust Score {request.requesterTrustScore}%
+              <ShieldCheck size={12} /> Trust Score {request.requesterTrustScore || 98}%
             </div>
           </div>
         </div>
@@ -324,7 +408,7 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
         </div>
       </div>
 
-      {/* Primary Action Button */}
+      {/* Primary Action Buttons */}
       {isAlreadyMatched ? (
         <div style={{
           display: 'flex',
@@ -359,25 +443,58 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
           <CheckCircle2 size={16} />
           <span>Match Accepted! Added to Active Deliveries</span>
         </div>
+      ) : rejectedSuccess ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.5rem',
+          padding: '0.75rem',
+          backgroundColor: 'var(--bg-surface-subtle)',
+          color: 'var(--text-tertiary)',
+          borderRadius: 'var(--radius-md)',
+          fontWeight: 600,
+          fontSize: '0.875rem',
+          border: '1px solid var(--border-subtle)'
+        }}>
+          <X size={16} />
+          <span>Delivery Dismissed for Your Account</span>
+        </div>
       ) : (
-        <button
-          onClick={handleAccept}
-          disabled={isAccepting || isComputing}
-          className="btn btn-primary"
-          style={{ width: '100%', padding: '0.875rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-        >
-          {isAccepting ? (
-            <>
-              <span className="spinner" style={{ width: 16, height: 16 }} />
-              <span>Confirming Route Match...</span>
-            </>
-          ) : (
-            <>
-              <span>Accept Delivery Match</span>
-              <ArrowRight size={16} />
-            </>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {onRejectRequest && (
+            <button
+              onClick={handleReject}
+              disabled={isRejecting || isAccepting}
+              className="btn btn-secondary"
+              data-testid="panel-decline-button"
+              style={{ padding: '0.875rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+            >
+              {isRejecting ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <X size={16} />}
+              <span>Decline</span>
+            </button>
           )}
-        </button>
+
+          <button
+            onClick={handleAccept}
+            disabled={isAccepting || isComputing || isRejecting}
+            className="btn btn-primary"
+            data-testid="panel-accept-button"
+            style={{ flex: 1, padding: '0.875rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+          >
+            {isAccepting ? (
+              <>
+                <span className="spinner" style={{ width: 16, height: 16 }} />
+                <span>Confirming Acceptance...</span>
+              </>
+            ) : (
+              <>
+                <span>Accept Delivery</span>
+                <ArrowRight size={16} />
+              </>
+            )}
+          </button>
+        </div>
       )}
 
       {/* Safety Notice */}
