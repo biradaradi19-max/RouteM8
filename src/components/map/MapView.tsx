@@ -4,6 +4,7 @@ import type { RouteMatchResult, TransporterLocation } from '../../types';
 import { Compass, Layers } from 'lucide-react';
 import { GoogleMapView } from './GoogleMapView';
 import { getGoogleMapsApiKey, getGoogleMapsMapId, isGoogleMapsConfigured, setRuntimeGoogleMapsConfig } from '../../services/googleMapsConfig';
+import { fetchRouteBetween } from '../../services/routing';
 
 export interface MapViewProps {
   match?: RouteMatchResult | null;
@@ -34,7 +35,41 @@ export const MapView: React.FC<MapViewProps> = ({
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [tempKeyInput, setTempKeyInput] = useState('');
 
+  // Turn-by-turn road network route for deliveries without a commuter match object
+  const [directRoutePolyline, setDirectRoutePolyline] = useState<[number, number][] | null>(null);
+  const [routeStats, setRouteStats] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+
+  useEffect(() => {
+    const pickup = propPickup || (match ? match.pickupCoords : undefined);
+    const dropoff = propDropoff || (match ? match.dropoffCoords : undefined);
+
+    if (match || !pickup || !dropoff) {
+      setDirectRoutePolyline(null);
+      setRouteStats(null);
+      return;
+    }
+
+    let isCurrent = true;
+    fetchRouteBetween(pickup, dropoff)
+      .then((res) => {
+        if (isCurrent && res.polyline && res.polyline.length > 0) {
+          setDirectRoutePolyline(res.polyline);
+          setRouteStats({ distanceKm: res.distanceKm, durationMin: res.durationMin });
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setDirectRoutePolyline([pickup, dropoff]);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [match, propPickup, propDropoff]);
+
   // Fallback to leaflet if google map key is cleared
+
   useEffect(() => {
     if (!googleKey && mapEngine === 'google') {
       setMapEngine('leaflet');
@@ -144,7 +179,24 @@ export const MapView: React.FC<MapViewProps> = ({
       detourLine.bindTooltip(`Optimized Detour Route (+${match.additionalDetourMin} min)`, { sticky: true });
     }
 
+    // 2.5 Direct Errands Delivery Route Polyline (when match object is not present)
+    if (!match && directRoutePolyline && directRoutePolyline.length > 0) {
+      const deliveryLine = L.polyline(directRoutePolyline, {
+        color: '#059669',
+        weight: 4.5,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(layerGroup);
+      const tooltipText = routeStats
+        ? `Delivery Route (${routeStats.distanceKm.toFixed(1)} km · ~${routeStats.durationMin} min)`
+        : 'Direct Delivery Route';
+      deliveryLine.bindTooltip(tooltipText, { sticky: true });
+      directRoutePolyline.forEach((pt) => allPoints.push(pt));
+    }
+
     // 3. Origin & Destination Markers (when match exists)
+
     if (match) {
       const originMarker = L.marker(match.originCoords, {
         icon: createMarkerIcon('A', '#0E291E', '#FFFFFF', '#34D399'),
@@ -221,7 +273,8 @@ export const MapView: React.FC<MapViewProps> = ({
       const bounds = L.latLngBounds(allPoints);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
     }
-  }, [mapEngine, match, propPickup, propDropoff, pickupAddress, dropoffAddress, transporterLocation]);
+  }, [mapEngine, match, propPickup, propDropoff, pickupAddress, dropoffAddress, transporterLocation, directRoutePolyline, routeStats]);
+
 
   const handleSaveRuntimeKey = (e: React.FormEvent) => {
     e.preventDefault();

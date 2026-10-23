@@ -28,6 +28,9 @@ export interface ResolvedPlace {
  * Fetch genuine autocomplete predictions worldwide without regional restriction.
  * Optional GPS coordinates provide proximity search bias only when permitted.
  */
+// Cache resolved coordinates from search predictions to eliminate Nominatim 429 rate limit errors
+const placeCoordsCache = new Map<string, [number, number]>();
+
 export async function searchGlobalPlaces(
   query: string,
   biasCoords?: [number, number] | null
@@ -39,13 +42,19 @@ export async function searchGlobalPlaces(
   try {
     const suggestions = await placesApi.getAutocompleteSuggestions(cleanQuery, biasCoords);
     if (Array.isArray(suggestions) && suggestions.length > 0) {
-      return suggestions.map((s: any) => ({
-        placeId: s.placeId || '',
-        description: s.description || s.mainText || '',
-        mainText: s.mainText || s.description || '',
-        secondaryText: s.secondaryText || '',
-        types: s.types || [],
-      }));
+      return suggestions.map((s: any) => {
+        const placeId = s.placeId || '';
+        if (s.location && isValidCoordinate(s.location.lat, s.location.lng)) {
+          placeCoordsCache.set(placeId, [s.location.lat, s.location.lng]);
+        }
+        return {
+          placeId,
+          description: s.description || s.mainText || '',
+          mainText: s.mainText || s.description || '',
+          secondaryText: s.secondaryText || '',
+          types: s.types || [],
+        };
+      });
     }
   } catch (err) {
     console.warn('[Places Service] Backend proxy error, trying client fallback:', err);
@@ -69,9 +78,16 @@ export async function searchGlobalPlaces(
           const mainText = item.name || item.display_name.split(',')[0];
           const parts = item.display_name.split(',');
           const secondaryText = parts.slice(1).join(',').trim();
+          const placeId = `osm-${item.osm_type || 'node'}-${item.osm_id || idx}`;
+
+          const lat = parseFloat(item.lat);
+          const lng = parseFloat(item.lon);
+          if (isValidCoordinate(lat, lng)) {
+            placeCoordsCache.set(placeId, [lat, lng]);
+          }
 
           return {
-            placeId: `osm-${item.osm_type || 'node'}-${item.osm_id || idx}`,
+            placeId,
             description: item.display_name,
             mainText,
             secondaryText,
@@ -96,12 +112,23 @@ export async function resolvePlaceCoordinates(
 ): Promise<ResolvedPlace | null> {
   if (!placeId) return null;
 
+  // 0. Instant resolution from prediction cache (eliminates Nominatim rate limits)
+  const cached = placeCoordsCache.get(placeId);
+  if (cached && isValidCoordinate(cached[0], cached[1])) {
+    return {
+      placeId,
+      formattedAddress: fallbackAddress || 'Selected Location',
+      coords: cached,
+    };
+  }
+
   // 1. Try backend Place Details endpoint
   try {
     const details = await placesApi.getPlaceDetails(placeId);
     if (details && details.location) {
       const { lat, lng } = details.location;
       if (isValidCoordinate(lat, lng)) {
+        placeCoordsCache.set(placeId, [lat, lng]);
         return {
           placeId: details.placeId || placeId,
           formattedAddress: details.formattedAddress || details.name || fallbackAddress || '',
@@ -129,6 +156,7 @@ export async function resolvePlaceCoordinates(
         const lng = parseFloat(data.centroid?.coordinates?.[0] || data.lon);
 
         if (isValidCoordinate(lat, lng)) {
+          placeCoordsCache.set(placeId, [lat, lng]);
           return {
             placeId,
             formattedAddress: data.localname || fallbackAddress || 'Selected Location',
@@ -140,6 +168,7 @@ export async function resolvePlaceCoordinates(
       console.warn('[Places Service] OSM details fallback notice:', err);
     }
   }
+
 
   // 3. Fallback: text geocoding if address string provided
   if (fallbackAddress) {

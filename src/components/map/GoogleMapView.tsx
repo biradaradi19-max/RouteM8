@@ -7,6 +7,7 @@ import {
 } from '@vis.gl/react-google-maps';
 import type { RouteMatchResult, TransporterLocation } from '../../types';
 import { Compass, Navigation, Package, Flag, AlertCircle } from 'lucide-react';
+import { fetchRouteBetween } from '../../services/routing';
 
 interface GoogleMapViewProps {
   apiKey: string;
@@ -29,6 +30,35 @@ const MapController: React.FC<{
   transporterLocation?: TransporterLocation | null;
 }> = ({ match, pickupCoords, dropoffCoords, transporterLocation }) => {
   const map = useMap();
+  const [directRoutePath, setDirectRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
+
+  useEffect(() => {
+    if (match || !pickupCoords || !dropoffCoords) {
+      setDirectRoutePath(null);
+      return;
+    }
+
+    let isCurrent = true;
+    fetchRouteBetween(pickupCoords, dropoffCoords)
+      .then((res) => {
+        if (isCurrent && res.polyline && res.polyline.length > 0) {
+          setDirectRoutePath(res.polyline.map(([lat, lng]) => ({ lat, lng })));
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setDirectRoutePath([
+            { lat: pickupCoords[0], lng: pickupCoords[1] },
+            { lat: dropoffCoords[0], lng: dropoffCoords[1] },
+          ]);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [match, pickupCoords, dropoffCoords]);
+
 
   // Draw Polylines using Google Maps native Polyline API
   useEffect(() => {
@@ -64,7 +94,7 @@ const MapController: React.FC<{
 
     // 3. Delivery Route Polyline between Pickup and Dropoff (when match object is not present)
     if (!match && pickupCoords && dropoffCoords) {
-      const deliveryPath = [
+      const deliveryPath = directRoutePath || [
         { lat: pickupCoords[0], lng: pickupCoords[1] },
         { lat: dropoffCoords[0], lng: dropoffCoords[1] },
       ];
@@ -81,7 +111,7 @@ const MapController: React.FC<{
     return () => {
       polylines.forEach((line) => line.setMap(null));
     };
-  }, [map, match, pickupCoords, dropoffCoords]);
+  }, [map, match, pickupCoords, dropoffCoords, directRoutePath]);
 
   // Adjust camera bounds smoothly to frame all active locations
   useEffect(() => {

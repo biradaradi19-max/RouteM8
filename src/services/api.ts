@@ -58,8 +58,8 @@ export const authApi = {
   async getMe(): Promise<{ user: UserProfile } | null> {
     try {
       const res = await fetchWithAuth(`${API_BASE}/auth/me`);
-      if (!res.ok) return null;
-      return await res.json();
+      const parsed = await safeReadJson<{ user: UserProfile }>(res);
+      return parsed.ok ? parsed.data : null;
     } catch {
       return null;
     }
@@ -72,9 +72,9 @@ export const authApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      const data = await res.json();
-      if (!res.ok) return { success: false, error: data.error || 'Failed to update profile' };
-      return { success: true, user: data.user };
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to update profile' };
+      return { success: true, user: parsed.data?.user };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
@@ -83,8 +83,8 @@ export const authApi = {
   async checkUsername(username: string): Promise<boolean> {
     try {
       const res = await fetch(`${API_BASE}/auth/check-username/${encodeURIComponent(username)}`);
-      const data = await res.json();
-      return Boolean(data.available);
+      const parsed = await safeReadJson<any>(res);
+      return Boolean(parsed.data?.available);
     } catch {
       return true;
     }
@@ -93,8 +93,8 @@ export const authApi = {
   async getUser(id: string): Promise<Partial<UserProfile> | null> {
     try {
       const res = await fetch(`${API_BASE}/auth/users/${encodeURIComponent(id)}`);
-      if (!res.ok) return null;
-      return await res.json();
+      const parsed = await safeReadJson<any>(res);
+      return parsed.ok ? parsed.data : null;
     } catch {
       return null;
     }
@@ -119,8 +119,8 @@ export const deliveriesApi = {
 
       const qs = query.toString();
       const res = await fetchWithAuth(`${API_BASE}/deliveries${qs ? `?${qs}` : ''}`);
-      if (!res.ok) return [];
-      return await res.json();
+      const parsed = await safeReadJson<DeliveryRequest[]>(res);
+      return parsed.ok && Array.isArray(parsed.data) ? parsed.data : [];
     } catch {
       return [];
     }
@@ -129,8 +129,8 @@ export const deliveriesApi = {
   async getDelivery(id: string): Promise<DeliveryRequest | null> {
     try {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}`);
-      if (!res.ok) return null;
-      return await res.json();
+      const parsed = await safeReadJson<DeliveryRequest>(res);
+      return parsed.ok ? parsed.data : null;
     } catch {
       return null;
     }
@@ -143,9 +143,9 @@ export const deliveriesApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      const resData = await res.json();
-      if (!res.ok) return { data: null, error: resData.error || 'Failed to create delivery' };
-      return { data: resData, error: null };
+      const parsed = await safeReadJson<DeliveryRequest>(res);
+      if (!parsed.ok) return { data: null, error: parsed.error || 'Failed to create delivery' };
+      return { data: parsed.data, error: null };
     } catch (err: any) {
       return { data: null, error: err.message || 'Network error' };
     }
@@ -265,10 +265,28 @@ export const deliveriesApi = {
   async getLatestLocation(id: string) {
     try {
       const res = await fetch(`${API_BASE}/deliveries/${encodeURIComponent(id)}/location`);
-      if (!res.ok) return null;
-      return await res.json();
+      const parsed = await safeReadJson<any>(res);
+      return parsed.ok ? parsed.data : null;
     } catch {
       return null;
+    }
+  },
+
+  async updateLocation(
+    id: string,
+    coords: { latitude: number; longitude: number; heading?: number; speed?: number }
+  ): Promise<{ success: boolean; location?: any; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(coords),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to update location' };
+      return { success: true, location: parsed.data?.location };
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   },
 };
@@ -282,8 +300,8 @@ export const journeysApi = {
 
       const qs = query.toString();
       const res = await fetchWithAuth(`${API_BASE}/journeys${qs ? `?${qs}` : ''}`);
-      if (!res.ok) return [];
-      return await res.json();
+      const parsed = await safeReadJson<PublishedJourney[]>(res);
+      return parsed.ok && Array.isArray(parsed.data) ? parsed.data : [];
     } catch {
       return [];
     }
@@ -296,9 +314,9 @@ export const journeysApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      const resData = await res.json();
-      if (!res.ok) return { data: null, error: resData.error || 'Failed to publish journey' };
-      return { data: resData, error: null };
+      const parsed = await safeReadJson<PublishedJourney>(res);
+      if (!parsed.ok) return { data: null, error: parsed.error || 'Failed to publish journey' };
+      return { data: parsed.data, error: null };
     } catch (err: any) {
       return { data: null, error: err.message };
     }
@@ -309,8 +327,8 @@ export const journeysApi = {
       const res = await fetchWithAuth(`${API_BASE}/journeys/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-      const data = await res.json();
-      if (!res.ok) return { success: false, error: data.error || 'Failed to delete journey' };
+      const parsed = await safeReadJson(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to delete journey' };
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -333,11 +351,11 @@ export const livekitApi = {
       body: JSON.stringify({ deliveryId }),
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to generate LiveKit token');
+    const parsed = await safeReadJson<any>(res);
+    if (!parsed.ok || !parsed.data) {
+      throw new Error(parsed.error || 'Failed to generate LiveKit token');
     }
-    return data;
+    return parsed.data;
   },
 };
 
@@ -345,8 +363,8 @@ export const activitiesApi = {
   async getActivities() {
     try {
       const res = await fetchWithAuth(`${API_BASE}/activities`);
-      if (!res.ok) return [];
-      return await res.json();
+      const parsed = await safeReadJson<any[]>(res);
+      return parsed.ok && Array.isArray(parsed.data) ? parsed.data : [];
     } catch {
       return [];
     }
@@ -362,9 +380,8 @@ export const placesApi = {
         url += `&lat=${biasCoords[0]}&lng=${biasCoords[1]}`;
       }
       const res = await fetch(url);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data.suggestions || [];
+      const parsed = await safeReadJson<any>(res);
+      return parsed.data?.suggestions || [];
     } catch (err) {
       console.warn('[PlacesApi] Autocomplete error:', err);
       return [];
@@ -374,8 +391,8 @@ export const placesApi = {
   async getPlaceDetails(placeId: string) {
     try {
       const res = await fetch(`${API_BASE}/places/details?placeId=${encodeURIComponent(placeId)}`);
-      if (!res.ok) return null;
-      return await res.json();
+      const parsed = await safeReadJson<any>(res);
+      return parsed.ok ? parsed.data : null;
     } catch (err) {
       console.warn('[PlacesApi] Details error:', err);
       return null;
@@ -385,13 +402,13 @@ export const placesApi = {
   async reverseGeocode(lat: number, lng: number): Promise<string | null> {
     try {
       const res = await fetch(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data.formattedAddress || null;
+      const parsed = await safeReadJson<any>(res);
+      return parsed.data?.formattedAddress || null;
     } catch (err) {
       console.warn('[PlacesApi] Reverse geocode error:', err);
       return null;
     }
   },
 };
+
 

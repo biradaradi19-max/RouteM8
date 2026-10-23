@@ -2,7 +2,7 @@ import { Router, type Response } from 'express';
 import multer from 'multer';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
+import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { User } from '../models/User.js';
 import { Activity } from '../models/Activity.js';
@@ -13,9 +13,17 @@ import { dispatchService } from '../services/dispatchService.js';
 const router = Router();
 
 // Setup Multer for private delivery proof photos
-const uploadsDir = path.join(process.cwd(), 'uploads', 'delivery-proofs');
-if (!existsSync(uploadsDir)) {
-  mkdirSync(uploadsDir, { recursive: true });
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const uploadsDir = isServerless
+  ? path.join('/tmp', 'uploads', 'delivery-proofs')
+  : path.join(process.cwd(), 'uploads', 'delivery-proofs');
+
+try {
+  if (!existsSync(uploadsDir)) {
+    mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err: any) {
+  console.warn('[Multer Storage] Could not initialize uploads directory:', err.message);
 }
 
 const storage = multer.diskStorage({
@@ -199,12 +207,16 @@ export const INITIAL_COMMUNITY_DELIVERIES: InMemDelivery[] = [
 ];
 
 export let inMemoryDeliveries: InMemDelivery[] = [...INITIAL_COMMUNITY_DELIVERIES];
+export const inMemoryLocations = new Map<string, any>();
 
 // Helper to format Mongo document into standard frontend DeliveryRequest
-function formatDelivery(doc: any) {
+// Only the requester who created the delivery receives the plaintext handoverPin
+function formatDelivery(doc: any, forUserId?: string) {
+  const showPin = Boolean(forUserId && forUserId === doc.requesterId);
+
   return {
-    id: doc._id.toString(),
-    _id: doc._id.toString(),
+    id: (doc._id || doc.id).toString(),
+    _id: (doc._id || doc.id).toString(),
     title: doc.title,
     description: doc.description,
     category: doc.category,
@@ -228,7 +240,7 @@ function formatDelivery(doc: any) {
     transporterName: doc.transporterName,
     transporterAvatar: doc.transporterAvatar,
     transporterVehicle: doc.transporterVehicle,
-    handoverPin: doc.handoverPin,
+    ...(showPin && doc.handoverPin ? { handoverPin: doc.handoverPin } : {}),
     pinAttempts: doc.pinAttempts,
     pinLockedUntil: doc.pinLockedUntil,
     proofPhotoUrl: doc.proofPhotoUrl,
@@ -236,8 +248,8 @@ function formatDelivery(doc: any) {
     distanceKm: doc.distanceKm,
     estimatedDurationMin: doc.estimatedDurationMin,
     estimatedDetourMinutes: doc.estimatedDetourMinutes,
-    createdAt: doc.createdAt?.toISOString() || new Date().toISOString(),
-    updatedAt: doc.updatedAt?.toISOString() || new Date().toISOString(),
+    createdAt: doc.createdAt?.toISOString?.() || (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
+    updatedAt: doc.updatedAt?.toISOString?.() || (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
   };
 }
 
@@ -249,9 +261,10 @@ function getInMemDelivery(id: string | string[] | undefined) {
 }
 
 // GET /api/deliveries - List deliveries
-router.get('/', async (req, res): Promise<void> => {
+router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { status, requesterId, transporterId, category, excludeRejectedBy } = req.query;
+    const callerUid = req.user?.uid;
 
     if (isDbConnected()) {
       try {
@@ -269,7 +282,7 @@ router.get('/', async (req, res): Promise<void> => {
         }
 
         const docs = await DeliveryRequest.find(filter).sort({ createdAt: -1 }).limit(100);
-        res.json(docs.map(formatDelivery));
+        res.json(docs.map(d => formatDelivery(d, callerUid)));
         return;
       } catch (dbErr: any) {
         console.warn('[DB Fallback] Falling back to in-memory delivery store:', dbErr.message);
@@ -284,20 +297,24 @@ router.get('/', async (req, res): Promise<void> => {
     if (category) results = results.filter(d => d.category === category);
     if (excludeRejectedBy) results = results.filter(d => !d.rejectedBy || !d.rejectedBy.includes(String(excludeRejectedBy)));
 
-    res.json(results.map(formatDelivery));
+    res.json(results.map(d => formatDelivery(d, callerUid)));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch deliveries', details: err.message });
   }
 });
 
 // GET /api/deliveries/:id - Get single delivery
-router.get('/:id', async (req, res): Promise<void> => {
+router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const callerUid = req.user?.uid;
+
     if (isDbConnected()) {
+
+
       try {
         const doc = await DeliveryRequest.findById(req.params.id);
         if (doc) {
-          res.json(formatDelivery(doc));
+          res.json(formatDelivery(doc, callerUid));
           return;
         }
       } catch {
@@ -310,7 +327,7 @@ router.get('/:id', async (req, res): Promise<void> => {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
     }
-    res.json(formatDelivery(inMem));
+    res.json(formatDelivery(inMem, callerUid));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch delivery', details: err.message });
   }
@@ -417,7 +434,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
         }
         dispatchService.startDispatch(newDoc, io);
 
-        res.status(201).json(formatDelivery(newDoc));
+        res.status(201).json(formatDelivery(newDoc, uid));
         return;
       } catch (dbErr: any) {
         console.warn('[DB Save Fallback] Using in-memory created delivery:', dbErr.message);
@@ -432,7 +449,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
     }
     dispatchService.startDispatch(deliveryData, io);
 
-    res.status(201).json(formatDelivery(deliveryData));
+    res.status(201).json(formatDelivery(deliveryData, uid));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to create delivery request', details: err.message });
   }
@@ -991,25 +1008,149 @@ router.post(
 // GET /api/deliveries/:id/location - Get latest GPS location for delivery
 router.get('/:id/location', async (req, res): Promise<void> => {
   try {
-    const latestLoc = await Location.findOne({ deliveryId: req.params.id }).sort({ createdAt: -1 });
+    const deliveryId = String(req.params.id);
 
-    if (!latestLoc) {
-      res.status(404).json({ error: 'No location updates found for this delivery' });
+    if (isDbConnected()) {
+      try {
+        const latestLoc = await Location.findOne({ deliveryId }).sort({ createdAt: -1 });
+        if (latestLoc) {
+          res.json({
+            deliveryId: latestLoc.deliveryId,
+            transporterId: latestLoc.transporterId,
+            latitude: latestLoc.latitude,
+            longitude: latestLoc.longitude,
+            heading: latestLoc.heading,
+            speed: latestLoc.speed,
+            updatedAt: latestLoc.updatedAt.toISOString(),
+          });
+          return;
+        }
+      } catch (dbErr: any) {
+        console.warn('[DB Location Fallback] Location query error:', dbErr.message);
+      }
+    }
+
+    // In-memory fallback
+    const memLoc = inMemoryLocations.get(deliveryId);
+    if (memLoc) {
+      res.json(memLoc);
       return;
     }
 
-    res.json({
-      deliveryId: latestLoc.deliveryId,
-      transporterId: latestLoc.transporterId,
-      latitude: latestLoc.latitude,
-      longitude: latestLoc.longitude,
-      heading: latestLoc.heading,
-      speed: latestLoc.speed,
-      updatedAt: latestLoc.updatedAt.toISOString(),
-    });
+    res.status(404).json({ error: 'No location updates found for this delivery' });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch location', details: err.message });
   }
 });
 
+// POST /api/deliveries/:id/location - Record live GPS location (dual-transport HTTP fallback)
+router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const uid = req.user!.uid;
+    const deliveryId = String(req.params.id);
+    const { latitude, longitude, heading, speed } = req.body || {};
+
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      res.status(400).json({ error: 'Latitude and longitude must be numbers' });
+      return;
+    }
+
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      res.status(400).json({ error: 'Coordinates out of bounds' });
+      return;
+    }
+
+    // Check DB first if connected
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findById(deliveryId);
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
+        }
+
+        if (delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Only the assigned delivery partner can send live location' });
+          return;
+        }
+
+        if (delivery.status !== 'matched' && delivery.status !== 'in_transit') {
+          res.status(400).json({ error: `Cannot share location for delivery in status "${delivery.status}"` });
+          return;
+        }
+
+        const locDoc = await Location.create({
+          deliveryId,
+          transporterId: uid,
+          latitude,
+          longitude,
+          heading: typeof heading === 'number' ? heading : undefined,
+          speed: typeof speed === 'number' ? speed : undefined,
+        });
+
+        const payload = {
+          deliveryId,
+          transporterId: uid,
+          latitude: locDoc.latitude,
+          longitude: locDoc.longitude,
+          heading: locDoc.heading,
+          speed: locDoc.speed,
+          updatedAt: locDoc.updatedAt.toISOString(),
+        };
+
+        inMemoryLocations.set(deliveryId, payload);
+
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`delivery:${deliveryId}`).emit('location:change', payload);
+        }
+
+        res.json({ success: true, location: payload });
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Location Fallback] Location create fallback:', dbErr.message);
+      }
+    }
+
+    // In-memory fallback
+    const target = getInMemDelivery(deliveryId);
+    if (!target) {
+      res.status(404).json({ error: 'Delivery not found' });
+      return;
+    }
+
+    if (target.transporterId !== uid) {
+      res.status(403).json({ error: 'Only the assigned delivery partner can send live location' });
+      return;
+    }
+
+    if (target.status !== 'matched' && target.status !== 'in_transit') {
+      res.status(400).json({ error: `Cannot share location for delivery in status "${target.status}"` });
+      return;
+    }
+
+    const payload = {
+      deliveryId,
+      transporterId: uid,
+      latitude,
+      longitude,
+      heading: typeof heading === 'number' ? heading : undefined,
+      speed: typeof speed === 'number' ? speed : undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    inMemoryLocations.set(deliveryId, payload);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`delivery:${deliveryId}`).emit('location:change', payload);
+    }
+
+    res.json({ success: true, location: payload });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to record location', details: err.message });
+  }
+});
+
 export default router;
+

@@ -103,13 +103,35 @@ export function useTransporterLocation({
       }
     });
 
+    // Setup HTTP fallback polling for serverless environments where WebSockets are unavailable
+    let pollInterval: any = null;
+    if (deliveryStatus === 'matched' || deliveryStatus === 'in_transit') {
+      pollInterval = setInterval(() => {
+        if (!isMounted) return;
+        deliveriesApi.getLatestLocation(deliveryId).then((loc) => {
+          if (isMounted && loc) {
+            setLocation((prev) => {
+              if (!prev) return loc;
+              if (new Date(loc.updatedAt).getTime() > new Date(prev.updatedAt).getTime()) {
+                return loc;
+              }
+              return prev;
+            });
+          }
+        }).catch(() => {});
+      }, 5000);
+    }
+
     return () => {
       isMounted = false;
       if (cleanupSocket) {
         cleanupSocket();
       }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
     };
-  }, [deliveryId]);
+  }, [deliveryId, deliveryStatus]);
 
   // Clean stop for active watch
   const stopSharing = useCallback(() => {
@@ -210,6 +232,16 @@ export function useTransporterLocation({
           if (!res.success && res.error) {
             setError(res.error);
           }
+        });
+
+        // Dual-transport: also report via HTTP REST in case WebSockets are unavailable/serverless
+        deliveriesApi.updateLocation(deliveryId, {
+          latitude,
+          longitude,
+          heading: currentCoord.heading ?? undefined,
+          speed: currentCoord.speed ?? undefined,
+        }).catch((err) => {
+          console.warn('[useTransporterLocation] HTTP updateLocation error:', err);
         });
       }
     };

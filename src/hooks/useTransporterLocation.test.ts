@@ -7,6 +7,7 @@ import * as socketService from '../services/socket';
 vi.mock('../services/api', () => ({
   deliveriesApi: {
     getLatestLocation: vi.fn().mockResolvedValue(null),
+    updateLocation: vi.fn().mockResolvedValue({ success: true }),
   },
 }));
 
@@ -113,6 +114,15 @@ describe('useTransporterLocation Hook', () => {
         -122.17,
         180,
         15
+      );
+      expect(deliveriesApi.updateLocation).toHaveBeenCalledWith(
+        'del-1',
+        expect.objectContaining({
+          latitude: 37.43,
+          longitude: -122.17,
+          heading: 180,
+          speed: 15,
+        })
       );
     });
 

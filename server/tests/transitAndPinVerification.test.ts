@@ -264,4 +264,122 @@ describe('Delivery Transit & Handover PIN Verification API Flows', () => {
       expect(data.error).toBe('Delivery is already completed');
     });
   });
+
+  // =========================================================================
+  // PIN Privacy & Masking Invariants
+  // =========================================================================
+  describe('Handover PIN Privacy & Role-Based Masking', () => {
+    it('does not expose plaintext handover PIN to partner or public in delivery list', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries`, {
+        headers: {
+          Authorization: 'Bearer mock-token-partner-1',
+        },
+      });
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(Array.isArray(data)).toBe(true);
+
+      const testDel = data.find((d: any) => d.id === '6712b001a1b2c3d4e5f60001');
+      expect(testDel).toBeDefined();
+      // Partner should NOT see the handover PIN
+      expect(testDel.handoverPin).toBeUndefined();
+    });
+
+    it('exposes handover PIN only to the requester who created the delivery', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001`, {
+        headers: {
+          Authorization: 'Bearer mock-token-usr-marcus-10', // requester
+        },
+      });
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.handoverPin).toBe('4821');
+    });
+
+    it('omits handover PIN when partner fetches single delivery by ID', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001?nocache=1`, {
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Bearer mock-token-partner-1', // transporter
+        },
+      });
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.handoverPin).toBeUndefined();
+    });
+
+
+
+  });
+
+  // =========================================================================
+  // Dual-Transport Live GPS Location Tracking Endpoints
+  // =========================================================================
+  describe('REST Location Tracking (Dual-Transport Fallback)', () => {
+    it('returns 401 when unauthenticated caller posts location', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: 37.4275, longitude: -122.1668 }),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 when non-assigned user tries to post location', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mock-token-usr-marcus-10', // requester, not transporter
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latitude: 37.4275, longitude: -122.1668 }),
+      });
+      const data: any = await res.json();
+      expect(res.status).toBe(403);
+      expect(data.error).toContain('Only the assigned delivery partner');
+    });
+
+    it('returns 400 when invalid coordinates are provided', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mock-token-partner-1',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latitude: 120.5, longitude: -122.1668 }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('allows assigned partner to post live GPS location and updates latest location', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mock-token-partner-1',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          latitude: 37.4275,
+          longitude: -122.1668,
+          heading: 145,
+          speed: 8.5,
+        }),
+      });
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.location.latitude).toBe(37.4275);
+      expect(data.location.longitude).toBe(-122.1668);
+
+      // Verify GET /api/deliveries/:id/location returns this updated location
+      const getRes = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`);
+      const getData: any = await getRes.json();
+      expect(getRes.status).toBe(200);
+      expect(getData.latitude).toBe(37.4275);
+      expect(getData.longitude).toBe(-122.1668);
+      expect(getData.heading).toBe(145);
+      expect(getData.speed).toBe(8.5);
+    });
+  });
 });
+
