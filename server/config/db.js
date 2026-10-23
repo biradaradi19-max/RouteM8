@@ -12,7 +12,8 @@ export async function connectDB(uri) {
     if (isConnected && mongoose.connection.readyState === 1) {
         return mongoose;
     }
-    const mongoUri = uri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/routem8';
+    const ATLAS_URI = 'mongodb+srv://biradaradi27_db_user:S0tBxFu6UpmALHw9@routem8.gxbbldm.mongodb.net/routem8?retryWrites=true&w=majority';
+    const mongoUri = uri || process.env.MONGODB_URI || ATLAS_URI;
     // Never buffer queries indefinitely when disconnected; fail fast or use fallback
     mongoose.set('bufferCommands', false);
     try {

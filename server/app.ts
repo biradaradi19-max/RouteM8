@@ -7,6 +7,7 @@ import journeysRouter from './routes/journeys.js';
 import livekitRouter from './routes/livekit.js';
 import activitiesRouter from './routes/activities.js';
 import placesRouter from './routes/places.js';
+import { isDbConnected } from './config/db.js';
 
 export function createApp() {
   const app = express();
@@ -26,6 +27,8 @@ export function createApp() {
     res.json({
       status: 'ok',
       service: 'RouteM8 Express API',
+      database: isDbConnected() ? 'connected' : 'disconnected',
+      hasMongoUri: Boolean(process.env.MONGODB_URI),
       timestamp: new Date().toISOString(),
     });
   };
