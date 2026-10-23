@@ -1,13 +1,16 @@
-import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import { readFileSync, existsSync } from 'node:fs';
 
 let isFirebaseAdminInitialized = false;
+let adminAppInstance: any = null;
 
-export function initializeFirebaseAdmin(): App {
+export async function initializeFirebaseAdmin(): Promise<any> {
+  const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+
   const existingApps = getApps();
   if (existingApps.length > 0) {
-    return existingApps[0]!;
+    adminAppInstance = existingApps[0]!;
+    isFirebaseAdminInitialized = true;
+    return adminAppInstance;
   }
 
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
@@ -23,13 +26,13 @@ export function initializeFirebaseAdmin(): App {
       }
 
       if (parsedCreds) {
-        const app = initializeApp({
+        adminAppInstance = initializeApp({
           credential: cert(parsedCreds),
           projectId: parsedCreds.project_id || projectId,
         });
         isFirebaseAdminInitialized = true;
         console.log(`[Firebase Admin] Initialized with Service Account: ${parsedCreds.project_id || projectId}`);
-        return app;
+        return adminAppInstance;
       }
     } catch (err: any) {
       console.warn(`[Firebase Admin] Failed to parse service account key: ${err.message}. Falling back to default project init.`);
@@ -37,12 +40,12 @@ export function initializeFirebaseAdmin(): App {
   }
 
   // Initialize with project ID
-  const app = initializeApp({
+  adminAppInstance = initializeApp({
     projectId,
   });
   isFirebaseAdminInitialized = true;
   console.log(`[Firebase Admin] Initialized with Project ID: ${projectId}`);
-  return app;
+  return adminAppInstance;
 }
 
 export interface VerifiedUser {
@@ -72,12 +75,13 @@ export async function verifyFirebaseIdToken(token: string): Promise<VerifiedUser
   }
 
   // Ensure Admin SDK is initialized
-  if (!isFirebaseAdminInitialized && getApps().length === 0) {
-    initializeFirebaseAdmin();
+  if (!isFirebaseAdminInitialized) {
+    await initializeFirebaseAdmin();
   }
 
   try {
-    const auth = getAuth();
+    const { getAuth } = await import('firebase-admin/auth');
+    const auth = getAuth(adminAppInstance);
     const decoded = await auth.verifyIdToken(token);
     return {
       uid: decoded.uid,
