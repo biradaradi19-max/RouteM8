@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && esbuild api/index.ts --bundle --platform=node --format=esm --external:mongoose --external:firebase-admin --external:express --external:cors --external:multer --external:socket.io --external:livekit-server-sdk --outfile=api/index.js",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
@@ -42,6 +42,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.2",
     "happy-dom": "^21.0.1",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
