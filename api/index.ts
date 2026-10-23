@@ -1,31 +1,25 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createApp } from '../server/app.js';
-import { connectDB } from '../server/config/db.js';
 
-let appPromise: Promise<any> | null = null;
-
-async function getApp() {
-  if (!appPromise) {
-    appPromise = (async () => {
-      try {
-        await connectDB();
-      } catch (err: any) {
-        console.warn('[Vercel Serverless] MongoDB connect attempt:', err.message);
-      }
-      return createApp();
-    })();
-  }
-  return appPromise;
-}
+let appInstance: any = null;
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
-    const app = await getApp();
+    if (!appInstance) {
+      try {
+        const { connectDB } = await import('../server/config/db.js');
+        await connectDB();
+      } catch (dbErr: any) {
+        console.warn('[Vercel Serverless] DB connection skipped or failed:', dbErr?.message || dbErr);
+      }
+      const { createApp } = await import('../server/app.js');
+      appInstance = createApp();
+    }
+
     return new Promise<void>((resolve, reject) => {
       res.on('finish', () => resolve());
       res.on('close', () => resolve());
       res.on('error', (err) => reject(err));
-      app(req, res);
+      appInstance(req, res);
     });
   } catch (err: any) {
     console.error('[Vercel Serverless Fatal]', err);
@@ -35,6 +29,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       res.end(
         JSON.stringify({
           error: err?.message || 'Serverless Invocation Exception',
+          name: err?.name,
+          code: err?.code,
           stack: err?.stack,
         })
       );
