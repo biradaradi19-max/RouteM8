@@ -497,10 +497,10 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                           boxShadow: 'var(--shadow-xs)'
                         }}
                       >
-                        {del.handoverPin || '9421'}
+                        {del.handoverPin || '————'}
                       </div>
                       <button
-                        onClick={() => handleCopyPin(del.id, del.handoverPin || '9421')}
+                        onClick={() => handleCopyPin(del.id, del.handoverPin || '')}
                         className="btn btn-secondary btn-sm"
                         title="Copy PIN"
                         style={{ padding: '0.4rem 0.625rem' }}
@@ -846,7 +846,7 @@ const RequesterLiveTrackingMap: React.FC<{ delivery: DeliveryRequest }> = ({ del
         </div>
         {delivery.estimatedDurationMin && (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Est. transit time: ~{Math.round(delivery.estimatedDurationMin)} mins
+            Est. transit time: ~{Math.round(delivery.estimatedDurationMin!)} mins
           </span>
         )}
       </div>

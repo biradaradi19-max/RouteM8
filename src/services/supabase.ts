@@ -232,8 +232,9 @@ export function mapDbRequestToDeliveryRequest(row: DatabaseDeliveryRequestRow): 
   const dropoffLat = det?.dropoff_lat ?? 37.3861;
   const dropoffLng = det?.dropoff_lng ?? -122.0839;
 
-  // Handover PIN is protected on server (hash-only); never exposed through discovery queries
-  const pin = (row as any).handoverPin || sec?.handover_pin || '';
+  // Handover PIN is protected on server (hash-only); only ever exposed via the
+  // RLS-gated security join (delivery_security table) — never from a raw row cast.
+  const pin = sec?.handover_pin || '';
 
   return {
     id: row.id,

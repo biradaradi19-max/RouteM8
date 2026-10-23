@@ -83,7 +83,8 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
   } = useTransporterLocation({
     deliveryId: req.id,
     deliveryStatus: req.status,
-    isTransporter: isAssignedTransporter || (user?.role === 'transporter' && Boolean(req.transporterId)),
+    // Only the specifically assigned transporter for THIS delivery may broadcast GPS
+    isTransporter: isAssignedTransporter,
   });
 
   const handleVerifyPin = async () => {
@@ -406,7 +407,16 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
             }}
           >
             <Key size={14} color="var(--color-forest-800)" />
-            {isAssignedTransporter && !isRequester ? (
+            {isRequester && !isAssignedTransporter ? (
+              // Only the requester sees the actual PIN — used to verify physical handover
+              <span>
+                Handover Verification PIN:{' '}
+                <strong className="tabular-nums" style={{ letterSpacing: '0.08em' }}>
+                  {req.handoverPin || '——'}
+                </strong>
+              </span>
+            ) : isAssignedTransporter ? (
+              // The transporter is told to collect the PIN from the recipient at delivery
               <span>
                 Handover Verification PIN:{' '}
                 <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
@@ -414,11 +424,9 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
                 </span>
               </span>
             ) : (
-              <span>
-                Handover Verification PIN:{' '}
-                <strong className="tabular-nums" style={{ letterSpacing: '0.08em' }}>
-                  {req.handoverPin}
-                </strong>
+              // Third-party viewers see a masked placeholder — PIN is never exposed
+              <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                PIN protected — visible to requester only
               </span>
             )}
           </div>
