@@ -1,0 +1,86 @@
+import { Router } from 'express';
+import { AccessToken } from 'livekit-server-sdk';
+import { requireAuth } from '../middleware/auth.js';
+import { DeliveryRequest } from '../models/DeliveryRequest.js';
+const router = Router();
+// POST /api/livekit/token - Generate LiveKit AccessToken for verified delivery participants
+router.post('/token', requireAuth, async (req, res) => {
+    try {
+        const uid = req.user.uid;
+        const { deliveryId } = req.body;
+        if (!deliveryId) {
+            res.status(400).json({ error: 'deliveryId is required' });
+            return;
+        }
+        const delivery = await DeliveryRequest.findById(deliveryId);
+        if (!delivery) {
+            res.status(404).json({ error: 'Delivery request not found' });
+            return;
+        }
+        // Participant authorization check: only requester or assigned transporter
+        const isRequester = delivery.requesterId === uid;
+        const isTransporter = delivery.transporterId === uid;
+        if (!isRequester && !isTransporter) {
+            res.status(403).json({ error: 'Forbidden: You are not an authorized participant in this delivery' });
+            return;
+        }
+        // Audio calls are only permitted during active engagement (matched or in_transit)
+        if (delivery.status !== 'matched' && delivery.status !== 'in_transit') {
+            res.status(400).json({
+                error: `Audio calling is not available for deliveries in '${delivery.status}' status. Calls require 'matched' or 'in_transit' status.`,
+            });
+            return;
+        }
+        const apiKey = process.env.LIVEKIT_API_KEY;
+        const apiSecret = process.env.LIVEKIT_API_SECRET;
+        const serverUrl = process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://routem8-dev.livekit.cloud';
+        const participantName = isRequester ? delivery.requesterName : delivery.transporterName || 'Delivery Partner';
+        const participantRole = isRequester ? 'Customer' : 'Transporter';
+        const roomName = `delivery-${delivery._id.toString()}`;
+        // If LiveKit credentials are not configured on server (e.g. testing or initial local setup)
+        if (!apiKey || !apiSecret) {
+            if (process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_LIVEKIT === 'true') {
+                res.json({
+                    token: `mock-livekit-token-${uid}-${Date.now()}`,
+                    serverUrl,
+                    room: roomName,
+                    participantIdentity: uid,
+                    participantName,
+                    role: participantRole,
+                });
+                return;
+            }
+            res.status(503).json({
+                error: 'LiveKit server credentials (LIVEKIT_API_KEY / LIVEKIT_API_SECRET) are not configured on the server.',
+                missingConfig: true,
+            });
+            return;
+        }
+        // Mint short-lived access token with audio grants
+        const at = new AccessToken(apiKey, apiSecret, {
+            identity: uid,
+            name: participantName,
+            ttl: '1h',
+        });
+        at.addGrant({
+            roomJoin: true,
+            room: roomName,
+            canPublish: true,
+            canSubscribe: true,
+            canPublishData: true,
+        });
+        const jwt = await at.toJwt();
+        res.json({
+            token: jwt,
+            serverUrl,
+            room: roomName,
+            participantIdentity: uid,
+            participantName,
+            role: participantRole,
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Failed to mint LiveKit call token', details: err.message });
+    }
+});
+export default router;
