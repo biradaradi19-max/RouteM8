@@ -1,7 +1,5 @@
 import { Router, type Response } from 'express';
 import multer from 'multer';
-import { existsSync, mkdirSync } from 'node:fs';
-import path from 'node:path';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { User } from '../models/User.js';
@@ -13,31 +11,9 @@ import { dispatchService } from '../services/dispatchService.js';
 const router = Router();
 
 // Setup Multer for private delivery proof photos
-const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-const uploadsDir = isServerless
-  ? path.join('/tmp', 'uploads', 'delivery-proofs')
-  : path.join(process.cwd(), 'uploads', 'delivery-proofs');
+const storage = multer.memoryStorage();
 
-try {
-  if (!existsSync(uploadsDir)) {
-    mkdirSync(uploadsDir, { recursive: true });
-  }
-} catch (err: any) {
-  console.warn('[Multer Storage] Could not initialize uploads directory:', err.message);
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `proof-${uniqueSuffix}${ext}`);
-  },
-});
-
-const upload = multer({
+export const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (_req, file, cb) => {
