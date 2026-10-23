@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { User } from '../models/User.js';
 import { isDbConnected } from '../config/db.js';
+import { firestorePersistence } from '../services/firestorePersistence.js';
 const router = Router();
 export const inMemoryUsers = new Map();
 // GET /api/auth/me - Get or automatically create user profile from verified Firebase UID
@@ -33,6 +34,10 @@ router.get('/me', requireAuth, async (req, res) => {
         if (!user) {
             user = inMemoryUsers.get(verifiedUser.uid);
             if (!user) {
+                // Check remote shared Firestore
+                user = await firestorePersistence.getUser(verifiedUser.uid);
+            }
+            if (!user) {
                 user = {
                     _id: `mem-${verifiedUser.uid}`,
                     firebaseUid: verifiedUser.uid,
@@ -52,8 +57,9 @@ router.get('/me', requireAuth, async (req, res) => {
                     bio: undefined,
                     partnerAvailable: true,
                 };
-                inMemoryUsers.set(verifiedUser.uid, user);
+                await firestorePersistence.saveUser(user);
             }
+            inMemoryUsers.set(verifiedUser.uid, user);
         }
         res.json({
             user: {
@@ -187,6 +193,7 @@ router.put('/profile', requireAuth, async (req, res) => {
         if (partnerAvailable !== undefined)
             user.partnerAvailable = Boolean(partnerAvailable);
         inMemoryUsers.set(verifiedUser.uid, user);
+        await firestorePersistence.saveUser(user);
         res.json({
             success: true,
             user: {
@@ -249,6 +256,12 @@ router.get('/users/:id', async (req, res) => {
         }
         if (!user) {
             user = inMemoryUsers.get(req.params.id);
+        }
+        if (!user) {
+            user = await firestorePersistence.getUser(req.params.id);
+            if (user) {
+                inMemoryUsers.set(req.params.id, user);
+            }
         }
         if (!user) {
             res.status(404).json({ error: 'User not found' });

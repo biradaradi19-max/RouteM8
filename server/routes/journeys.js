@@ -4,6 +4,7 @@ import { Journey } from '../models/Journey.js';
 import { User } from '../models/User.js';
 import { Activity } from '../models/Activity.js';
 import { isDbConnected } from '../config/db.js';
+import { firestorePersistence } from '../services/firestorePersistence.js';
 const router = Router();
 export const inMemoryJourneys = [];
 function formatJourney(doc) {
@@ -46,6 +47,20 @@ router.get('/', async (req, res) => {
             }
             catch (dbErr) {
                 console.warn('[Journeys List DB Fallback]', dbErr.message);
+            }
+        }
+        // Remote Firestore cross-container fallback sync
+        let remoteJourneys = [];
+        try {
+            remoteJourneys = await firestorePersistence.listJourneys(50);
+        }
+        catch {
+            // Non-blocking
+        }
+        for (const rem of remoteJourneys) {
+            const rId = rem._id || rem.id;
+            if (rId && !inMemoryJourneys.some(j => j._id === rId || j.id === rId)) {
+                inMemoryJourneys.unshift(rem);
             }
         }
         let filtered = inMemoryJourneys;
@@ -118,6 +133,7 @@ router.post('/', requireAuth, async (req, res) => {
             updatedAt: new Date(),
         };
         inMemoryJourneys.unshift(journeyData);
+        await firestorePersistence.saveJourney(journeyData);
         if (isDbConnected()) {
             try {
                 let transporter = await User.findOne({ firebaseUid: uid });
@@ -197,6 +213,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
             return;
         }
         inMemoryJourneys.splice(index, 1);
+        await firestorePersistence.deleteJourney(String(req.params.id));
         res.json({ success: true, message: 'Journey removed' });
     }
     catch (err) {

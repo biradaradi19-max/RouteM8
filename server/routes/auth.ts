@@ -2,6 +2,7 @@ import { Router, type Response } from 'express';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { User } from '../models/User.js';
 import { isDbConnected } from '../config/db.js';
+import { firestorePersistence } from '../services/firestorePersistence.js';
 
 const router = Router();
 
@@ -38,6 +39,10 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response):
     if (!user) {
       user = inMemoryUsers.get(verifiedUser.uid);
       if (!user) {
+        // Check remote shared Firestore
+        user = await firestorePersistence.getUser(verifiedUser.uid);
+      }
+      if (!user) {
         user = {
           _id: `mem-${verifiedUser.uid}`,
           firebaseUid: verifiedUser.uid,
@@ -57,8 +62,9 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response):
           bio: undefined,
           partnerAvailable: true,
         };
-        inMemoryUsers.set(verifiedUser.uid, user);
+        await firestorePersistence.saveUser(user);
       }
+      inMemoryUsers.set(verifiedUser.uid, user);
     }
 
     res.json({
@@ -187,6 +193,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     if (partnerAvailable !== undefined) user.partnerAvailable = Boolean(partnerAvailable);
 
     inMemoryUsers.set(verifiedUser.uid, user);
+    await firestorePersistence.saveUser(user);
 
     res.json({
       success: true,
@@ -248,6 +255,12 @@ router.get('/users/:id', async (req, res): Promise<void> => {
     }
     if (!user) {
       user = inMemoryUsers.get(req.params.id);
+    }
+    if (!user) {
+      user = await firestorePersistence.getUser(req.params.id);
+      if (user) {
+        inMemoryUsers.set(req.params.id, user);
+      }
     }
     if (!user) {
       res.status(404).json({ error: 'User not found' });

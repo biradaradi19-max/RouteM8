@@ -7,6 +7,7 @@ import { Activity } from '../models/Activity.js';
 import { Location } from '../models/Location.js';
 import { isDbConnected } from '../config/db.js';
 import { dispatchService } from '../services/dispatchService.js';
+import { firestorePersistence } from '../services/firestorePersistence.js';
 
 const router = Router();
 
@@ -230,10 +231,38 @@ function formatDelivery(doc: any, forUserId?: string) {
 }
 
 // Helper to find a delivery in DB or in-memory
-function getInMemDelivery(id: string | string[] | undefined) {
+export function getInMemDelivery(id: string | string[] | undefined) {
   if (!id) return undefined;
   const targetId = Array.isArray(id) ? id[0] : id;
   return inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
+}
+
+// Asynchronous finder checking local memory first, then cross-container Firestore persistence
+export async function findDelivery(id: string | string[] | undefined): Promise<InMemDelivery | undefined> {
+  if (!id) return undefined;
+  const targetId = Array.isArray(id) ? id[0] : id;
+  const local = inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
+  if (local) return local;
+
+  const remote = await firestorePersistence.getDelivery(targetId);
+  if (remote) {
+    const formatted: InMemDelivery = {
+      ...remote,
+      _id: remote._id || targetId,
+      id: remote.id || targetId,
+      rejectedBy: remote.rejectedBy || [],
+      createdAt: remote.createdAt ? new Date(remote.createdAt) : new Date(),
+      updatedAt: remote.updatedAt ? new Date(remote.updatedAt) : new Date(),
+    };
+    const existingIdx = inMemoryDeliveries.findIndex(d => d._id === targetId || d.id === targetId);
+    if (existingIdx >= 0) {
+      inMemoryDeliveries[existingIdx] = formatted;
+    } else {
+      inMemoryDeliveries.unshift(formatted);
+    }
+    return formatted;
+  }
+  return undefined;
 }
 
 // GET /api/deliveries - List deliveries
@@ -265,7 +294,27 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): 
       }
     }
 
-    // In-memory fallback
+    // In-memory + remote Firestore cross-container fallback
+    let remoteDocs: any[] = [];
+    try {
+      remoteDocs = await firestorePersistence.listDeliveries(50);
+    } catch {
+      // Non-blocking
+    }
+    for (const rem of remoteDocs) {
+      const rId = rem._id || rem.id;
+      if (rId && !inMemoryDeliveries.some(d => d._id === rId || d.id === rId)) {
+        inMemoryDeliveries.unshift({
+          ...rem,
+          _id: rId,
+          id: rId,
+          rejectedBy: rem.rejectedBy || [],
+          createdAt: rem.createdAt ? new Date(rem.createdAt) : new Date(),
+          updatedAt: rem.updatedAt ? new Date(rem.updatedAt) : new Date(),
+        });
+      }
+    }
+
     let results = [...inMemoryDeliveries];
     if (status) results = results.filter(d => d.status === status);
     if (requesterId) results = results.filter(d => d.requesterId === requesterId);
@@ -285,8 +334,6 @@ router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response
     const callerUid = req.user?.uid;
 
     if (isDbConnected()) {
-
-
       try {
         const doc = await DeliveryRequest.findById(req.params.id);
         if (doc) {
@@ -298,7 +345,7 @@ router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response
       }
     }
 
-    const inMem = getInMemDelivery(req.params.id);
+    const inMem = await findDelivery(req.params.id);
     if (!inMem) {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
@@ -371,8 +418,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       updatedAt: new Date(),
     };
 
-    // Always store in inMemoryDeliveries as active cache
+    // Always store in inMemoryDeliveries as active cache and sync with Firestore
     inMemoryDeliveries.unshift(deliveryData);
+    await firestorePersistence.saveDelivery(deliveryData);
 
     if (isDbConnected()) {
       try {
@@ -512,7 +560,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
     }
 
     // In-memory atomic accept
-    const target = getInMemDelivery(req.params.id);
+    const target = await findDelivery(req.params.id);
     if (!target) {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
@@ -534,6 +582,9 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
     target.transporterName = req.user!.name || 'Delivery Partner';
     target.transporterVehicle = 'Commuter Vehicle';
     target.updatedAt = new Date();
+
+    // Persist matched state across serverless containers
+    await firestorePersistence.saveDelivery(target);
 
     const formatted = formatDelivery(target);
     const io = req.app.get('io');
@@ -576,7 +627,7 @@ router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: R
       }
     }
 
-    const target = getInMemDelivery(req.params.id);
+    const target = await findDelivery(req.params.id);
     if (!target) {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
@@ -586,6 +637,8 @@ router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: R
     if (!target.rejectedBy.includes(uid)) {
       target.rejectedBy.push(uid);
     }
+    target.updatedAt = new Date();
+    await firestorePersistence.saveDelivery(target);
 
     res.json({ success: true, message: 'Delivery dismissed for this partner' });
   } catch (err: any) {
@@ -650,7 +703,7 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
     }
 
     // In-memory fallback
-    const target = getInMemDelivery(deliveryId);
+    const target = await findDelivery(deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
@@ -668,6 +721,9 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
 
     target.status = 'in_transit';
     target.updatedAt = new Date();
+
+    // Persist in-transit state across serverless containers
+    await firestorePersistence.saveDelivery(target);
 
     const formatted = formatDelivery(target);
     const io = req.app.get('io');
@@ -796,7 +852,7 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
     }
 
     // In-memory fallback
-    const target = getInMemDelivery(deliveryId);
+    const target = await findDelivery(deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
@@ -830,6 +886,8 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
       if (target.pinAttempts >= MAX_ATTEMPTS) {
         target.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
       }
+      target.updatedAt = new Date();
+      await firestorePersistence.saveDelivery(target);
 
       const remaining = Math.max(0, MAX_ATTEMPTS - target.pinAttempts);
       res.status(400).json({
@@ -846,6 +904,9 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
     target.pinLockedUntil = undefined;
     target.status = 'completed';
     target.updatedAt = new Date();
+
+    // Persist completed status across serverless containers
+    await firestorePersistence.saveDelivery(target);
 
     const formatted = formatDelivery(target);
     const io = req.app.get('io');
@@ -910,7 +971,7 @@ router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: R
       }
     }
 
-    const target = getInMemDelivery(deliveryId);
+    const target = await findDelivery(deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
@@ -928,6 +989,9 @@ router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: R
 
     target.status = 'cancelled';
     target.updatedAt = new Date();
+
+    // Persist cancelled state across serverless containers
+    await firestorePersistence.saveDelivery(target);
 
     const io = req.app.get('io');
     if (io) {
@@ -1013,6 +1077,13 @@ router.get('/:id/location', async (req, res): Promise<void> => {
       return;
     }
 
+    const remoteLoc = await firestorePersistence.getLatestLocation(deliveryId);
+    if (remoteLoc) {
+      inMemoryLocations.set(deliveryId, remoteLoc);
+      res.json(remoteLoc);
+      return;
+    }
+
     res.status(404).json({ error: 'No location updates found for this delivery' });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch location', details: err.message });
@@ -1075,6 +1146,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
         };
 
         inMemoryLocations.set(deliveryId, payload);
+        await firestorePersistence.saveLocation(deliveryId, payload);
 
         const io = req.app.get('io');
         if (io) {
@@ -1089,7 +1161,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
     }
 
     // In-memory fallback
-    const target = getInMemDelivery(deliveryId);
+    const target = await findDelivery(deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
@@ -1116,6 +1188,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
     };
 
     inMemoryLocations.set(deliveryId, payload);
+    await firestorePersistence.saveLocation(deliveryId, payload);
 
     const io = req.app.get('io');
     if (io) {
