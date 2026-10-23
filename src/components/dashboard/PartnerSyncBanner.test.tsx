@@ -59,13 +59,20 @@ describe('PartnerDashboard — Corridors Synchronization & Error Banners', () =>
     vi.clearAllMocks();
     vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
       user: mockPartnerUser,
-      loading: false,
-      loginWithGoogle: vi.fn(),
-      loginWithPhone: vi.fn(),
-      verifyOtp: vi.fn(),
-      updateUserProfile: vi.fn(),
-      submitVerification: vi.fn(),
-      logout: vi.fn(),
+      isAuthenticated: true,
+      isLoading: false,
+      isFirebaseConnected: true,
+      isSupabaseConnected: false,
+      error: null,
+      clearError: vi.fn(),
+      signIn: vi.fn(),
+      signUp: vi.fn(),
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
+      resetPassword: vi.fn(),
+      updateProfile: vi.fn(),
+      submitVerificationRequest: vi.fn(),
+      verifyStudentOrWork: vi.fn(),
     });
   });
 

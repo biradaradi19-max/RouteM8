@@ -137,6 +137,10 @@ describe('Route M8 AppContext — Empty Datasets & Backend Tests', () => {
   it('6. should populate data and clear isLoadingData to false on successful response', async () => {
     const mockDelivery = {
       id: 'del-101',
+      requesterId: 'req-user-1',
+      requesterName: 'User One',
+      requesterTrustScore: 95,
+      handoverPin: '1234',
       title: 'Lab Supplies',
       description: 'Campus reagents',
       category: 'campus-supplies' as const,
@@ -169,6 +173,10 @@ describe('Route M8 AppContext — Empty Datasets & Backend Tests', () => {
   it('7. should not re-trigger infinite fetch cycles when data is received', async () => {
     const mockDelivery = {
       id: 'del-102',
+      requesterId: 'req-user-2',
+      requesterName: 'User Two',
+      requesterTrustScore: 95,
+      handoverPin: '5678',
       title: 'Study Notes',
       description: 'Physics notes',
       category: 'campus-supplies' as const,
