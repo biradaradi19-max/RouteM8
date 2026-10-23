@@ -8,6 +8,7 @@ import { Location } from '../models/Location.js';
 import { isDbConnected } from '../config/db.js';
 import { dispatchService } from '../services/dispatchService.js';
 import { firestorePersistence } from '../services/firestorePersistence.js';
+import { calculateHaversineDistance } from '../services/matchingEngine.js';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ export interface InMemDelivery {
   proofPhotoUrl?: string;
   rejectedBy: string[];
   distanceKm?: number;
+  pickupDistanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
   createdAt: Date;
@@ -224,11 +226,27 @@ function formatDelivery(doc: any, forUserId?: string) {
     proofPhotoUrl: doc.proofPhotoUrl,
     rejectedBy: doc.rejectedBy || [],
     distanceKm: doc.distanceKm,
+    ...(typeof doc.pickupDistanceKm === 'number' ? { pickupDistanceKm: doc.pickupDistanceKm } : {}),
     estimatedDurationMin: doc.estimatedDurationMin,
     estimatedDetourMinutes: doc.estimatedDetourMinutes,
     createdAt: doc.createdAt?.toISOString?.() || (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
     updatedAt: doc.updatedAt?.toISOString?.() || (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
   };
+}
+
+export function isValidPickupCoords(coords: any): coords is [number, number] {
+  return (
+    Array.isArray(coords) &&
+    coords.length === 2 &&
+    typeof coords[0] === 'number' &&
+    typeof coords[1] === 'number' &&
+    Number.isFinite(coords[0]) &&
+    Number.isFinite(coords[1]) &&
+    coords[0] >= -90 &&
+    coords[0] <= 90 &&
+    coords[1] >= -180 &&
+    coords[1] <= 180
+  );
 }
 
 // Helper to find a delivery in DB or in-memory
@@ -329,6 +347,129 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): 
   }
 });
 
+// GET /api/deliveries/nearby - Discover open deliveries within radius of partner coordinates
+router.get('/nearby', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const callerUid = req.user!.uid;
+
+    const latStr = req.query.lat as string | undefined;
+    const lngStr = req.query.lng as string | undefined;
+    const radiusKmStr = req.query.radiusKm as string | undefined;
+
+    if (latStr === undefined || lngStr === undefined || latStr === '' || lngStr === '') {
+      res.status(400).json({ error: 'Both lat and lng query parameters are required' });
+      return;
+    }
+
+    const lat = Number(latStr);
+    const lng = Number(lngStr);
+
+    if (Number.isNaN(lat) || Number.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      res.status(400).json({ error: 'Valid GPS latitude (-90 to 90) and longitude (-180 to 180) required' });
+      return;
+    }
+
+    let radiusKm = 5;
+    if (radiusKmStr !== undefined && radiusKmStr !== '') {
+      radiusKm = Number(radiusKmStr);
+      if (Number.isNaN(radiusKm) || radiusKm <= 0 || radiusKm > 50) {
+        res.status(400).json({ error: 'radiusKm must be a positive number between 0.1 and 50' });
+        return;
+      }
+    }
+
+    // Role check: block users explicitly restricted to requester role
+    if (isDbConnected()) {
+      try {
+        const userDoc = await User.findOne({ firebaseUid: callerUid });
+        if (userDoc && userDoc.role === 'requester') {
+          res.status(403).json({ error: 'Forbidden: Delivery partner access required' });
+          return;
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
+    let candidates: any[] = [];
+
+    if (isDbConnected()) {
+      try {
+        const docs = await DeliveryRequest.find({
+          status: 'open',
+          requesterId: { $ne: callerUid },
+          rejectedBy: { $ne: callerUid },
+        }).lean();
+        candidates = docs;
+      } catch (dbErr: any) {
+        console.warn('[DB Nearby Fallback] Falling back to in-memory store:', dbErr.message);
+      }
+    }
+
+    if (candidates.length === 0) {
+      // In-memory + remote Firestore cross-container fallback
+      let remoteDocs: any[] = [];
+      try {
+        remoteDocs = await firestorePersistence.listDeliveries(50);
+      } catch {
+        remoteDocs = [];
+      }
+
+      const merged = new Map<string, InMemDelivery>();
+      for (const d of remoteDocs) {
+        const id = (d.id || d._id || '').toString();
+        if (id) {
+          merged.set(id, {
+            ...d,
+            _id: id,
+            id,
+            rejectedBy: d.rejectedBy || [],
+            createdAt: d.createdAt ? new Date(d.createdAt) : new Date(),
+            updatedAt: d.updatedAt ? new Date(d.updatedAt) : new Date(),
+          });
+        }
+      }
+      for (const d of inMemoryDeliveries) {
+        const id = (d.id || d._id || '').toString();
+        if (id) merged.set(id, d);
+      }
+
+      candidates = Array.from(merged.values()).filter(d => {
+        return (
+          d.status === 'open' &&
+          d.requesterId !== callerUid &&
+          (!d.rejectedBy || !d.rejectedBy.includes(callerUid))
+        );
+      });
+    }
+
+    const partnerCoords: [number, number] = [lat, lng];
+    const results: any[] = [];
+
+    for (const item of candidates) {
+      if (!isValidPickupCoords(item.pickupCoords)) {
+        continue;
+      }
+      const distKm = calculateHaversineDistance(partnerCoords, [item.pickupCoords[0], item.pickupCoords[1]]);
+      if (distKm <= radiusKm) {
+        const formatted = formatDelivery({
+          ...item,
+          pickupDistanceKm: distKm,
+        }, callerUid);
+        formatted.pickupDistanceKm = distKm;
+        results.push(formatted);
+      }
+    }
+
+    // Sort by nearest pickup first
+    results.sort((a, b) => (a.pickupDistanceKm ?? 0) - (b.pickupDistanceKm ?? 0));
+
+    res.json(results);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to discover nearby deliveries', details: err.message });
+  }
+});
+
 // GET /api/deliveries/:id - Get single delivery
 router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -382,6 +523,16 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
 
     if (!title || !pickupAddress || !dropoffAddress || !pickupCoords || !dropoffCoords || compensation === undefined) {
       res.status(400).json({ error: 'Missing required delivery fields' });
+      return;
+    }
+
+    if (!isValidPickupCoords(pickupCoords)) {
+      res.status(400).json({ error: 'Invalid pickup coordinates. Must be [latitude, longitude] with lat between -90 and 90, lng between -180 and 180.' });
+      return;
+    }
+
+    if (!isValidPickupCoords(dropoffCoords)) {
+      res.status(400).json({ error: 'Invalid dropoff coordinates. Must be [latitude, longitude] with lat between -90 and 90, lng between -180 and 180.' });
       return;
     }
 

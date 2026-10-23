@@ -98,6 +98,7 @@ export interface DeliveryRequest {
   estimatedDetourMinutes?: number;
   rejectedBy?: string[];
   distanceKm?: number;
+  pickupDistanceKm?: number;
   estimatedDurationMin?: number;
   matchType?: 'nearby' | 'corridor';
   dispatchStatus?: 'idle' | 'searching_partner' | 'expanding_search' | 'partner_assigned' | 'no_partner_available' | 'cancelled';

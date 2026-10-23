@@ -128,6 +128,26 @@ export const deliveriesApi = {
     return Array.isArray(parsed.data) ? parsed.data : [];
   },
 
+  async getNearbyDeliveries(params: {
+    lat: number;
+    lng: number;
+    radiusKm?: number;
+  }): Promise<DeliveryRequest[]> {
+    const query = new URLSearchParams();
+    query.set('lat', String(params.lat));
+    query.set('lng', String(params.lng));
+    if (params.radiusKm !== undefined) {
+      query.set('radiusKm', String(params.radiusKm));
+    }
+
+    const res = await fetchWithAuth(`${API_BASE}/deliveries/nearby?${query.toString()}`);
+    const parsed = await safeReadJson<DeliveryRequest[]>(res);
+    if (!parsed.ok) {
+      throw new Error(parsed.error || `Failed to fetch nearby deliveries (${parsed.status})`);
+    }
+    return Array.isArray(parsed.data) ? parsed.data : [];
+  },
+
   async getDelivery(id: string): Promise<DeliveryRequest | null> {
     try {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}`);

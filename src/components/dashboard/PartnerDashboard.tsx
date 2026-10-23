@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { getSocket } from '../../services/socket';
@@ -28,6 +28,19 @@ import { CallButton } from '../audio/CallButton';
 import { AudioCallModal } from '../audio/AudioCallModal';
 import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { useTransporterLocation } from '../../hooks/useTransporterLocation';
+import { usePartnerDiscoveryLocation } from '../../hooks/usePartnerDiscoveryLocation';
+import { deliveriesApi } from '../../services/api';
+
+function formatLastUpdated(date: Date | null): string {
+  if (!date) return '';
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 10) return 'Just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min${minutes > 1 ? 's' : ''} ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} hr${hours > 1 ? 's' : ''} ago`;
+}
 
 interface PartnerDashboardProps {
   onOpenPublishJourney: () => void;
@@ -74,6 +87,97 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [acceptMessage, setAcceptMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
+  // Location-based Nearby Delivery Discovery
+  const {
+    coords: partnerGpsCoords,
+    locationStatus,
+    errorMessage: locationErrorMessage,
+    lastUpdated: locationLastUpdated,
+    refreshLocation,
+  } = usePartnerDiscoveryLocation();
+
+  const [searchRadiusKm, setSearchRadiusKm] = useState<number>(5);
+  const [nearbyDeliveries, setNearbyDeliveries] = useState<DeliveryRequest[]>([]);
+  const [isLoadingNearby, setIsLoadingNearby] = useState<boolean>(false);
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
+  const lastFetchRef = useRef<string>('');
+
+  const fetchNearby = useCallback(async (lat: number, lng: number, radiusKm: number) => {
+    const fetchKey = `${lat.toFixed(4)},${lng.toFixed(4)},${radiusKm}`;
+    setIsLoadingNearby(true);
+    setNearbyError(null);
+    lastFetchRef.current = fetchKey;
+    try {
+      const data = await deliveriesApi.getNearbyDeliveries({ lat, lng, radiusKm });
+      if (lastFetchRef.current === fetchKey) {
+        setNearbyDeliveries(data);
+      }
+    } catch (err: any) {
+      if (lastFetchRef.current === fetchKey) {
+        setNearbyError(err.message || 'Unable to load nearby deliveries');
+      }
+    } finally {
+      if (lastFetchRef.current === fetchKey) {
+        setIsLoadingNearby(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (locationStatus === 'ready' && partnerGpsCoords) {
+      fetchNearby(partnerGpsCoords[0], partnerGpsCoords[1], searchRadiusKm);
+    }
+  }, [locationStatus, partnerGpsCoords, searchRadiusKm, fetchNearby]);
+
+  useEffect(() => {
+    let isMounted = true;
+    let cleanupSocket: (() => void) | undefined;
+
+    getSocket().then((s) => {
+      if (!isMounted) return;
+      const handleSocketRefresh = () => {
+        if (locationStatus === 'ready' && partnerGpsCoords) {
+          fetchNearby(partnerGpsCoords[0], partnerGpsCoords[1], searchRadiusKm);
+        }
+      };
+
+      s.on('delivery:created', handleSocketRefresh);
+      s.on('delivery:new', handleSocketRefresh);
+      s.on('delivery:claimed', handleSocketRefresh);
+      s.on('delivery:cancelled', handleSocketRefresh);
+      s.on('delivery:updated', handleSocketRefresh);
+
+      cleanupSocket = () => {
+        s.off('delivery:created', handleSocketRefresh);
+        s.off('delivery:new', handleSocketRefresh);
+        s.off('delivery:claimed', handleSocketRefresh);
+        s.off('delivery:cancelled', handleSocketRefresh);
+        s.off('delivery:updated', handleSocketRefresh);
+      };
+    }).catch(() => {});
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && locationStatus === 'ready' && partnerGpsCoords) {
+        fetchNearby(partnerGpsCoords[0], partnerGpsCoords[1], searchRadiusKm);
+      }
+    };
+    const handleFocus = () => {
+      if (locationStatus === 'ready' && partnerGpsCoords) {
+        fetchNearby(partnerGpsCoords[0], partnerGpsCoords[1], searchRadiusKm);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isMounted = false;
+      cleanupSocket?.();
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [locationStatus, partnerGpsCoords, searchRadiusKm, fetchNearby]);
+
   // Active deliveries for this partner (or all in demo mode)
   const myAssignedDeliveries = requests.filter(r => {
     if (user && r.transporterId && r.transporterId === user.id) return true;
@@ -86,8 +190,8 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     return r.status === 'completed';
   });
 
-  // Open requests available to be matched and accepted
-  const openRequests = requests.filter(r => {
+  // Filter helper for requests
+  const filterRequest = (r: DeliveryRequest) => {
     if (!r || r.status !== 'open') return false;
     // Security check: cannot accept own request
     if (user && r.requesterId === user.id) return false;
@@ -103,7 +207,16 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     const matchesSearch = !query || title.includes(query) || pickup.includes(query) || dropoff.includes(query);
     const matchesCat = selectedCategory === 'all' || r.category === selectedCategory;
     return matchesSearch && matchesCat;
-  });
+  };
+
+  // Open requests available to be matched and accepted from corridor/context
+  const openRequests = requests.filter(filterRequest);
+
+  // Active nearby discoveries fetched via GPS
+  const activeNearbyDeliveries = nearbyDeliveries.filter(filterRequest);
+
+  // Use location-based nearby deliveries if GPS is ready; fallback to corridor openRequests if provided
+  const displayedDeliveries = locationStatus === 'ready' ? activeNearbyDeliveries : openRequests;
 
   // Track any open requests created by the current user
   const myOwnOpenRequests = requests.filter(r => user && r.requesterId === user.id && r.status === 'open');
@@ -195,6 +308,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     try {
       const success = await acceptDeliveryMatch(requestId, targetJourney?.id);
       if (success) {
+        setNearbyDeliveries(prev => prev.filter(r => r.id !== requestId));
         setAcceptMessage({ text: 'Delivery request accepted! It is now in your active deliveries list.', isError: false });
         setTimeout(() => setAcceptMessage(null), 3500);
       } else {
@@ -214,6 +328,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     setAcceptMessage(null);
     try {
       setDismissedIds(prev => new Set(prev).add(requestId));
+      setNearbyDeliveries(prev => prev.filter(r => r.id !== requestId));
       const success = await rejectDelivery(requestId);
       if (success) {
         setAcceptMessage({ text: 'Delivery opportunity dismissed for your account.', isError: false });
@@ -766,14 +881,207 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           </div>
         )}
 
+        {/* Location Acquisition & Permission Status Banners */}
+        {locationStatus === 'getting_location' && (
+          <div
+            className="card"
+            style={{
+              padding: '1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.875rem',
+              backgroundColor: 'var(--bg-surface-subtle)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 'var(--radius-lg)',
+              marginBottom: '1.25rem',
+            }}
+          >
+            <Radio size={20} className="animate-pulse" style={{ color: 'var(--color-mint-600)' }} />
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                Getting your location…
+              </div>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                Acquiring high-accuracy GPS coordinates to discover nearby deliveries.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {locationStatus === 'permission_denied' && (
+          <div
+            className="card"
+            style={{
+              padding: '1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              backgroundColor: 'var(--status-danger-bg)',
+              border: '1px solid var(--status-danger-border)',
+              borderRadius: 'var(--radius-lg)',
+              marginBottom: '1.25rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <AlertCircle size={20} style={{ color: 'var(--status-danger-text)', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--status-danger-text)' }}>
+                  Location permission required
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  {locationErrorMessage || 'Please allow Route M8 to access your device location in browser settings to discover nearby pickup requests.'}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => refreshLocation()}
+              className="btn btn-secondary btn-sm"
+            >
+              Retry GPS
+            </button>
+          </div>
+        )}
+
+        {(locationStatus === 'timeout' || locationStatus === 'unavailable' || locationStatus === 'error') && (
+          <div
+            className="card"
+            style={{
+              padding: '1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              backgroundColor: 'var(--bg-surface-subtle)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 'var(--radius-lg)',
+              marginBottom: '1.25rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <AlertCircle size={20} style={{ color: '#D97706', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                  Unable to get location — Retry
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  {locationErrorMessage || 'Could not acquire your device GPS position. Please check your location settings and retry.'}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => refreshLocation()}
+              className="btn btn-primary btn-sm"
+            >
+              Retry GPS
+            </button>
+          </div>
+        )}
+
+        {/* Location Radius & Refresh Controls */}
+        {locationStatus === 'ready' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              marginBottom: '1.25rem',
+              padding: '0.75rem 1rem',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 'var(--radius-md)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Showing deliveries within {searchRadiusKm} km ({displayedDeliveries.length} found)
+              </span>
+              {locationLastUpdated && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                  • Last updated: {formatLastUpdated(locationLastUpdated)}
+                </span>
+              )}
+              {isLoadingNearby && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <RefreshCw size={12} className="animate-spin" /> Finding nearby deliveries…
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', overflow: 'hidden' }}>
+                {[5, 10, 15].map((radius) => (
+                  <button
+                    key={radius}
+                    type="button"
+                    onClick={() => setSearchRadiusKm(radius)}
+                    className={`btn btn-sm ${searchRadiusKm === radius ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{
+                      borderRadius: 0,
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.8125rem',
+                      fontWeight: searchRadiusKm === radius ? 700 : 500,
+                    }}
+                  >
+                    {radius} km
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  refreshLocation();
+                  if (partnerGpsCoords) {
+                    fetchNearby(partnerGpsCoords[0], partnerGpsCoords[1], searchRadiusKm);
+                  }
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', padding: '0.35rem 0.75rem' }}
+                title="Refresh Location & Deliveries"
+              >
+                <RefreshCw size={13} className={isLoadingNearby ? 'animate-spin' : ''} />
+                <span>Refresh Location</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Nearby Fetch Error Notice */}
+        {nearbyError && (
+          <div
+            style={{
+              padding: '0.75rem 1rem',
+              backgroundColor: 'var(--status-danger-bg)',
+              border: '1px solid var(--status-danger-border)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--status-danger-text)',
+              fontSize: '0.8125rem',
+              marginBottom: '1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <AlertCircle size={15} />
+            <span>{nearbyError}</span>
+          </div>
+        )}
+
         {/* Requests Grid */}
-        {openRequests.length > 0 ? (
+        {displayedDeliveries.length > 0 ? (
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
             gap: '1.25rem'
           }}>
-            {openRequests.map(req => {
+            {displayedDeliveries.map(req => {
               const isAccepting = acceptingId === req.id;
               const isRejecting = rejectingId === req.id;
               return (
@@ -791,16 +1099,29 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                     {/* Detour badge & category */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.375rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
-                        <span className="tabular-nums" style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          color: 'var(--color-mint-600)',
-                          backgroundColor: 'var(--color-mint-50)',
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: 'var(--radius-full)'
-                        }}>
-                          +{req.estimatedDetourMinutes || 5} min detour
-                        </span>
+                        {req.pickupDistanceKm != null ? (
+                          <span className="tabular-nums" style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: 'var(--color-mint-600)',
+                            backgroundColor: 'var(--color-mint-50)',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: 'var(--radius-full)'
+                          }}>
+                            📍 {req.pickupDistanceKm.toFixed(1)} km away
+                          </span>
+                        ) : (
+                          <span className="tabular-nums" style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: 'var(--color-mint-600)',
+                            backgroundColor: 'var(--color-mint-50)',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: 'var(--radius-full)'
+                          }}>
+                            +{req.estimatedDetourMinutes || 5} min detour
+                          </span>
+                        )}
 
                         {req.matchType === 'corridor' && (
                           <span style={{
@@ -950,8 +1271,51 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
               );
             })}
           </div>
-        ) : (
-          /* Empty state for Partner */
+        ) : locationStatus === 'ready' ? (
+          /* Empty state for Partner with GPS Ready */
+          <div className="empty-state-box">
+            <div className="empty-state-icon-wrap">
+              <MapPin size={28} />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700 }}>
+                No deliveries within {searchRadiusKm} km
+              </h3>
+              <p style={{ margin: '0.375rem 0 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                {myOwnOpenRequests.length > 0
+                  ? `You have ${myOwnOpenRequests.length} open delivery request(s) created by your account. For security, delivery partners cannot accept packages they requested themselves.`
+                  : searchQuery || selectedCategory !== 'all'
+                  ? 'Try clearing your search filters to view all available requests.'
+                  : `There are currently no open pickup requests within ${searchRadiusKm} km of your GPS location. Expand your search distance to discover requests further out.`}
+              </p>
+            </div>
+            {searchRadiusKm < 15 ? (
+              <button
+                type="button"
+                onClick={() => setSearchRadiusKm(prev => Math.min(15, prev + 5))}
+                className="btn btn-primary btn-sm"
+                style={{ marginTop: '0.5rem' }}
+              >
+                <Navigation size={15} />
+                <span>Expand Search to {searchRadiusKm + 5} km</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  refreshLocation();
+                  if (partnerGpsCoords) fetchNearby(partnerGpsCoords[0], partnerGpsCoords[1], searchRadiusKm);
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: '0.5rem' }}
+              >
+                <RefreshCw size={15} />
+                <span>Refresh Deliveries</span>
+              </button>
+            )}
+          </div>
+        ) : locationStatus !== 'getting_location' && locationStatus !== 'permission_denied' && (
+          /* Generic Empty state when not loading or permission pending */
           <div className="empty-state-box">
             <div className="empty-state-icon-wrap">
               <Car size={28} />
