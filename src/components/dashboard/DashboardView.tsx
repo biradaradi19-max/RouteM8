@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import type { DeliveryRequest, PublishedJourney } from '../../types';
 import { RequesterDashboard } from './RequesterDashboard';
 import { PartnerDashboard } from './PartnerDashboard';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 
 export interface DashboardViewProps {
   onOpenCreateRequest: () => void;
@@ -20,18 +21,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // If in Delivery Partner mode, render dedicated transporter dashboard
   if (activeRoleMode === 'transporter') {
     return (
-      <PartnerDashboard
-        onOpenPublishJourney={onOpenPublishJourney}
-        onInspectMatch={onInspectMatch}
-      />
+      <ErrorBoundary fallbackTitle="Partner Dashboard Encountered An Issue">
+        <PartnerDashboard
+          onOpenPublishJourney={onOpenPublishJourney}
+          onInspectMatch={onInspectMatch}
+        />
+      </ErrorBoundary>
     );
   }
 
   // Default to dedicated Requester dashboard
   return (
-    <RequesterDashboard
-      onOpenCreateRequest={onOpenCreateRequest}
-      onInspectMatch={(req) => onInspectMatch(req)}
-    />
+    <ErrorBoundary fallbackTitle="Requester Dashboard Encountered An Issue">
+      <RequesterDashboard
+        onOpenCreateRequest={onOpenCreateRequest}
+        onInspectMatch={(req) => onInspectMatch(req)}
+      />
+    </ErrorBoundary>
   );
 };
+

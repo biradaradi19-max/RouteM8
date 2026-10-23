@@ -86,17 +86,19 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
 
   // Open requests available to be matched and accepted
   const openRequests = requests.filter(r => {
-    if (r.status !== 'open') return false;
+    if (!r || r.status !== 'open') return false;
     // Security check: cannot accept own request
     if (user && r.requesterId === user.id) return false;
     // Dismissal check: dismiss for this partner if rejected
     if (user && r.rejectedBy && r.rejectedBy.includes(user.id)) return false;
     if (dismissedIds.has(r.id)) return false;
 
-    const matchesSearch =
-      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.pickupAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.dropoffAddress.toLowerCase().includes(searchQuery.toLowerCase());
+    const query = (searchQuery || '').toLowerCase();
+    const title = (r.title || '').toLowerCase();
+    const pickup = (r.pickupAddress || '').toLowerCase();
+    const dropoff = (r.dropoffAddress || '').toLowerCase();
+
+    const matchesSearch = !query || title.includes(query) || pickup.includes(query) || dropoff.includes(query);
     const matchesCat = selectedCategory === 'all' || r.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
@@ -105,8 +107,8 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
   const myOwnOpenRequests = requests.filter(r => user && r.requesterId === user.id && r.status === 'open');
 
   // Real dynamic earnings calculation
-  const totalEarned = completedDeliveries.reduce((sum, r) => sum + (r.compensation || 0), 0);
-  const pendingEarnings = activeDeliveries.reduce((sum, r) => sum + (r.compensation || 0), 0);
+  const totalEarned = completedDeliveries.reduce((sum, r) => sum + (Number(r.compensation) || 0), 0);
+  const pendingEarnings = activeDeliveries.reduce((sum, r) => sum + (Number(r.compensation) || 0), 0);
   const defaultJourney = journeys[0];
 
   // Broadcast partner availability and location to Socket.IO backend for smart dispatch
@@ -140,7 +142,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           },
           () => {
             // If GPS denied, fallback to default journey origin if available
-            if (defaultJourney && isMounted) {
+            if (defaultJourney?.originCoords && Array.isArray(defaultJourney.originCoords) && defaultJourney.originCoords.length >= 2 && isMounted) {
               s.emit('partner:location', {
                 latitude: defaultJourney.originCoords[0],
                 longitude: defaultJourney.originCoords[1],
@@ -391,10 +393,10 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           </div>
           <div>
             <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-              ${totalEarned.toFixed(2)}
+              ${(Number(totalEarned) || 0).toFixed(2)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
-              + ${pendingEarnings.toFixed(2)} in active transit
+              + ${(Number(pendingEarnings) || 0).toFixed(2)} in active transit
             </div>
           </div>
         </div>
@@ -473,7 +475,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         Your Compensation
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${del.compensation.toFixed(2)}
+                        ${(Number(del.compensation) || 0).toFixed(2)}
                       </div>
                     </div>
                   </div>
@@ -493,14 +495,14 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                       <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-mint-500)', marginTop: '5px', flexShrink: 0 }} />
                       <div>
                         <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>Pickup</div>
-                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.pickupAddress}</div>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.pickupAddress || 'Address not specified'}</div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                       <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-forest-800)', marginTop: '5px', flexShrink: 0 }} />
                       <div>
                         <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>Dropoff</div>
-                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.dropoffAddress}</div>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.dropoffAddress || 'Address not specified'}</div>
                       </div>
                     </div>
                   </div>
@@ -803,7 +805,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                       </div>
 
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
-                        {req.itemSize} item • {req.urgency}
+                        {req.itemSize || 'standard'} item • {req.urgency || 'standard'}
                       </span>
                     </div>
 
@@ -819,13 +821,13 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                         <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-mint-500)', flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          Pickup: {req.pickupAddress}
+                          Pickup: {req.pickupAddress || 'Address not specified'}
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                         <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-charcoal-700)', flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          Dropoff: {req.dropoffAddress}
+                          Dropoff: {req.dropoffAddress || 'Address not specified'}
                         </span>
                       </div>
                     </div>
@@ -846,7 +848,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                       <div>
                         <div style={{ color: 'var(--text-tertiary)', fontSize: '0.6875rem' }}>Distance</div>
                         <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {req.distanceKm != null ? `${req.distanceKm.toFixed(1)} km` : (req.pickupCoords && req.dropoffCoords ? `${calculateHaversineDistance(req.pickupCoords, req.dropoffCoords).toFixed(1)} km` : '—')}
+                          {req.distanceKm != null ? `${req.distanceKm.toFixed(1)} km` : (Array.isArray(req.pickupCoords) && req.pickupCoords.length >= 2 && Array.isArray(req.dropoffCoords) && req.dropoffCoords.length >= 2 ? `${calculateHaversineDistance(req.pickupCoords, req.dropoffCoords).toFixed(1)} km` : '—')}
                         </div>
                       </div>
                       <div>
@@ -879,7 +881,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         Earn
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.1875rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${req.compensation.toFixed(2)}
+                        ${(Number(req.compensation) || 0).toFixed(2)}
                       </div>
                     </div>
 
@@ -969,7 +971,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
               </p>
             </div>
             <span className="badge badge-completed">
-              ${totalEarned.toFixed(2)} Total Settled
+              ${(Number(totalEarned) || 0).toFixed(2)} Total Settled
             </span>
           </div>
 
@@ -1005,9 +1007,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                     <CheckCircle2 size={16} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{del.title}</div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{del.title || 'Community Delivery'}</div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                      {del.pickupAddress} ➔ {del.dropoffAddress}
+                      {del.pickupAddress || '—'} ➔ {del.dropoffAddress || '—'}
                     </div>
                   </div>
                 </div>
@@ -1017,7 +1019,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                     PIN Verified
                   </span>
                   <div className="tabular-nums" style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-forest-850)' }}>
-                    +${del.compensation.toFixed(2)}
+                    +${(Number(del.compensation) || 0).toFixed(2)}
                   </div>
                 </div>
               </div>

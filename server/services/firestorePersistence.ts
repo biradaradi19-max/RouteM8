@@ -181,6 +181,21 @@ class FirestorePersistenceService {
     return success ? merged : null;
   }
 
+  async deleteDelivery(id: string): Promise<boolean> {
+    if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
+    try {
+      const url = `${BASE_FIRESTORE_URL}/deliveries/${encodeURIComponent(id)}`;
+      const res = await fetch(url, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(3500),
+      });
+      return res.ok;
+    } catch (err: any) {
+      console.warn('[Firestore] deleteDelivery failed:', err.message);
+      return false;
+    }
+  }
+
   async saveLocation(deliveryId: string, locationPayload: any): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
     try {

@@ -180,6 +180,22 @@ class FirestorePersistenceService {
         const success = await this.saveDelivery(merged);
         return success ? merged : null;
     }
+    async deleteDelivery(id) {
+        if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS))
+            return true;
+        try {
+            const url = `${BASE_FIRESTORE_URL}/deliveries/${encodeURIComponent(id)}`;
+            const res = await fetch(url, {
+                method: 'DELETE',
+                signal: AbortSignal.timeout(3500),
+            });
+            return res.ok;
+        }
+        catch (err) {
+            console.warn('[Firestore] deleteDelivery failed:', err.message);
+            return false;
+        }
+    }
     async saveLocation(deliveryId, locationPayload) {
         if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS))
             return true;

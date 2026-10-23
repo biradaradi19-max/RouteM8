@@ -186,39 +186,40 @@ export const INITIAL_COMMUNITY_DELIVERIES: InMemDelivery[] = [
 export let inMemoryDeliveries: InMemDelivery[] = [...INITIAL_COMMUNITY_DELIVERIES];
 export const inMemoryLocations = new Map<string, any>();
 
-// Helper to format Mongo document into standard frontend DeliveryRequest
+// Helper to format Mongo/Firestore document into standard frontend DeliveryRequest
 // Only the requester who created the delivery receives the plaintext handoverPin
 function formatDelivery(doc: any, forUserId?: string) {
   const showPin = Boolean(forUserId && forUserId === doc.requesterId);
+  const docId = (doc._id || doc.id || 'del-' + Date.now()).toString();
 
   return {
-    id: (doc._id || doc.id).toString(),
-    _id: (doc._id || doc.id).toString(),
-    title: doc.title,
-    description: doc.description,
-    category: doc.category,
-    pickupAddress: doc.pickupAddress,
-    pickupCoords: doc.pickupCoords,
+    id: docId,
+    _id: docId,
+    title: doc.title || 'Community Delivery',
+    description: doc.description || '',
+    category: doc.category || 'other',
+    pickupAddress: doc.pickupAddress || 'Address not specified',
+    pickupCoords: Array.isArray(doc.pickupCoords) ? doc.pickupCoords : [37.4275, -122.1697],
     pickupPlaceId: doc.pickupPlaceId,
-    dropoffAddress: doc.dropoffAddress,
-    dropoffCoords: doc.dropoffCoords,
+    dropoffAddress: doc.dropoffAddress || 'Address not specified',
+    dropoffCoords: Array.isArray(doc.dropoffCoords) ? doc.dropoffCoords : [37.3861, -122.0839],
     dropoffPlaceId: doc.dropoffPlaceId,
-    itemSize: doc.itemSize,
-    weightEstimateKg: doc.weightEstimateKg,
-    compensation: doc.compensation,
-    urgency: doc.urgency,
-    neededBy: doc.neededBy,
-    status: doc.status,
-    requesterId: doc.requesterId,
-    requesterName: doc.requesterName,
-    requesterTrustScore: doc.requesterTrustScore,
+    itemSize: doc.itemSize || 'standard',
+    weightEstimateKg: typeof doc.weightEstimateKg === 'number' ? doc.weightEstimateKg : 1.0,
+    compensation: typeof doc.compensation === 'number' ? doc.compensation : (Number(doc.compensation) || 0),
+    urgency: doc.urgency || 'standard',
+    neededBy: doc.neededBy || 'Flexible',
+    status: doc.status || 'open',
+    requesterId: doc.requesterId || 'anonymous',
+    requesterName: doc.requesterName || 'Community Member',
+    requesterTrustScore: typeof doc.requesterTrustScore === 'number' ? doc.requesterTrustScore : 95,
     requesterAvatar: doc.requesterAvatar,
     transporterId: doc.transporterId,
     transporterName: doc.transporterName,
     transporterAvatar: doc.transporterAvatar,
     transporterVehicle: doc.transporterVehicle,
     ...(showPin && doc.handoverPin ? { handoverPin: doc.handoverPin } : {}),
-    pinAttempts: doc.pinAttempts,
+    pinAttempts: doc.pinAttempts || 0,
     pinLockedUntil: doc.pinLockedUntil,
     proofPhotoUrl: doc.proofPhotoUrl,
     rejectedBy: doc.rejectedBy || [],

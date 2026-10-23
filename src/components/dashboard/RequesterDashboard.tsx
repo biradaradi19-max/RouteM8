@@ -72,17 +72,20 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
   const completedRequests = myRequests.filter(r => r.status === 'completed');
 
   const filteredRequests = myRequests.filter(r => {
-    const matchesSearch =
-      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.pickupAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.dropoffAddress.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!r) return false;
+    const query = (searchQuery || '').toLowerCase();
+    const title = (r.title || '').toLowerCase();
+    const pickup = (r.pickupAddress || '').toLowerCase();
+    const dropoff = (r.dropoffAddress || '').toLowerCase();
+
+    const matchesSearch = !query || title.includes(query) || pickup.includes(query) || dropoff.includes(query);
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   // Financial summary based on real data
-  const totalSpent = completedRequests.reduce((sum, r) => sum + (r.compensation || 0), 0);
-  const activeBudget = activeRequests.reduce((sum, r) => sum + (r.compensation || 0), 0);
+  const totalSpent = completedRequests.reduce((sum, r) => sum + (Number(r.compensation) || 0), 0);
+  const activeBudget = activeRequests.reduce((sum, r) => sum + (Number(r.compensation) || 0), 0);
   const co2PreventedKg = (completedRequests.length * 3.55 + inTransitRequests.length * 1.8).toFixed(1);
 
   // Copy PIN helper
@@ -233,10 +236,10 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           </div>
           <div>
             <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-              ${totalSpent.toFixed(2)}
+              ${(Number(totalSpent) || 0).toFixed(2)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
-              + ${activeBudget.toFixed(2)} in active escrow
+              + ${(Number(activeBudget) || 0).toFixed(2)} in active escrow
             </div>
           </div>
         </div>
@@ -316,7 +319,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                         Offered Compensation
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${del.compensation.toFixed(2)}
+                        ${(Number(del.compensation) || 0).toFixed(2)}
                       </div>
                     </div>
                   </div>
@@ -336,14 +339,14 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                       <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-mint-500)', marginTop: '5px', flexShrink: 0 }} />
                       <div>
                         <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>Pickup</div>
-                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.pickupAddress}</div>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.pickupAddress || 'Address not specified'}</div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                       <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-forest-800)', marginTop: '5px', flexShrink: 0 }} />
                       <div>
                         <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600 }}>Dropoff</div>
-                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.dropoffAddress}</div>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{del.dropoffAddress || 'Address not specified'}</div>
                       </div>
                     </div>
                   </div>
@@ -680,7 +683,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                         Compensation
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.1875rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${req.compensation.toFixed(2)}
+                        ${(Number(req.compensation) || 0).toFixed(2)}
                       </div>
                     </div>
 
