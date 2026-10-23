@@ -539,7 +539,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
             </button>
           )}
 
-          {req.status !== 'completed' && req.status !== 'open' && (
+          {req.status !== 'completed' && req.status !== 'open' && (isAssignedTransporter || (activeRoleMode === 'transporter' && !isRequester)) && (
             <button
               type="button"
               onClick={() => setIsVerifyingOpen((prev) => !prev)}

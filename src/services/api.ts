@@ -102,6 +102,30 @@ export const authApi = {
       return null;
     }
   },
+
+  async submitPartnerVerification(payload: {
+    consentGiven: boolean;
+    selfieBase64: string;
+  }): Promise<{ success: boolean; status?: string; message?: string; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/auth/partner-verification/selfie`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error || 'Failed to submit identity verification' };
+      }
+      return {
+        success: true,
+        status: parsed.data?.status || 'pending_review',
+        message: parsed.data?.message,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Network error during verification submission' };
+    }
+  },
 };
 
 export const deliveriesApi = {

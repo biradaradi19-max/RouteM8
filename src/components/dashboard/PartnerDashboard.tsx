@@ -30,6 +30,7 @@ import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { useTransporterLocation } from '../../hooks/useTransporterLocation';
 import { usePartnerDiscoveryLocation } from '../../hooks/usePartnerDiscoveryLocation';
 import { deliveriesApi } from '../../services/api';
+import { PartnerIdentityVerificationModal } from '../verification/PartnerIdentityVerificationModal';
 
 function formatLastUpdated(date: Date | null): string {
   if (!date) return '';
@@ -81,6 +82,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
 
   // Audio call modal state for contacting customer
   const [activeCallDelivery, setActiveCallDelivery] = useState<DeliveryRequest | null>(null);
+
+  // Partner Face/Identity verification modal state
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
 
   // Accepting & Rejecting match feedback state
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -446,6 +450,44 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
             <span className="badge badge-verified">
               <ShieldCheck size={13} /> {user?.commuteVehicle || 'Verified Commuter'}
             </span>
+
+            {/* Partner Identity Verification Status Badge / Trigger */}
+            {user?.verificationStatus === 'pending_review' ? (
+              <span
+                className="badge badge-warning"
+                data-testid="partner-identity-pending-badge"
+                title="Your identity selfie is under review by the Route M8 safety team"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <ShieldCheck size={13} /> Identity: Pending Review
+              </span>
+            ) : user?.verificationStatus === 'verified' || user?.verificationStatus === 'gov_id_verified' ? (
+              <span
+                className="badge badge-verified"
+                data-testid="partner-identity-verified-badge"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <ShieldCheck size={13} /> Identity Verified
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsVerificationModalOpen(true)}
+                className="btn btn-secondary btn-sm"
+                data-testid="verify-partner-identity-button"
+                style={{
+                  fontSize: '0.75rem',
+                  padding: '0.2rem 0.6rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                }}
+                title="Verify your delivery partner identity with a consent-based selfie check"
+              >
+                <ShieldCheck size={13} color="var(--color-mint-600)" />
+                <span>Verify Identity</span>
+              </button>
+            )}
             
             {/* Real Persisted Availability Pill Toggle */}
             <button
@@ -1425,6 +1467,13 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           onClose={() => setActiveCallDelivery(null)}
         />
       )}
+
+      {/* Partner Identity Verification Modal */}
+      <PartnerIdentityVerificationModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => setIsVerificationModalOpen(false)}
+        onVerificationSubmitted={() => refreshData()}
+      />
 
     </div>
   );

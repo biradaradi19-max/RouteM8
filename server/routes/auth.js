@@ -286,4 +286,76 @@ router.get('/users/:id', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch user', details: err.message });
     }
 });
+// POST /api/auth/partner-verification/selfie - Privacy-conscious partner identity capture
+router.post('/partner-verification/selfie', requireAuth, async (req, res) => {
+    try {
+        const verifiedUser = req.user;
+        const { consentGiven, selfieBase64 } = req.body || {};
+        if (!consentGiven) {
+            res.status(400).json({ error: 'Explicit consent is required before capturing and submitting verification data.' });
+            return;
+        }
+        if (!selfieBase64 || typeof selfieBase64 !== 'string' || !selfieBase64.startsWith('data:image/')) {
+            res.status(400).json({ error: 'A valid image snapshot is required.' });
+            return;
+        }
+        // Limit base64 image payload size (5MB max)
+        if (selfieBase64.length > 5 * 1024 * 1024 * 1.37) {
+            res.status(400).json({ error: 'Selfie image payload exceeds the 5MB size limit.' });
+            return;
+        }
+        // Explicit state transition: unverified -> pending_review
+        // Do NOT automatically mark verified; real human or provider evaluation is required.
+        const newStatus = 'pending_review';
+        if (isDbConnected()) {
+            try {
+                let userDoc = await User.findOne({ firebaseUid: verifiedUser.uid });
+                if (!userDoc) {
+                    userDoc = new User({
+                        firebaseUid: verifiedUser.uid,
+                        email: verifiedUser.email || `${verifiedUser.uid}@unknown.firebase`,
+                        fullName: verifiedUser.name || 'Delivery Partner',
+                    });
+                }
+                userDoc.verificationStatus = newStatus;
+                await userDoc.save();
+                res.json({
+                    success: true,
+                    status: newStatus,
+                    message: 'Selfie received with explicit consent. Your identity verification is under pending review.',
+                    verificationStatus: newStatus,
+                });
+                return;
+            }
+            catch (dbErr) {
+                console.warn('[Partner Verification DB Fallback]', dbErr.message);
+            }
+        }
+        let user = inMemoryUsers.get(verifiedUser.uid) || {
+            _id: `mem-${verifiedUser.uid}`,
+            firebaseUid: verifiedUser.uid,
+            email: verifiedUser.email || `${verifiedUser.uid}@unknown.firebase`,
+            fullName: verifiedUser.name || 'Delivery Partner',
+            role: 'transporter',
+            accountStatus: 'active',
+            trustScore: 85,
+            completedDeliveries: 0,
+            completedCommutes: 0,
+            rating: 5.0,
+            partnerAvailable: true,
+        };
+        user.verificationStatus = newStatus;
+        inMemoryUsers.set(verifiedUser.uid, user);
+        await firestorePersistence.saveUser(user);
+        res.json({
+            success: true,
+            status: newStatus,
+            message: 'Selfie received with explicit consent. Your identity verification is under pending review.',
+            verificationStatus: newStatus,
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Failed to process identity verification', details: err.message });
+    }
+});
 export default router;

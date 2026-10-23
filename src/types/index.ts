@@ -1,4 +1,11 @@
-export type VerificationStatus = 'unverified' | 'email_verified' | 'student_verified' | 'work_verified' | 'gov_id_verified';
+export type VerificationStatus =
+  | 'unverified'
+  | 'pending_review'
+  | 'verified'
+  | 'email_verified'
+  | 'student_verified'
+  | 'work_verified'
+  | 'gov_id_verified';
 export type AccountStatus = 'active' | 'suspended' | 'pending_approval';
 
 export interface UserProfile {

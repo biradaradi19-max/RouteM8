@@ -28,8 +28,17 @@ export interface ResolvedPlace {
  * Fetch genuine autocomplete predictions worldwide without regional restriction.
  * Optional GPS coordinates provide proximity search bias only when permitted.
  */
-// Cache resolved coordinates from search predictions to eliminate Nominatim 429 rate limit errors
 const placeCoordsCache = new Map<string, [number, number]>();
+
+async function safeJson<T = any>(resp: Response): Promise<T | null> {
+  try {
+    const text = await resp.text();
+    if (!text || text.trim().length === 0) return null;
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
 
 export async function searchGlobalPlaces(
   query: string,
@@ -72,7 +81,7 @@ export async function searchGlobalPlaces(
     clearTimeout(timeout);
 
     if (resp.ok) {
-      const items = await resp.json();
+      const items = await safeJson<any[]>(resp);
       if (Array.isArray(items) && items.length > 0) {
         return items.map((item: any, idx: number) => {
           const mainText = item.name || item.display_name.split(',')[0];
@@ -151,17 +160,19 @@ export async function resolvePlaceCoordinates(
       const url = `https://nominatim.openstreetmap.org/details?osmtype=${osmType}&osmid=${osmId}&format=json`;
       const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
       if (resp.ok) {
-        const data = await resp.json();
-        const lat = parseFloat(data.centroid?.coordinates?.[1] || data.lat);
-        const lng = parseFloat(data.centroid?.coordinates?.[0] || data.lon);
+        const data = await safeJson<any>(resp);
+        if (data) {
+          const lat = parseFloat(data.centroid?.coordinates?.[1] || data.lat);
+          const lng = parseFloat(data.centroid?.coordinates?.[0] || data.lon);
 
-        if (isValidCoordinate(lat, lng)) {
-          placeCoordsCache.set(placeId, [lat, lng]);
-          return {
-            placeId,
-            formattedAddress: data.localname || fallbackAddress || 'Selected Location',
-            coords: [lat, lng],
-          };
+          if (isValidCoordinate(lat, lng)) {
+            placeCoordsCache.set(placeId, [lat, lng]);
+            return {
+              placeId,
+              formattedAddress: data.localname || fallbackAddress || 'Selected Location',
+              coords: [lat, lng],
+            };
+          }
         }
       }
     } catch (err) {
@@ -176,8 +187,8 @@ export async function resolvePlaceCoordinates(
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackAddress)}&limit=1`;
       const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
       if (resp.ok) {
-        const list = await resp.json();
-        if (list.length > 0) {
+        const list = await safeJson<any[]>(resp);
+        if (Array.isArray(list) && list.length > 0) {
           const lat = parseFloat(list[0].lat);
           const lng = parseFloat(list[0].lon);
           if (isValidCoordinate(lat, lng)) {
@@ -219,8 +230,8 @@ export async function reverseGeocodeCoords(coords: [number, number]): Promise<st
     const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}`;
     const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
     if (resp.ok) {
-      const data = await resp.json();
-      if (data.display_name) return data.display_name;
+      const data = await safeJson<any>(resp);
+      if (data && data.display_name) return data.display_name;
     }
   } catch (err) {
     console.warn('[Places Service] Reverse geocoding notice:', err);

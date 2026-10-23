@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { AccessToken } from 'livekit-server-sdk';
 import { requireAuth } from '../middleware/auth.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
+import { isDbConnected } from '../config/db.js';
+import { findDelivery } from './deliveries.js';
 const router = Router();
 // POST /api/livekit/token - Generate LiveKit AccessToken for verified delivery participants
 router.post('/token', requireAuth, async (req, res) => {
@@ -12,11 +14,23 @@ router.post('/token', requireAuth, async (req, res) => {
             res.status(400).json({ error: 'deliveryId is required' });
             return;
         }
-        const delivery = await DeliveryRequest.findById(deliveryId);
+        let delivery = null;
+        if (isDbConnected()) {
+            try {
+                delivery = await DeliveryRequest.findById(deliveryId);
+            }
+            catch {
+                delivery = null;
+            }
+        }
+        if (!delivery) {
+            delivery = await findDelivery(deliveryId);
+        }
         if (!delivery) {
             res.status(404).json({ error: 'Delivery request not found' });
             return;
         }
+        const delId = (delivery._id || delivery.id).toString();
         // Participant authorization check: only requester or assigned transporter
         const isRequester = delivery.requesterId === uid;
         const isTransporter = delivery.transporterId === uid;
@@ -36,7 +50,7 @@ router.post('/token', requireAuth, async (req, res) => {
         const serverUrl = process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://routem8-dev.livekit.cloud';
         const participantName = isRequester ? delivery.requesterName : delivery.transporterName || 'Delivery Partner';
         const participantRole = isRequester ? 'Customer' : 'Transporter';
-        const roomName = `delivery-${delivery._id.toString()}`;
+        const roomName = `delivery-${delId}`;
         // If LiveKit credentials are not configured on server (e.g. testing or initial local setup)
         if (!apiKey || !apiSecret) {
             if (process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_LIVEKIT === 'true') {

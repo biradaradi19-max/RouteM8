@@ -555,25 +555,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const { data: serverReq, error } = await deliveriesApi.createDelivery(data);
-    let createdReq: DeliveryRequest;
-    if (serverReq) {
-      createdReq = serverReq;
-    } else {
-      if (error && !error.includes('Network') && !error.includes('Failed to fetch') && !error.includes('Unexpected end of JSON')) {
-        throw new Error(error);
-      }
-      createdReq = {
-        id: `req-${Date.now()}`,
-        ...data,
-        status: 'open',
-        requesterId: user.id,
-        requesterName: user.fullName || 'Requester',
-        requesterAvatar: user.avatarUrl,
-        requesterTrustScore: user.trustScore || 98,
-        createdAt: new Date().toISOString(),
-        handoverPin: Math.floor(1000 + Math.random() * 9000).toString(),
-      };
+    if (error || !serverReq) {
+      throw new Error(error || 'Failed to persist delivery request on server.');
     }
+    const createdReq: DeliveryRequest = serverReq;
 
     setRequests(prev => {
       const updated = [createdReq, ...prev];
@@ -669,24 +654,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'matched' as DeliveryStatus } : r));
         return false;
       }
-      // If network error on deployed preview without backend reachable, accept optimistically:
-      if (!updatedDoc && (error?.includes('Failed to fetch') || error?.includes('Network') || error?.includes('Unexpected end of JSON'))) {
-        const fallbackDoc: DeliveryRequest = {
-          ...targetReq!,
-          status: 'matched' as DeliveryStatus,
-          transporterId: user?.id || journey?.transporterId || 'demo-partner',
-          transporterName: user?.fullName || journey?.transporterName || 'Verified Commuter',
-          transporterAvatar: user?.avatarUrl || journey?.transporterAvatar,
-          transporterVehicle: user?.commuteVehicle || journey?.vehicle || 'Commuter Vehicle',
-        };
-        setRequests(prev => {
-          const updated = prev.map(r => r.id === requestId ? fallbackDoc : r);
-          persistRequests(updated);
-          return updated;
-        });
-        return true;
-      }
-      setAcceptError(error || 'Failed to accept delivery.');
+      setAcceptError(error || 'Failed to accept delivery on server.');
       return false;
     }
 
