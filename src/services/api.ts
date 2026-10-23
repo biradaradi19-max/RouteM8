@@ -48,9 +48,12 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     }
   }
 
+  const signal = options.signal || AbortSignal.timeout(10000);
+
   return fetch(url, {
     ...options,
     headers,
+    signal,
   });
 }
 
@@ -109,21 +112,20 @@ export const deliveriesApi = {
     category?: string;
     excludeRejectedBy?: string;
   }): Promise<DeliveryRequest[]> {
-    try {
-      const query = new URLSearchParams();
-      if (params?.status) query.set('status', params.status);
-      if (params?.requesterId) query.set('requesterId', params.requesterId);
-      if (params?.transporterId) query.set('transporterId', params.transporterId);
-      if (params?.category) query.set('category', params.category);
-      if (params?.excludeRejectedBy) query.set('excludeRejectedBy', params.excludeRejectedBy);
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.requesterId) query.set('requesterId', params.requesterId);
+    if (params?.transporterId) query.set('transporterId', params.transporterId);
+    if (params?.category) query.set('category', params.category);
+    if (params?.excludeRejectedBy) query.set('excludeRejectedBy', params.excludeRejectedBy);
 
-      const qs = query.toString();
-      const res = await fetchWithAuth(`${API_BASE}/deliveries${qs ? `?${qs}` : ''}`);
-      const parsed = await safeReadJson<DeliveryRequest[]>(res);
-      return parsed.ok && Array.isArray(parsed.data) ? parsed.data : [];
-    } catch {
-      return [];
+    const qs = query.toString();
+    const res = await fetchWithAuth(`${API_BASE}/deliveries${qs ? `?${qs}` : ''}`);
+    const parsed = await safeReadJson<DeliveryRequest[]>(res);
+    if (!parsed.ok) {
+      throw new Error(parsed.error || `Failed to fetch deliveries (${parsed.status})`);
     }
+    return Array.isArray(parsed.data) ? parsed.data : [];
   },
 
   async getDelivery(id: string): Promise<DeliveryRequest | null> {
@@ -293,18 +295,17 @@ export const deliveriesApi = {
 
 export const journeysApi = {
   async getJourneys(params?: { transporterId?: string; activeOnly?: boolean }): Promise<PublishedJourney[]> {
-    try {
-      const query = new URLSearchParams();
-      if (params?.transporterId) query.set('transporterId', params.transporterId);
-      if (params?.activeOnly !== undefined) query.set('activeOnly', String(params.activeOnly));
+    const query = new URLSearchParams();
+    if (params?.transporterId) query.set('transporterId', params.transporterId);
+    if (params?.activeOnly !== undefined) query.set('activeOnly', String(params.activeOnly));
 
-      const qs = query.toString();
-      const res = await fetchWithAuth(`${API_BASE}/journeys${qs ? `?${qs}` : ''}`);
-      const parsed = await safeReadJson<PublishedJourney[]>(res);
-      return parsed.ok && Array.isArray(parsed.data) ? parsed.data : [];
-    } catch {
-      return [];
+    const qs = query.toString();
+    const res = await fetchWithAuth(`${API_BASE}/journeys${qs ? `?${qs}` : ''}`);
+    const parsed = await safeReadJson<PublishedJourney[]>(res);
+    if (!parsed.ok) {
+      throw new Error(parsed.error || `Failed to fetch journeys (${parsed.status})`);
     }
+    return Array.isArray(parsed.data) ? parsed.data : [];
   },
 
   async publishJourney(data: Partial<PublishedJourney>): Promise<{ data: PublishedJourney | null; error: string | null }> {
@@ -361,6 +362,9 @@ export const livekitApi = {
 
 export const activitiesApi = {
   async getActivities() {
+    if (!auth?.currentUser) {
+      return [];
+    }
     try {
       const res = await fetchWithAuth(`${API_BASE}/activities`);
       const parsed = await safeReadJson<any[]>(res);

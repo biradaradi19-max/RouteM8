@@ -19,6 +19,7 @@ import {
   Copy,
   Check,
   Radio,
+  RefreshCw,
 } from 'lucide-react';
 import type { DeliveryRequest, DeliveryStatus } from '../../types';
 import { MapView } from '../map/MapView';
@@ -41,6 +42,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
     requests,
     backendError,
     isLoadingData,
+    refreshData,
   } = useApp();
 
   // Search & Status filters
@@ -108,18 +110,42 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           padding: '0.875rem 1.25rem',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
           gap: '0.75rem',
           fontSize: '0.875rem'
         }}>
-          <AlertCircle size={18} style={{ flexShrink: 0 }} />
-          <div>
-            <strong>Backend Notice:</strong> {backendError}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <div>
+              <strong>Sync Notice:</strong> {backendError}
+            </div>
           </div>
+          <button
+            onClick={() => refreshData()}
+            disabled={isLoadingData}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--status-cancelled-border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.375rem 0.75rem',
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              cursor: isLoadingData ? 'not-allowed' : 'pointer',
+              color: 'var(--status-cancelled-text)'
+            }}
+          >
+            <RefreshCw size={14} className={isLoadingData ? 'spinner' : ''} />
+            <span>{isLoadingData ? 'Retrying...' : 'Retry Sync'}</span>
+          </button>
         </div>
       )}
 
       {/* Loading Synchronization Indicator */}
-      {isLoadingData && (
+      {isLoadingData && !backendError && (
         <div style={{
           display: 'flex',
           alignItems: 'center',

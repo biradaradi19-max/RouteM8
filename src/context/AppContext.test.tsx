@@ -133,4 +133,70 @@ describe('Route M8 AppContext — Empty Datasets & Backend Tests', () => {
     expect(result.current.backendError).toBe('Network connectivity timeout to database.');
     expect(result.current.requests).toEqual([]);
   });
+
+  it('6. should populate data and clear isLoadingData to false on successful response', async () => {
+    const mockDelivery = {
+      id: 'del-101',
+      title: 'Lab Supplies',
+      description: 'Campus reagents',
+      category: 'campus-supplies' as const,
+      pickupAddress: 'Stanford Lab',
+      pickupCoords: [37.42, -122.16] as [number, number],
+      dropoffAddress: 'Palo Alto Hospital',
+      dropoffCoords: [37.44, -122.17] as [number, number],
+      itemSize: 'small' as const,
+      compensation: 20,
+      urgency: 'standard' as const,
+      neededBy: 'Today',
+      status: 'open' as const,
+      createdAt: '2026-10-24T00:00:00Z',
+    };
+
+    vi.mocked(deliveriesApi.getDeliveries).mockResolvedValueOnce([mockDelivery]);
+    vi.mocked(journeysApi.getJourneys).mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useApp(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoadingData).toBe(false);
+    });
+
+    expect(result.current.requests).toHaveLength(1);
+    expect(result.current.requests[0].id).toBe('del-101');
+    expect(result.current.backendError).toBeNull();
+  });
+
+  it('7. should not re-trigger infinite fetch cycles when data is received', async () => {
+    const mockDelivery = {
+      id: 'del-102',
+      title: 'Study Notes',
+      description: 'Physics notes',
+      category: 'campus-supplies' as const,
+      pickupAddress: 'Stanford',
+      pickupCoords: [37.42, -122.16] as [number, number],
+      dropoffAddress: 'Menlo Park',
+      dropoffCoords: [37.45, -122.18] as [number, number],
+      itemSize: 'small' as const,
+      compensation: 12,
+      urgency: 'flexible' as const,
+      neededBy: 'Tomorrow',
+      status: 'open' as const,
+      createdAt: '2026-10-24T00:00:00Z',
+    };
+
+    const getDeliveriesSpy = vi.mocked(deliveriesApi.getDeliveries).mockResolvedValue([mockDelivery]);
+    vi.mocked(journeysApi.getJourneys).mockResolvedValue([]);
+
+    const { result } = renderHook(() => useApp(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isLoadingData).toBe(false);
+    });
+
+    // Wait 300ms to guarantee no re-render trigger loop is occurring
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(getDeliveriesSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.isLoadingData).toBe(false);
+  });
 });
