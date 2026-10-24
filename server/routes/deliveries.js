@@ -1004,12 +1004,40 @@ router.post('/:id/cancel', requireAuth, async (req, res) => {
 router.post('/:id/proof', requireAuth, upload.single('photo'), async (req, res) => {
     try {
         const uid = req.user.uid;
-        const delivery = await DeliveryRequest.findById(req.params.id);
-        if (!delivery) {
+        if (isDbConnected()) {
+            try {
+                const delivery = await DeliveryRequest.findById(req.params.id);
+                if (delivery) {
+                    if (delivery.transporterId !== uid && delivery.requesterId !== uid) {
+                        res.status(403).json({ error: 'Only participants can attach delivery proof' });
+                        return;
+                    }
+                    if (!req.file) {
+                        res.status(400).json({ error: 'No photo uploaded' });
+                        return;
+                    }
+                    const relativeUrl = `/uploads/delivery-proofs/${req.file.filename}`;
+                    delivery.proofPhotoUrl = relativeUrl;
+                    await delivery.save();
+                    res.json({
+                        success: true,
+                        proofPhotoUrl: relativeUrl,
+                        delivery: formatDelivery(delivery),
+                    });
+                    return;
+                }
+            }
+            catch (dbErr) {
+                console.warn('[DB Proof Fallback] Falling back to in-memory proof:', dbErr.message);
+            }
+        }
+        // In-memory + remote fallback
+        const target = await findDelivery(req.params.id);
+        if (!target) {
             res.status(404).json({ error: 'Delivery not found' });
             return;
         }
-        if (delivery.transporterId !== uid && delivery.requesterId !== uid) {
+        if (target.transporterId !== uid && target.requesterId !== uid) {
             res.status(403).json({ error: 'Only participants can attach delivery proof' });
             return;
         }
@@ -1018,12 +1046,13 @@ router.post('/:id/proof', requireAuth, upload.single('photo'), async (req, res) 
             return;
         }
         const relativeUrl = `/uploads/delivery-proofs/${req.file.filename}`;
-        delivery.proofPhotoUrl = relativeUrl;
-        await delivery.save();
+        target.proofPhotoUrl = relativeUrl;
+        target.updatedAt = new Date();
+        await firestorePersistence.saveDelivery(target);
         res.json({
             success: true,
             proofPhotoUrl: relativeUrl,
-            delivery: formatDelivery(delivery),
+            delivery: formatDelivery(target),
         });
     }
     catch (err) {
