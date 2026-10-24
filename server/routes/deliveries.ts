@@ -583,7 +583,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    const handoverPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const handoverPin = (req.body.handoverPin && typeof req.body.handoverPin === 'string' && /^\d{4}$/.test(req.body.handoverPin.trim()))
+      ? req.body.handoverPin.trim()
+      : Math.floor(1000 + Math.random() * 9000).toString();
     const newId = (req.body.id && typeof req.body.id === 'string' && req.body.id.trim())
       ? req.body.id.trim()
       : new mongoose.Types.ObjectId().toString();

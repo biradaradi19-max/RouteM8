@@ -514,7 +514,9 @@ router.post('/', requireAuth, async (req, res) => {
             res.status(400).json({ error: 'Invalid dropoff coordinates. Must be [latitude, longitude] with lat between -90 and 90, lng between -180 and 180.' });
             return;
         }
-        const handoverPin = Math.floor(1000 + Math.random() * 9000).toString();
+        const handoverPin = (req.body.handoverPin && typeof req.body.handoverPin === 'string' && /^\d{4}$/.test(req.body.handoverPin.trim()))
+            ? req.body.handoverPin.trim()
+            : Math.floor(1000 + Math.random() * 9000).toString();
         const newId = (req.body.id && typeof req.body.id === 'string' && req.body.id.trim())
             ? req.body.id.trim()
             : new mongoose.Types.ObjectId().toString();
