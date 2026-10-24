@@ -6,6 +6,7 @@ export type RequestUrgency = 'standard' | 'flexible' | 'urgent';
 export type RequestCategory = 'groceries' | 'campus-supplies' | 'essentials' | 'pharmacy' | 'electronics' | 'other';
 
 export interface IDeliveryRequest extends Document {
+  _id: any;
   title: string;
   description: string;
   category: RequestCategory;
@@ -43,6 +44,10 @@ export interface IDeliveryRequest extends Document {
 
 const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
   {
+    _id: {
+      type: Schema.Types.Mixed,
+      default: () => new mongoose.Types.ObjectId().toString(),
+    },
     title: {
       type: String,
       required: true,

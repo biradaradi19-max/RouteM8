@@ -1,5 +1,9 @@
 import mongoose, { Schema } from 'mongoose';
 const DeliveryRequestSchema = new Schema({
+    _id: {
+        type: Schema.Types.Mixed,
+        default: () => new mongoose.Types.ObjectId().toString(),
+    },
     title: {
         type: String,
         required: true,

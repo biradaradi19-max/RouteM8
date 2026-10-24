@@ -1,4 +1,5 @@
 import { Router, type Response } from 'express';
+import mongoose from 'mongoose';
 import multer from 'multer';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
@@ -249,6 +250,16 @@ export function isValidPickupCoords(coords: any): coords is [number, number] {
   );
 }
 
+// Helper to handle mixed string / ObjectId querying in MongoDB
+export function toMongoIdFilter(id: string | any) {
+  if (!id) return id;
+  const str = String(id);
+  if (mongoose.Types.ObjectId.isValid(str) && str.length === 24) {
+    return { $in: [str, new mongoose.Types.ObjectId(str)] };
+  }
+  return str;
+}
+
 // Helper to find a delivery in DB or in-memory
 export function getInMemDelivery(id: string | string[] | undefined) {
   if (!id) return undefined;
@@ -256,12 +267,30 @@ export function getInMemDelivery(id: string | string[] | undefined) {
   return inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
 }
 
-// Asynchronous finder checking local memory first, then cross-container Firestore persistence
+// Asynchronous finder checking local memory, then DB, then cross-container Firestore persistence
 export async function findDelivery(id: string | string[] | undefined): Promise<InMemDelivery | undefined> {
   if (!id) return undefined;
   const targetId = Array.isArray(id) ? id[0] : id;
   const local = inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
   if (local) return local;
+
+  // Check MongoDB directly if connected
+  if (isDbConnected()) {
+    try {
+      const doc = await DeliveryRequest.findOne({ _id: toMongoIdFilter(targetId) });
+      if (doc) {
+        const formatted: InMemDelivery = {
+          ...doc.toObject(),
+          _id: doc._id.toString(),
+          id: doc._id.toString(),
+        };
+        inMemoryDeliveries.unshift(formatted);
+        return formatted;
+      }
+    } catch {
+      // Fallback
+    }
+  }
 
   const remote = await firestorePersistence.getDelivery(targetId);
   if (remote) {
@@ -306,7 +335,19 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): 
         }
 
         const docs = await DeliveryRequest.find(filter).sort({ createdAt: -1 }).limit(100);
-        res.json(docs.map(d => formatDelivery(d, callerUid)));
+        const mongoIds = new Set(docs.map(d => d._id?.toString() || d.id?.toString()));
+        const extraMemDocs = inMemoryDeliveries.filter(d => {
+          const dId = d._id || d.id;
+          if (mongoIds.has(dId)) return false;
+          if (status && d.status !== status) return false;
+          if (requesterId && d.requesterId !== requesterId) return false;
+          if (transporterId && d.transporterId !== transporterId) return false;
+          if (category && d.category !== category) return false;
+          if (excludeRejectedBy && d.rejectedBy?.includes(String(excludeRejectedBy))) return false;
+          return true;
+        });
+        const combined = [...docs.map(d => formatDelivery(d, callerUid)), ...extraMemDocs.map(d => formatDelivery(d, callerUid))];
+        res.json(combined);
         return;
       } catch (dbErr: any) {
         console.warn('[DB Fallback] Falling back to in-memory delivery store:', dbErr.message);
@@ -322,15 +363,21 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): 
     }
     for (const rem of remoteDocs) {
       const rId = rem._id || rem.id;
-      if (rId && !inMemoryDeliveries.some(d => d._id === rId || d.id === rId)) {
-        inMemoryDeliveries.unshift({
-          ...rem,
-          _id: rId,
-          id: rId,
-          rejectedBy: rem.rejectedBy || [],
-          createdAt: rem.createdAt ? new Date(rem.createdAt) : new Date(),
-          updatedAt: rem.updatedAt ? new Date(rem.updatedAt) : new Date(),
-        });
+      if (!rId) continue;
+      const existingIdx = inMemoryDeliveries.findIndex(d => d._id === rId || d.id === rId);
+      const formatted: InMemDelivery = {
+        ...(existingIdx >= 0 ? inMemoryDeliveries[existingIdx] : {}),
+        ...rem,
+        _id: rId,
+        id: rId,
+        rejectedBy: rem.rejectedBy || (existingIdx >= 0 ? inMemoryDeliveries[existingIdx].rejectedBy : []),
+        createdAt: rem.createdAt ? new Date(rem.createdAt) : (existingIdx >= 0 ? inMemoryDeliveries[existingIdx].createdAt : new Date()),
+        updatedAt: rem.updatedAt ? new Date(rem.updatedAt) : new Date(),
+      };
+      if (existingIdx >= 0) {
+        inMemoryDeliveries[existingIdx] = formatted;
+      } else {
+        inMemoryDeliveries.unshift(formatted);
       }
     }
 
@@ -477,7 +524,7 @@ router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response
 
     if (isDbConnected()) {
       try {
-        const doc = await DeliveryRequest.findById(req.params.id);
+        const doc = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
         if (doc) {
           res.json(formatDelivery(doc, callerUid));
           return;
@@ -537,7 +584,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
     }
 
     const handoverPin = Math.floor(1000 + Math.random() * 9000).toString();
-    const newId = `del-${Date.now()}-${Math.round(Math.random() * 1e4)}`;
+    const newId = (req.body.id && typeof req.body.id === 'string' && req.body.id.trim())
+      ? req.body.id.trim()
+      : new mongoose.Types.ObjectId().toString();
 
     const deliveryData: InMemDelivery = {
       _id: newId,
@@ -592,6 +641,13 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
           requesterTrustScore: requester.trustScore,
           requesterAvatar: requester.avatarUrl,
         });
+
+        // Ensure in-memory cache has exact persisted ID
+        inMemoryDeliveries[0] = {
+          ...deliveryData,
+          _id: newDoc._id.toString(),
+          id: newDoc._id.toString(),
+        };
 
         await Activity.create({
           userId: uid,
@@ -650,7 +706,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
 
         const delivery = await DeliveryRequest.findOneAndUpdate(
           {
-            _id: req.params.id,
+            _id: toMongoIdFilter(req.params.id),
             status: 'open',
             requesterId: { $ne: uid },
           },
@@ -667,10 +723,14 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
         );
 
         if (!delivery) {
-          const existing = await DeliveryRequest.findById(req.params.id);
+          const existing = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
           if (!existing) {
-            res.status(404).json({ error: 'Delivery request not found' });
-            return;
+            const fallback = await findDelivery(req.params.id);
+            if (!fallback) {
+              res.status(404).json({ error: 'Delivery request not found' });
+              return;
+            }
+            throw new Error('Delivery not found in DB, using in-memory accept');
           }
           if (existing.requesterId === uid) {
             res.status(403).json({ error: 'Forbidden: cannot accept your own delivery request' });
@@ -685,6 +745,28 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
           }
           res.status(400).json({ error: 'Unable to accept this delivery' });
           return;
+        }
+
+        // Keep inMemoryDeliveries and firestorePersistence in sync
+        const memIdx = inMemoryDeliveries.findIndex(d => d._id === req.params.id || d.id === req.params.id);
+        if (memIdx >= 0) {
+          inMemoryDeliveries[memIdx] = {
+            ...inMemoryDeliveries[memIdx],
+            status: 'matched',
+            transporterId: uid,
+            transporterName: transporter.fullName,
+            transporterAvatar: transporter.avatarUrl,
+            transporterVehicle: transporter.commuteVehicle || 'Vehicle / Commuter',
+            updatedAt: new Date(),
+          };
+          firestorePersistence.saveDelivery(inMemoryDeliveries[memIdx]).catch(() => {});
+        } else {
+          inMemoryDeliveries.unshift({
+            ...delivery.toObject(),
+            _id: delivery._id.toString(),
+            id: delivery._id.toString(),
+          });
+          firestorePersistence.saveDelivery(inMemoryDeliveries[0]).catch(() => {});
         }
 
         await Activity.create({
@@ -735,8 +817,21 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
     target.transporterVehicle = 'Commuter Vehicle';
     target.updatedAt = new Date();
 
-    // Persist matched state across serverless containers
+    // Persist matched state across serverless containers and DB
     await firestorePersistence.saveDelivery(target);
+    if (isDbConnected()) {
+      await DeliveryRequest.updateOne(
+        { _id: toMongoIdFilter(req.params.id) },
+        {
+          $set: {
+            status: 'matched',
+            transporterId: uid,
+            transporterName: target.transporterName,
+            transporterVehicle: target.transporterVehicle,
+          },
+        }
+      ).catch(() => {});
+    }
 
     const formatted = formatDelivery(target);
     const io = req.app.get('io');
@@ -762,15 +857,20 @@ router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: R
 
     if (isDbConnected()) {
       try {
-        const delivery = await DeliveryRequest.findById(req.params.id);
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
         if (!delivery) {
-          res.status(404).json({ error: 'Delivery request not found' });
-          return;
+          const fallback = await findDelivery(req.params.id);
+          if (!fallback) {
+            res.status(404).json({ error: 'Delivery request not found' });
+            return;
+          }
+          throw new Error('Not found in DB, using fallback reject');
         }
 
-        await DeliveryRequest.findByIdAndUpdate(req.params.id, {
-          $addToSet: { rejectedBy: uid },
-        });
+        await DeliveryRequest.updateOne(
+          { _id: toMongoIdFilter(req.params.id) },
+          { $addToSet: { rejectedBy: uid } }
+        );
 
         res.json({ success: true, message: 'Delivery dismissed for this partner' });
         return;
@@ -806,11 +906,15 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
 
     if (isDbConnected()) {
       try {
-        const delivery = await DeliveryRequest.findById(deliveryId);
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
 
         if (!delivery) {
-          res.status(404).json({ error: 'Delivery not found' });
-          return;
+          const fallback = await findDelivery(deliveryId);
+          if (!fallback) {
+            res.status(404).json({ error: 'Delivery not found' });
+            return;
+          }
+          throw new Error('Not found in DB, using fallback start-transit');
         }
 
         if (delivery.transporterId !== uid) {
@@ -825,6 +929,17 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
 
         delivery.status = 'in_transit';
         await delivery.save();
+
+        // Cross-sync to in-memory and firestore
+        const memIdx = inMemoryDeliveries.findIndex(d => d._id === deliveryId || d.id === deliveryId);
+        if (memIdx >= 0) {
+          inMemoryDeliveries[memIdx] = {
+            ...inMemoryDeliveries[memIdx],
+            status: 'in_transit',
+            updatedAt: new Date(),
+          };
+          firestorePersistence.saveDelivery(inMemoryDeliveries[memIdx]).catch(() => {});
+        }
 
         await Activity.create({
           userId: uid,
@@ -874,8 +989,14 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
     target.status = 'in_transit';
     target.updatedAt = new Date();
 
-    // Persist in-transit state across serverless containers
+    // Persist in-transit state across serverless containers and DB
     await firestorePersistence.saveDelivery(target);
+    if (isDbConnected()) {
+      await DeliveryRequest.updateOne(
+        { _id: toMongoIdFilter(deliveryId) },
+        { $set: { status: 'in_transit' } }
+      ).catch(() => {});
+    }
 
     const formatted = formatDelivery(target);
     const io = req.app.get('io');
@@ -911,11 +1032,15 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
 
     if (isDbConnected()) {
       try {
-        const delivery = await DeliveryRequest.findById(deliveryId);
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
 
         if (!delivery) {
-          res.status(404).json({ error: 'Delivery not found' });
-          return;
+          const fallback = await findDelivery(deliveryId);
+          if (!fallback) {
+            res.status(404).json({ error: 'Delivery not found' });
+            return;
+          }
+          throw new Error('Not found in DB, using fallback verify-pin');
         }
 
         if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
@@ -964,6 +1089,19 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
         delivery.pinLockedUntil = undefined;
         delivery.status = 'completed';
         await delivery.save();
+
+        // Cross-sync to in-memory and firestore
+        const memIdx = inMemoryDeliveries.findIndex(d => d._id === deliveryId || d.id === deliveryId);
+        if (memIdx >= 0) {
+          inMemoryDeliveries[memIdx] = {
+            ...inMemoryDeliveries[memIdx],
+            status: 'completed',
+            pinAttempts: 0,
+            pinLockedUntil: undefined,
+            updatedAt: new Date(),
+          };
+          firestorePersistence.saveDelivery(inMemoryDeliveries[memIdx]).catch(() => {});
+        }
 
         // Increment completed counts
         if (delivery.transporterId) {
@@ -1057,8 +1195,14 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
     target.status = 'completed';
     target.updatedAt = new Date();
 
-    // Persist completed status across serverless containers
+    // Persist completed status across serverless containers and DB
     await firestorePersistence.saveDelivery(target);
+    if (isDbConnected()) {
+      await DeliveryRequest.updateOne(
+        { _id: toMongoIdFilter(deliveryId) },
+        { $set: { status: 'completed', pinAttempts: 0, pinLockedUntil: undefined } }
+      ).catch(() => {});
+    }
 
     const formatted = formatDelivery(target);
     const io = req.app.get('io');
@@ -1090,11 +1234,15 @@ router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: R
 
     if (isDbConnected()) {
       try {
-        const delivery = await DeliveryRequest.findById(deliveryId);
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
 
         if (!delivery) {
-          res.status(404).json({ error: 'Delivery not found' });
-          return;
+          const fallback = await findDelivery(deliveryId);
+          if (!fallback) {
+            res.status(404).json({ error: 'Delivery not found' });
+            return;
+          }
+          throw new Error('Not found in DB, using fallback cancel');
         }
 
         if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
@@ -1168,7 +1316,7 @@ router.post(
 
       if (isDbConnected()) {
         try {
-          const delivery = await DeliveryRequest.findById(req.params.id);
+          const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
 
           if (delivery) {
             if (delivery.transporterId !== uid && delivery.requesterId !== uid) {

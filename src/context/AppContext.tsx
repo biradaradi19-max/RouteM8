@@ -231,15 +231,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!isMounted) return;
 
         const handleClaimed = ({ deliveryId }: { deliveryId: string }) => {
-          setRequests((prev) =>
-            prev.map((r) => (r.id === deliveryId ? { ...r, status: 'matched' as DeliveryStatus } : r))
-          );
+          setRequests((prev) => {
+            const updated = prev.map((r) =>
+              r.id === deliveryId || (r as any)._id === deliveryId
+                ? { ...r, status: 'matched' as DeliveryStatus }
+                : r
+            );
+            persistRequests(updated);
+            return updated;
+          });
         };
 
         const handleMatched = (updatedDelivery: DeliveryRequest) => {
-          setRequests((prev) =>
-            prev.map((r) => (r.id === updatedDelivery.id ? updatedDelivery : r))
-          );
+          setRequests((prev) => {
+            const targetId = updatedDelivery.id || (updatedDelivery as any)._id;
+            const exists = prev.some((r) => r.id === targetId || (r as any)._id === targetId);
+            const updated = exists
+              ? prev.map((r) =>
+                  r.id === targetId || (r as any)._id === targetId
+                    ? { ...r, ...updatedDelivery, status: 'matched' as DeliveryStatus }
+                    : r
+                )
+              : [updatedDelivery, ...prev];
+            persistRequests(updated);
+            return updated;
+          });
         };
 
         const handleDispatchOpportunity = (payload: DispatchOpportunityPayload) => {
@@ -267,36 +283,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         const handleCancelled = ({ deliveryId }: { deliveryId: string }) => {
-          setRequests((prev) =>
-            prev.map((r) =>
-              r.id === deliveryId ? { ...r, status: 'cancelled' as DeliveryStatus } : r
-            )
-          );
+          setRequests((prev) => {
+            const updated = prev.map((r) =>
+              r.id === deliveryId || (r as any)._id === deliveryId
+                ? { ...r, status: 'cancelled' as DeliveryStatus }
+                : r
+            );
+            persistRequests(updated);
+            return updated;
+          });
         };
 
         const handleInTransit = (updated: DeliveryRequest) => {
-          if (!updated?.id) return;
-          setRequests((prev) =>
-            prev.map((r) => (r.id === updated.id ? { ...r, ...updated, status: 'in_transit' as DeliveryStatus } : r))
-          );
+          if (!updated?.id && !(updated as any)?._id) return;
+          const targetId = updated.id || (updated as any)._id;
+          setRequests((prev) => {
+            const exists = prev.some((r) => r.id === targetId || (r as any)._id === targetId);
+            const updatedList = exists
+              ? prev.map((r) =>
+                  r.id === targetId || (r as any)._id === targetId
+                    ? { ...r, ...updated, status: 'in_transit' as DeliveryStatus }
+                    : r
+                )
+              : [{ ...updated, status: 'in_transit' as DeliveryStatus }, ...prev];
+            persistRequests(updatedList);
+            return updatedList;
+          });
         };
 
         const handleCompleted = (updated: DeliveryRequest) => {
-          if (!updated?.id) return;
-          setRequests((prev) =>
-            prev.map((r) => (r.id === updated.id ? { ...r, ...updated, status: 'completed' as DeliveryStatus } : r))
-          );
+          if (!updated?.id && !(updated as any)?._id) return;
+          const targetId = updated.id || (updated as any)._id;
+          setRequests((prev) => {
+            const exists = prev.some((r) => r.id === targetId || (r as any)._id === targetId);
+            const updatedList = exists
+              ? prev.map((r) =>
+                  r.id === targetId || (r as any)._id === targetId
+                    ? { ...r, ...updated, status: 'completed' as DeliveryStatus }
+                    : r
+                )
+              : [{ ...updated, status: 'completed' as DeliveryStatus }, ...prev];
+            persistRequests(updatedList);
+            return updatedList;
+          });
         };
 
         const handleStatusChanged = (payload: { deliveryId: string; status: DeliveryStatus; delivery?: DeliveryRequest }) => {
           if (!payload?.deliveryId) return;
-          setRequests((prev) =>
-            prev.map((r) =>
-              r.id === payload.deliveryId
-                ? { ...r, ...(payload.delivery || {}), status: payload.status }
-                : r
-            )
-          );
+          setRequests((prev) => {
+            const exists = prev.some((r) => r.id === payload.deliveryId || (r as any)._id === payload.deliveryId);
+            const updatedList = exists
+              ? prev.map((r) =>
+                  r.id === payload.deliveryId || (r as any)._id === payload.deliveryId
+                    ? { ...r, ...(payload.delivery || {}), status: payload.status }
+                    : r
+                )
+              : payload.delivery
+              ? [{ ...payload.delivery, status: payload.status }, ...prev]
+              : prev;
+            persistRequests(updatedList);
+            return updatedList;
+          });
         };
 
         const handleUpdated = (updated: DeliveryRequest) => {
@@ -659,19 +706,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setRequests(prev => {
-      const updated = prev.map(req => {
-        if (req.id === requestId) {
-          return updatedDoc || {
-            ...req,
-            status: 'matched' as DeliveryStatus,
-            transporterId: journey?.transporterId,
-            transporterName: journey?.transporterName,
-            transporterAvatar: journey?.transporterAvatar,
-            transporterVehicle: journey?.vehicle,
-          };
-        }
-        return req;
-      });
+      const exists = prev.some(req => req.id === requestId || (req as any)._id === requestId);
+      const updated = exists
+        ? prev.map(req => {
+            if (req.id === requestId || (req as any)._id === requestId) {
+              return updatedDoc || {
+                ...req,
+                status: 'matched' as DeliveryStatus,
+                transporterId: journey?.transporterId || user?.id,
+                transporterName: journey?.transporterName || user?.fullName,
+                transporterAvatar: journey?.transporterAvatar || user?.avatarUrl,
+                transporterVehicle: journey?.vehicle || user?.commuteVehicle,
+              };
+            }
+            return req;
+          })
+        : [
+            updatedDoc || {
+              ...(targetReq || {}),
+              id: requestId,
+              status: 'matched' as DeliveryStatus,
+              transporterId: journey?.transporterId || user?.id,
+              transporterName: journey?.transporterName || user?.fullName,
+              transporterAvatar: journey?.transporterAvatar || user?.avatarUrl,
+              transporterVehicle: journey?.vehicle || user?.commuteVehicle,
+            } as any,
+            ...prev,
+          ];
       persistRequests(updated);
       return updated;
     });
