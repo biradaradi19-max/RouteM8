@@ -1,10 +1,12 @@
 /**
- * Firestore Shared Persistence Service for Route M8
+ * Shared Cloud Persistence Service for Route M8
  * Provides reliable cross-container persistence for Vercel Serverless
  * and distributed environments when MongoDB is disconnected.
+ * Uses Firebase Realtime Database with Firestore fallback.
  */
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'routem8-36895';
+const RTDB_URL = process.env.FIREBASE_RTDB_URL || `https://${PROJECT_ID}-default-rtdb.firebaseio.com`;
 const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
 export function toFirestoreValue(val: any): any {
@@ -92,16 +94,33 @@ class FirestorePersistenceService {
 
   async saveDelivery(delivery: any): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
+    const docId = String(delivery._id || delivery.id);
+    const payload = {
+      ...delivery,
+      _id: docId,
+      id: docId,
+      updatedAt: delivery.updatedAt || new Date().toISOString(),
+      createdAt: delivery.createdAt || new Date().toISOString(),
+    };
+
+    // 1. Try Firebase Realtime Database
     try {
-      const docId = String(delivery._id || delivery.id);
-      const url = `${BASE_FIRESTORE_URL}/deliveries/${encodeURIComponent(docId)}`;
-      const fields = toFirestoreFields({
-        ...delivery,
-        _id: docId,
-        id: docId,
-        updatedAt: delivery.updatedAt || new Date(),
-        createdAt: delivery.createdAt || new Date(),
+      const rtdbRes = await fetch(`${RTDB_URL}/deliveries/${encodeURIComponent(docId)}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(4000),
       });
+
+      if (rtdbRes.ok) return true;
+    } catch (err: any) {
+      console.warn('[Persistence] RTDB saveDelivery failed:', err.message);
+    }
+
+    // 2. Fallback to Firestore REST API
+    try {
+      const url = `${BASE_FIRESTORE_URL}/deliveries/${encodeURIComponent(docId)}`;
+      const fields = toFirestoreFields(payload);
 
       const res = await fetch(url, {
         method: 'PATCH',
@@ -112,13 +131,32 @@ class FirestorePersistenceService {
 
       return res.ok;
     } catch (err: any) {
-      console.warn('[Firestore] saveDelivery failed:', err.message);
+      console.warn('[Persistence] Firestore saveDelivery fallback failed:', err.message);
       return false;
     }
   }
 
   async getDelivery(id: string): Promise<any | null> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return null;
+
+    // 1. Try Firebase Realtime Database
+    try {
+      const rtdbRes = await fetch(`${RTDB_URL}/deliveries/${encodeURIComponent(id)}.json`, {
+        signal: AbortSignal.timeout(3500),
+      });
+      if (rtdbRes.ok) {
+        const data: any = await rtdbRes.json();
+        if (data && typeof data === 'object' && (data.id || data._id || data.title)) {
+          data._id = data._id || id;
+          data.id = data.id || id;
+          return data;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Persistence] RTDB getDelivery failed:', err.message);
+    }
+
+    // 2. Fallback to Firestore REST API
     try {
       const url = `${BASE_FIRESTORE_URL}/deliveries/${encodeURIComponent(id)}`;
       const res = await fetch(url, {
@@ -134,13 +172,42 @@ class FirestorePersistenceService {
       parsed.id = parsed.id || id;
       return parsed;
     } catch (err: any) {
-      console.warn('[Firestore] getDelivery failed:', err.message);
+      console.warn('[Persistence] Firestore getDelivery fallback failed:', err.message);
       return null;
     }
   }
 
   async listDeliveries(limit = 100): Promise<any[]> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return [];
+
+    // 1. Try Firebase Realtime Database
+    try {
+      const rtdbRes = await fetch(`${RTDB_URL}/deliveries.json`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      if (rtdbRes.ok) {
+        const data = await rtdbRes.json();
+        if (data && typeof data === 'object') {
+          const list = Object.entries(data)
+            .map(([key, val]: [string, any]) => {
+              if (!val || typeof val !== 'object') return null;
+              return {
+                ...val,
+                _id: val._id || val.id || key,
+                id: val.id || val._id || key,
+              };
+            })
+            .filter(Boolean) as any[];
+
+          list.sort((a, b) => new Date(b.createdAt || b.updatedAt || 0).getTime() - new Date(a.createdAt || a.updatedAt || 0).getTime());
+          return list.slice(0, limit);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Persistence] RTDB listDeliveries failed:', err.message);
+    }
+
+    // 2. Fallback to Firestore REST API
     try {
       const url = `${BASE_FIRESTORE_URL}/deliveries?pageSize=${limit}`;
       const res = await fetch(url, {
@@ -162,7 +229,7 @@ class FirestorePersistenceService {
         })
         .filter(Boolean);
     } catch (err: any) {
-      console.warn('[Firestore] listDeliveries failed:', err.message);
+      console.warn('[Persistence] Firestore listDeliveries fallback failed:', err.message);
       return [];
     }
   }
@@ -174,7 +241,7 @@ class FirestorePersistenceService {
     const merged = {
       ...existing,
       ...updates,
-      updatedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     };
 
     const success = await this.saveDelivery(merged);
@@ -184,6 +251,13 @@ class FirestorePersistenceService {
   async deleteDelivery(id: string): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
     try {
+      await fetch(`${RTDB_URL}/deliveries/${encodeURIComponent(id)}.json`, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(3500),
+      });
+    } catch {}
+
+    try {
       const url = `${BASE_FIRESTORE_URL}/deliveries/${encodeURIComponent(id)}`;
       const res = await fetch(url, {
         method: 'DELETE',
@@ -191,20 +265,32 @@ class FirestorePersistenceService {
       });
       return res.ok;
     } catch (err: any) {
-      console.warn('[Firestore] deleteDelivery failed:', err.message);
+      console.warn('[Persistence] deleteDelivery failed:', err.message);
       return false;
     }
   }
 
   async saveLocation(deliveryId: string, locationPayload: any): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
+    const payload = {
+      ...locationPayload,
+      deliveryId,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const res = await fetch(`${RTDB_URL}/locations/${encodeURIComponent(deliveryId)}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(3500),
+      });
+      if (res.ok) return true;
+    } catch {}
+
     try {
       const url = `${BASE_FIRESTORE_URL}/locations/${encodeURIComponent(deliveryId)}`;
-      const fields = toFirestoreFields({
-        ...locationPayload,
-        deliveryId,
-        updatedAt: new Date(),
-      });
+      const fields = toFirestoreFields(payload);
 
       const res = await fetch(url, {
         method: 'PATCH',
@@ -215,13 +301,24 @@ class FirestorePersistenceService {
 
       return res.ok;
     } catch (err: any) {
-      console.warn('[Firestore] saveLocation failed:', err.message);
+      console.warn('[Persistence] saveLocation failed:', err.message);
       return false;
     }
   }
 
   async getLatestLocation(deliveryId: string): Promise<any | null> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return null;
+
+    try {
+      const res = await fetch(`${RTDB_URL}/locations/${encodeURIComponent(deliveryId)}.json`, {
+        signal: AbortSignal.timeout(3500),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') return data;
+      }
+    } catch {}
+
     try {
       const url = `${BASE_FIRESTORE_URL}/locations/${encodeURIComponent(deliveryId)}`;
       const res = await fetch(url, {
@@ -234,23 +331,35 @@ class FirestorePersistenceService {
 
       return fromFirestoreFields(data.fields);
     } catch (err: any) {
-      console.warn('[Firestore] getLatestLocation failed:', err.message);
+      console.warn('[Persistence] getLatestLocation failed:', err.message);
       return null;
     }
   }
 
   async saveJourney(journey: any): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
+    const docId = String(journey._id || journey.id);
+    const payload = {
+      ...journey,
+      _id: docId,
+      id: docId,
+      updatedAt: journey.updatedAt || new Date().toISOString(),
+      createdAt: journey.createdAt || new Date().toISOString(),
+    };
+
     try {
-      const docId = String(journey._id || journey.id);
-      const url = `${BASE_FIRESTORE_URL}/journeys/${encodeURIComponent(docId)}`;
-      const fields = toFirestoreFields({
-        ...journey,
-        _id: docId,
-        id: docId,
-        updatedAt: journey.updatedAt || new Date(),
-        createdAt: journey.createdAt || new Date(),
+      const res = await fetch(`${RTDB_URL}/journeys/${encodeURIComponent(docId)}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(3500),
       });
+      if (res.ok) return true;
+    } catch {}
+
+    try {
+      const url = `${BASE_FIRESTORE_URL}/journeys/${encodeURIComponent(docId)}`;
+      const fields = toFirestoreFields(payload);
 
       const res = await fetch(url, {
         method: 'PATCH',
@@ -261,13 +370,38 @@ class FirestorePersistenceService {
 
       return res.ok;
     } catch (err: any) {
-      console.warn('[Firestore] saveJourney failed:', err.message);
+      console.warn('[Persistence] saveJourney failed:', err.message);
       return false;
     }
   }
 
   async listJourneys(limit = 100): Promise<any[]> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return [];
+
+    try {
+      const res = await fetch(`${RTDB_URL}/journeys.json`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          const list = Object.entries(data)
+            .map(([key, val]: [string, any]) => {
+              if (!val || typeof val !== 'object') return null;
+              return {
+                ...val,
+                _id: val._id || val.id || key,
+                id: val.id || val._id || key,
+              };
+            })
+            .filter(Boolean) as any[];
+
+          list.sort((a, b) => new Date(b.createdAt || b.updatedAt || 0).getTime() - new Date(a.createdAt || a.updatedAt || 0).getTime());
+          return list.slice(0, limit);
+        }
+      }
+    } catch {}
+
     try {
       const url = `${BASE_FIRESTORE_URL}/journeys?pageSize=${limit}`;
       const res = await fetch(url, {
@@ -289,13 +423,20 @@ class FirestorePersistenceService {
         })
         .filter(Boolean);
     } catch (err: any) {
-      console.warn('[Firestore] listJourneys failed:', err.message);
+      console.warn('[Persistence] listJourneys failed:', err.message);
       return [];
     }
   }
 
   async deleteJourney(id: string): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
+    try {
+      await fetch(`${RTDB_URL}/journeys/${encodeURIComponent(id)}.json`, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(3500),
+      });
+    } catch {}
+
     try {
       const url = `${BASE_FIRESTORE_URL}/journeys/${encodeURIComponent(id)}`;
       const res = await fetch(url, {
@@ -304,21 +445,33 @@ class FirestorePersistenceService {
       });
       return res.ok;
     } catch (err: any) {
-      console.warn('[Firestore] deleteJourney failed:', err.message);
+      console.warn('[Persistence] deleteJourney failed:', err.message);
       return false;
     }
   }
 
   async saveUser(user: any): Promise<boolean> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return true;
+    const uid = String(user.firebaseUid || user.id || user._id);
+    const payload = {
+      ...user,
+      firebaseUid: uid,
+      updatedAt: new Date().toISOString(),
+    };
+
     try {
-      const uid = String(user.firebaseUid || user.id || user._id);
-      const url = `${BASE_FIRESTORE_URL}/users/${encodeURIComponent(uid)}`;
-      const fields = toFirestoreFields({
-        ...user,
-        firebaseUid: uid,
-        updatedAt: new Date(),
+      const res = await fetch(`${RTDB_URL}/users/${encodeURIComponent(uid)}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(3500),
       });
+      if (res.ok) return true;
+    } catch {}
+
+    try {
+      const url = `${BASE_FIRESTORE_URL}/users/${encodeURIComponent(uid)}`;
+      const fields = toFirestoreFields(payload);
 
       const res = await fetch(url, {
         method: 'PATCH',
@@ -329,13 +482,24 @@ class FirestorePersistenceService {
 
       return res.ok;
     } catch (err: any) {
-      console.warn('[Firestore] saveUser failed:', err.message);
+      console.warn('[Persistence] saveUser failed:', err.message);
       return false;
     }
   }
 
   async getUser(firebaseUid: string): Promise<any | null> {
     if (!this.isAvailable || (process.env.NODE_ENV === 'test' && !process.env.ENABLE_FIRESTORE_TESTS)) return null;
+
+    try {
+      const res = await fetch(`${RTDB_URL}/users/${encodeURIComponent(firebaseUid)}.json`, {
+        signal: AbortSignal.timeout(3500),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') return data;
+      }
+    } catch {}
+
     try {
       const url = `${BASE_FIRESTORE_URL}/users/${encodeURIComponent(firebaseUid)}`;
       const res = await fetch(url, {
@@ -348,7 +512,7 @@ class FirestorePersistenceService {
 
       return fromFirestoreFields(data.fields);
     } catch (err: any) {
-      console.warn('[Firestore] getUser failed:', err.message);
+      console.warn('[Persistence] getUser failed:', err.message);
       return null;
     }
   }
