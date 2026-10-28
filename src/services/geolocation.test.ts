@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatGeolocationError,
+  getCurrentPositionAsync,
   isCoordinateStale,
   calculateDistanceMeters,
   shouldBroadcastLocation,
@@ -104,6 +105,68 @@ describe('Route M8 Geolocation Service', () => {
       const prev = { latitude: 37.42000, longitude: -122.16000, timestamp: 1000000 };
       const curr = { latitude: 37.42100, longitude: -122.16100, timestamp: 1002000 }; // 2 sec later, ~140m moved
       expect(shouldBroadcastLocation(prev, curr, { minIntervalMs: 5000, minDistanceMeters: 15 })).toBe(true);
+    });
+  });
+
+  describe('getCurrentPositionAsync', () => {
+    it('should request fresh GPS coordinates with maximumAge: 0 and enableHighAccuracy: true', async () => {
+      let passedOptions: PositionOptions | undefined;
+      const mockGetCurrentPosition = (
+        success: (pos: GeolocationPosition) => void,
+        _error?: (err: GeolocationPositionError) => void,
+        options?: PositionOptions
+      ) => {
+        passedOptions = options;
+        success({
+          coords: {
+            latitude: 18.5204,
+            longitude: 73.8567,
+            accuracy: 5,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as unknown as GeolocationPosition);
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: { getCurrentPosition: mockGetCurrentPosition },
+        writable: true,
+        configurable: true,
+      });
+
+      const coords = await getCurrentPositionAsync();
+      expect(coords).toEqual([18.5204, 73.8567]);
+      expect(passedOptions?.enableHighAccuracy).toBe(true);
+      expect(passedOptions?.maximumAge).toBe(0);
+      expect(passedOptions?.timeout).toBe(15000);
+    });
+
+    it('should reject with formatted error when geolocation times out', async () => {
+      const mockGetCurrentPosition = (
+        _success: (pos: GeolocationPosition) => void,
+        error?: (err: GeolocationPositionError) => void
+      ) => {
+        if (error) {
+          error({
+            code: 3,
+            message: 'Timeout expired',
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          } as GeolocationPositionError);
+        }
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: { getCurrentPosition: mockGetCurrentPosition },
+        writable: true,
+        configurable: true,
+      });
+
+      await expect(getCurrentPositionAsync()).rejects.toThrow(/timed out/i);
     });
   });
 });

@@ -117,5 +117,20 @@ describe('Global Location Search & Google Places (New) Service Tests', () => {
       await expect(reverseGeocodeCoords([999, 999])).rejects.toThrow('Invalid geographic coordinates');
       await expect(reverseGeocodeCoords([NaN, 74.3675])).rejects.toThrow('Invalid geographic coordinates');
     });
+
+    it('should return exact coordinates in fallback string when reverse geocoding fails', async () => {
+      vi.spyOn(placesApi, 'reverseGeocode').mockResolvedValueOnce(null);
+      // Mock fetch rejection to trigger final fallback
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+
+      try {
+        const fallback = await reverseGeocodeCoords([18.6013, 73.7815]);
+        expect(fallback).toContain('18.6013');
+        expect(fallback).toContain('73.7815');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });

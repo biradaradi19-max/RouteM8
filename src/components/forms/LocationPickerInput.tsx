@@ -41,6 +41,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const lastSelectedTextRef = useRef<string>('');
 
   const [inputValue, setInputValue] = useState(value);
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -80,7 +81,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
       return;
     }
 
-    if (coords && trimmed === value) {
+    if (coords && (trimmed === value || trimmed === lastSelectedTextRef.current)) {
       return;
     }
 
@@ -113,12 +114,15 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
     setIsOpen(false);
     setIsResolving(true);
     setGeoError(null);
+    lastSelectedTextRef.current = prediction.description;
     setInputValue(prediction.description);
 
     try {
       const resolved = await resolvePlaceCoordinates(prediction.placeId, prediction.description);
       if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
-        onChange(resolved.formattedAddress || prediction.description, resolved.coords, resolved.placeId);
+        const address = resolved.formattedAddress || prediction.description;
+        lastSelectedTextRef.current = address;
+        onChange(address, resolved.coords, resolved.placeId);
       } else {
         setGeoError(`Unable to verify coordinates for "${prediction.mainText}". Please pick another search result.`);
         onChange(prediction.description, null, undefined);
@@ -131,14 +135,18 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
     }
   };
 
-  // Handle "Use My Current Location" with browser GPS
+  // Handle "Use My Current Location" with fresh device GPS
   const handleUseCurrentLocation = async () => {
     setGeoError(null);
     setIsLocating(true);
     setIsOpen(false);
 
     try {
-      const pos = await getCurrentPositionAsync({ enableHighAccuracy: true, timeout: 10000 });
+      const pos = await getCurrentPositionAsync({
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
       const [lat, lng] = pos;
 
       if (!isValidCoordinate(lat, lng)) {
@@ -147,9 +155,17 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
 
       setUserBiasCoords([lat, lng]);
 
-      // Reverse geocode current position
-      const formatted = await reverseGeocodeCoords([lat, lng]);
+      // Reverse geocode current position for human-readable display string
+      let formatted: string;
+      try {
+        formatted = await reverseGeocodeCoords([lat, lng]);
+      } catch {
+        formatted = `Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      }
+
+      lastSelectedTextRef.current = formatted;
       setInputValue(formatted);
+      // Strictly maintain exact device GPS coordinates - reverse geocode must not change coords
       onChange(formatted, [lat, lng], undefined);
     } catch (err: any) {
       setGeoError(err.message || 'Unable to retrieve your current location. Please check browser permissions.');
@@ -159,6 +175,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
   };
 
   const handleClear = () => {
+    lastSelectedTextRef.current = '';
     setInputValue('');
     setPredictions([]);
     setIsOpen(false);
@@ -231,6 +248,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
           value={inputValue}
           onChange={(e) => {
             const val = e.target.value;
+            lastSelectedTextRef.current = '';
             setInputValue(val);
             setGeoError(null);
             // Invalidate coordinates until user selects a verified place
@@ -426,13 +444,36 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
             padding: '0.5rem 0.75rem',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: '0.5rem',
             color: 'var(--status-danger-text)',
             fontSize: '0.75rem',
           }}
         >
-          <AlertCircle size={14} style={{ flexShrink: 0 }} />
-          <span>{geoError}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle size={14} style={{ flexShrink: 0 }} />
+            <span>{geoError}</span>
+          </div>
+          {showCurrentLocation && (
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isLocating || disabled}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--status-danger-text)',
+                textDecoration: 'underline',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                padding: '0.125rem 0.25rem',
+                flexShrink: 0,
+              }}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
     </div>

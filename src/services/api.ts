@@ -451,7 +451,9 @@ export const placesApi = {
     try {
       const res = await fetch(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`);
       const parsed = await safeReadJson<any>(res);
-      return parsed.data?.formattedAddress || null;
+      if (!parsed.ok || !parsed.data) return null;
+      if (typeof parsed.data === 'string') return parsed.data;
+      return parsed.data.formattedAddress || null;
     } catch (err) {
       console.warn('[PlacesApi] Reverse geocode error:', err);
       return null;

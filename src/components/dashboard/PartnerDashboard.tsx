@@ -259,17 +259,11 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
               isAvailable: true,
             });
           },
-          () => {
-            // If GPS denied, fallback to default journey origin if available
-            if (defaultJourney?.originCoords && Array.isArray(defaultJourney.originCoords) && defaultJourney.originCoords.length >= 2 && isMounted) {
-              s.emit('partner:location', {
-                latitude: defaultJourney.originCoords[0],
-                longitude: defaultJourney.originCoords[1],
-                isAvailable: true,
-              });
-            }
+          (err) => {
+            // Never report approximate/default coordinates as verified live GPS
+            console.warn('[PartnerDashboard] Geolocation unavailable or denied:', err.message);
           },
-          { enableHighAccuracy: true, timeout: 6000 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       }
     }).catch(() => {});

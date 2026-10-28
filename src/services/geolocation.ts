@@ -28,11 +28,11 @@ export function formatGeolocationError(error: GeolocationPositionError | { code?
 
   switch (error.code) {
     case 1: // PERMISSION_DENIED
-      return 'Location access was denied. Please allow location permissions in your browser address bar to share live GPS with the sender/recipient.';
+      return 'Location access was denied. Please allow location permissions in your browser address bar to detect your current location.';
     case 2: // POSITION_UNAVAILABLE
-      return 'GPS position is currently unavailable. Ensure device location/GPS is switched on and signal is available.';
+      return 'GPS position is currently unavailable. Ensure device location/GPS is switched on and signal is clear.';
     case 3: // TIMEOUT
-      return 'Location request timed out. Retrying GPS satellite acquisition...';
+      return 'Location request timed out. Please click "Use My Current Location" to retry.';
     default:
       return error.message || 'Unable to retrieve live location.';
   }
@@ -120,8 +120,8 @@ export async function getCurrentPositionAsync(options?: PositionOptions): Promis
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000,
+        timeout: 15000,
+        maximumAge: 0,
         ...options,
       }
     );

@@ -278,7 +278,7 @@ export function useTransporterLocation({
       const id = navigator.geolocation.watchPosition(onWatchSuccess, onWatchError, {
         enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 5000,
+        maximumAge: 0,
       });
       watchIdRef.current = id;
       setIsSharing(true);
