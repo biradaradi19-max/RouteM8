@@ -23,7 +23,15 @@ export function createApp() {
   app.use('/uploads', express.static(uploadsPath));
 
   // Health check (supports both /api/health and /health)
-  const healthHandler = (_req: express.Request, res: express.Response) => {
+  const healthHandler = async (_req: express.Request, res: express.Response) => {
+    if (!isDbConnected()) {
+      try {
+        const { connectDB } = await import('./config/db.js');
+        await connectDB();
+      } catch {
+        // Fall back gracefully
+      }
+    }
     res.json({
       status: 'ok',
       service: 'RouteM8 Express API',

@@ -19,7 +19,16 @@ export function createApp() {
     const uploadsPath = isServerless ? path.join('/tmp', 'uploads') : path.join(process.cwd(), 'uploads');
     app.use('/uploads', express.static(uploadsPath));
     // Health check (supports both /api/health and /health)
-    const healthHandler = (_req, res) => {
+    const healthHandler = async (_req, res) => {
+        if (!isDbConnected()) {
+            try {
+                const { connectDB } = await import('./config/db.js');
+                await connectDB();
+            }
+            catch {
+                // Fall back gracefully
+            }
+        }
         res.json({
             status: 'ok',
             service: 'RouteM8 Express API',
