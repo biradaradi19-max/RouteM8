@@ -13,6 +13,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
       const { createApp } = await import('../server/app.js');
       appInstance = createApp();
+    } else {
+      try {
+        const { isDbConnected, connectDB } = await import('../server/config/db.js');
+        if (!isDbConnected()) {
+          await connectDB();
+        }
+      } catch {
+        // Fall back gracefully
+      }
     }
 
     return new Promise<void>((resolve, reject) => {
