@@ -7,7 +7,7 @@ import journeysRouter from './routes/journeys.js';
 import livekitRouter from './routes/livekit.js';
 import activitiesRouter from './routes/activities.js';
 import placesRouter from './routes/places.js';
-import { isDbConnected, ATLAS_URI } from './config/db.js';
+import { isDbConnected, connectDB, getLastDbError, ATLAS_URI } from './config/db.js';
 export function createApp() {
     const app = express();
     // Middleware
@@ -22,18 +22,19 @@ export function createApp() {
     const healthHandler = async (_req, res) => {
         if (!isDbConnected()) {
             try {
-                const { connectDB } = await import('./config/db.js');
                 await connectDB();
             }
             catch {
-                // Fall back gracefully
+                // Handled inside connectDB
             }
         }
+        const connected = isDbConnected();
         res.json({
             status: 'ok',
             service: 'RouteM8 Express API',
-            database: isDbConnected() ? 'connected' : 'disconnected',
+            database: connected ? 'connected' : 'disconnected',
             hasMongoUri: Boolean(process.env.MONGODB_URI || ATLAS_URI),
+            dbError: connected ? null : getLastDbError(),
             timestamp: new Date().toISOString(),
         });
     };

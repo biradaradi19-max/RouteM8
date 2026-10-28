@@ -4,24 +4,18 @@ let appInstance: any = null;
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
-    if (!appInstance) {
+    const { connectDB, isDbConnected } = await import('../server/config/db.js');
+    if (!isDbConnected()) {
       try {
-        const { connectDB } = await import('../server/config/db.js');
         await connectDB();
       } catch (dbErr: any) {
-        console.warn('[Vercel Serverless] DB connection skipped or failed:', dbErr?.message || dbErr);
+        console.warn('[Vercel Serverless] DB connection notice:', dbErr?.message || dbErr);
       }
+    }
+
+    if (!appInstance) {
       const { createApp } = await import('../server/app.js');
       appInstance = createApp();
-    } else {
-      try {
-        const { isDbConnected, connectDB } = await import('../server/config/db.js');
-        if (!isDbConnected()) {
-          await connectDB();
-        }
-      } catch {
-        // Fall back gracefully
-      }
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -46,4 +40,3 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
   }
 }
-
