@@ -6,7 +6,7 @@
  */
 
 import { initializeApp, getApps, getApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
-import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
+import { getAnalytics, isSupported, logEvent, type Analytics } from 'firebase/analytics';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -16,6 +16,7 @@ import {
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  updateProfile,
   type Auth,
   type User as FirebaseUser,
   type UserCredential,
@@ -102,7 +103,6 @@ export async function signOutFromFirebase(): Promise<void> {
  */
 export async function updateFirebaseUserProfile(profile: { displayName?: string; photoURL?: string }): Promise<void> {
   if (auth.currentUser) {
-    const { updateProfile } = await import('firebase/auth');
     await updateProfile(auth.currentUser, profile);
   }
 }
@@ -191,7 +191,6 @@ export async function logFirebaseEvent(
   try {
     const instance = analytics || (await initAnalytics());
     if (instance) {
-      const { logEvent } = await import('firebase/analytics');
       logEvent(instance, eventName, eventParams);
     }
   } catch {

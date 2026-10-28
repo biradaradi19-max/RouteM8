@@ -39,41 +39,60 @@ export function useTransporterLocation({
   minDistanceMeters = 10,
 }: UseTransporterLocationOptions): UseTransporterLocationResult {
   const [isSharing, setIsSharing] = useState<boolean>(false);
-  const [permissionState, setPermissionState] = useState<GeolocationPermissionState>('unknown');
+  const [permissionState, setPermissionState] = useState<GeolocationPermissionState>(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      return 'unavailable';
+    }
+    return 'unknown';
+  });
   const [location, setLocation] = useState<TransporterLocation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const watchIdRef = useRef<number | null>(null);
   const lastBroadcastRef = useRef<BroadcastCoordinate | null>(null);
 
+  const [prevDeliveryId, setPrevDeliveryId] = useState(deliveryId);
+  if (deliveryId !== prevDeliveryId) {
+    setPrevDeliveryId(deliveryId);
+    if (!deliveryId) {
+      setLocation(null);
+    }
+  }
+
   // Check initial browser permission status if supported
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setPermissionState('unavailable');
       return;
     }
 
+    let isMounted = true;
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions
         .query({ name: 'geolocation' as PermissionName })
         .then((perm) => {
+          if (!isMounted) return;
           setPermissionState(perm.state as GeolocationPermissionState);
           perm.onchange = () => {
-            setPermissionState(perm.state as GeolocationPermissionState);
+            if (isMounted) setPermissionState(perm.state as GeolocationPermissionState);
           };
         })
         .catch(() => {
-          setPermissionState('prompt');
+          if (isMounted) setPermissionState('prompt');
         });
     } else {
-      setPermissionState('prompt');
+      queueMicrotask(() => {
+        if (isMounted) setPermissionState('prompt');
+      });
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Fetch initial recorded location from MongoDB & subscribe to Socket.IO room updates
   useEffect(() => {
     if (!deliveryId) {
-      setLocation(null);
       return;
     }
 

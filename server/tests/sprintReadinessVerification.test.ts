@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createApp } from '../app.js';
-import { inMemoryDeliveries, inMemoryLocations } from '../routes/deliveries.js';
+import { inMemoryDeliveries } from '../routes/deliveries.js';
 import { inMemoryUsers } from '../routes/auth.js';
 
 describe('60-Minute Emergency Production Readiness Sprint Regression Tests', () => {

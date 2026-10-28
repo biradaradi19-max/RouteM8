@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createApp } from '../app.js';
 import { inMemoryDeliveries, type InMemDelivery } from '../routes/deliveries.js';
-import { User } from '../models/User.js';
 
 describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/nearby)', () => {
   let server: Server;

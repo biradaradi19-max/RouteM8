@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { authApi } from '../../services/api';
 import { ShieldCheck, Camera, RefreshCw, X, CheckCircle2, AlertCircle, Lock } from 'lucide-react';
 
@@ -25,18 +25,18 @@ export const PartnerIdentityVerificationModal: React.FC<PartnerIdentityVerificat
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Stop camera tracks helper
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
-  };
+  }, [stream]);
 
   useEffect(() => {
     return () => {
       stopCamera();
     };
-  }, []);
+  }, [stopCamera]);
 
   // When modal closes, clean up stream
   const handleClose = () => {

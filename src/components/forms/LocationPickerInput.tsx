@@ -52,9 +52,11 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
   const [userBiasCoords, setUserBiasCoords] = useState<[number, number] | null>(null);
 
   // Sync external value changes
-  useEffect(() => {
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
     setInputValue(value);
-  }, [value]);
+  }
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -83,10 +85,10 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
     }
 
     let isCurrent = true;
-    setIsSearching(true);
-    setGeoError(null);
 
     const timer = setTimeout(async () => {
+      setIsSearching(true);
+      setGeoError(null);
       try {
         const results = await searchGlobalPlaces(trimmed, userBiasCoords);
         if (isCurrent) {

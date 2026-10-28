@@ -91,6 +91,22 @@ const LOCAL_STORAGE_JRNS_KEY = 'routem8_journeys_v1';
 const LOCAL_STORAGE_ROLE_MODE_KEY = 'routem8_active_role_mode_v1';
 const LOCAL_STORAGE_AVAILABILITY_KEY = 'routem8_partner_available_v1';
 
+function persistRequests(newReqs: DeliveryRequest[]) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_REQS_KEY, JSON.stringify(newReqs));
+  } catch {
+    // Ignore
+  }
+}
+
+function persistJourneys(newJrns: PublishedJourney[]) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_JRNS_KEY, JSON.stringify(newJrns));
+  } catch {
+    // Ignore
+  }
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
@@ -131,13 +147,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'requester';
   });
 
-  useEffect(() => {
+  const [prevUserRole, setPrevUserRole] = useState(user?.role);
+  if (user?.role !== prevUserRole) {
+    setPrevUserRole(user?.role);
     if (user?.role === 'transporter') {
       setActiveRoleModeState('transporter');
     } else if (user?.role === 'requester') {
       setActiveRoleModeState('requester');
     }
-  }, [user?.role]);
+  }
 
   const setActiveRoleMode = (mode: RoleMode) => {
     setActiveRoleModeState(mode);
@@ -220,6 +238,168 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const [acceptError, setAcceptError] = useState<string | null>(null);
+
+  // Selections & Match Engine State
+  const [selectedRequest, setSelectedRequest] = useState<DeliveryRequest | null>(null);
+  const [selectedJourney, setSelectedJourney] = useState<PublishedJourney | null>(null);
+  const [activeMatch, setActiveMatch] = useState<RouteMatchResult | null>(null);
+  const [isMatchComputing, setIsMatchComputing] = useState<boolean>(false);
+
+  // Synchronization refs & in-flight guards to avoid infinite re-render cycles
+  const requestsRef = useRef(requests);
+  const journeysRef = useRef(journeys);
+  const selectedRequestRef = useRef(selectedRequest);
+  const selectedJourneyRef = useRef(selectedJourney);
+  const isFetchingRef = useRef(false);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    requestsRef.current = requests;
+    journeysRef.current = journeys;
+    selectedRequestRef.current = selectedRequest;
+    selectedJourneyRef.current = selectedJourney;
+  });
+
+  const areDeliveriesEqual = (a: DeliveryRequest[], b: DeliveryRequest[]): boolean => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (
+        a[i].id !== b[i].id ||
+        a[i].status !== b[i].status ||
+        a[i].transporterId !== b[i].transporterId ||
+        a[i].matchType !== b[i].matchType
+      ) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const areJourneysEqual = (a: PublishedJourney[], b: PublishedJourney[]): boolean => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i].id !== b[i].id || a[i].isActive !== b[i].isActive) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Compute real route match when request & journey are selected
+  const selectRequestAndJourney = useCallback(async (request: DeliveryRequest, journey: PublishedJourney) => {
+    setSelectedRequest(request);
+    setSelectedJourney(journey);
+    setIsMatchComputing(true);
+    try {
+      const match = await calculateRouteMatch(
+        journey.id,
+        journey.originCoords,
+        journey.destCoords,
+        request.id,
+        request.pickupCoords,
+        request.dropoffCoords,
+        journey.maxDetourMinutes
+      );
+      setActiveMatch(match);
+    } catch (err) {
+      console.error('Error calculating real route match:', err);
+      setActiveMatch(null);
+    } finally {
+      setIsMatchComputing(false);
+    }
+  }, []);
+
+  // Sync data: fetch from Express + database backend
+  const refreshData = useCallback(async () => {
+    if (isFetchingRef.current) {
+      return;
+    }
+    isFetchingRef.current = true;
+    setIsLoadingData(true);
+    setBackendError(null);
+
+    // Circuit breaker: ensure banner/spinner is cleared within 8s even if network stalls
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+    loadingTimeoutRef.current = setTimeout(() => {
+      setIsLoadingData(false);
+      isFetchingRef.current = false;
+    }, 8000);
+
+    try {
+      const [fetchedReqs, fetchedJourneys, fetchedActs] = await Promise.all([
+        deliveriesApi.getDeliveries(),
+        journeysApi.getJourneys(),
+        activitiesApi.getActivities(),
+      ]);
+
+      if (fetchedReqs.length > 0) {
+        if (!areDeliveriesEqual(requestsRef.current, fetchedReqs)) {
+          setRequests(fetchedReqs);
+        }
+        persistRequests(fetchedReqs);
+      }
+      if (fetchedJourneys.length > 0) {
+        if (!areJourneysEqual(journeysRef.current, fetchedJourneys)) {
+          setJourneys(fetchedJourneys);
+        }
+        persistJourneys(fetchedJourneys);
+      }
+      if (fetchedActs.length > 0) {
+        setActivities(fetchedActs);
+      }
+
+      setBackendStatus('connected');
+
+      // Auto-select initial match ONLY if user has not yet selected one
+      if (!selectedRequestRef.current && !selectedJourneyRef.current) {
+        const activeReqs = fetchedReqs.length > 0 ? fetchedReqs : requestsRef.current;
+        const activeJrns = fetchedJourneys.length > 0 ? fetchedJourneys : journeysRef.current;
+        if (activeReqs.length > 0 && activeJrns.length > 0) {
+          selectRequestAndJourney(activeReqs[0], activeJrns[0]);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Sync] Express backend offline, preserving local cache:', err.message);
+      setBackendError(err.message || 'Failed to synchronize with backend.');
+    } finally {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+      isFetchingRef.current = false;
+      setIsLoadingData(false);
+    }
+  }, [selectRequestAndJourney]);
+
+  useEffect(() => {
+    refreshData();
+
+    // Cross-device automatic synchronization: periodic refetch fallback (30s)
+    const interval = setInterval(() => {
+      refreshData();
+    }, 30000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refreshData]);
+
+  // Synchronize whenever user authentication changes
+  useEffect(() => {
+    if (user?.id) {
+      refreshData();
+    }
+  }, [user?.id, refreshData]);
 
   // Real-time synchronization via Socket.IO
   useEffect(() => {
@@ -406,182 +586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isMounted = false;
       if (unsubSocket) unsubSocket();
     };
-  }, []);
-
-  // Selections & Match Engine State
-  const [selectedRequest, setSelectedRequest] = useState<DeliveryRequest | null>(null);
-  const [selectedJourney, setSelectedJourney] = useState<PublishedJourney | null>(null);
-  const [activeMatch, setActiveMatch] = useState<RouteMatchResult | null>(null);
-  const [isMatchComputing, setIsMatchComputing] = useState<boolean>(false);
-
-  // Synchronization refs & in-flight guards to avoid infinite re-render cycles
-  const requestsRef = useRef(requests);
-  requestsRef.current = requests;
-  const journeysRef = useRef(journeys);
-  journeysRef.current = journeys;
-  const selectedRequestRef = useRef(selectedRequest);
-  selectedRequestRef.current = selectedRequest;
-  const selectedJourneyRef = useRef(selectedJourney);
-  selectedJourneyRef.current = selectedJourney;
-  const isFetchingRef = useRef(false);
-  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const areDeliveriesEqual = (a: DeliveryRequest[], b: DeliveryRequest[]): boolean => {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (
-        a[i].id !== b[i].id ||
-        a[i].status !== b[i].status ||
-        a[i].transporterId !== b[i].transporterId ||
-        a[i].matchType !== b[i].matchType
-      ) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const areJourneysEqual = (a: PublishedJourney[], b: PublishedJourney[]): boolean => {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i].id !== b[i].id || a[i].isActive !== b[i].isActive) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const persistRequests = (newReqs: DeliveryRequest[]) => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_REQS_KEY, JSON.stringify(newReqs));
-    } catch {
-      // Ignore
-    }
-  };
-
-  const persistJourneys = (newJrns: PublishedJourney[]) => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_JRNS_KEY, JSON.stringify(newJrns));
-    } catch {
-      // Ignore
-    }
-  };
-
-  // Compute real route match when request & journey are selected
-  const selectRequestAndJourney = useCallback(async (request: DeliveryRequest, journey: PublishedJourney) => {
-    setSelectedRequest(request);
-    setSelectedJourney(journey);
-    setIsMatchComputing(true);
-    try {
-      const match = await calculateRouteMatch(
-        journey.id,
-        journey.originCoords,
-        journey.destCoords,
-        request.id,
-        request.pickupCoords,
-        request.dropoffCoords,
-        journey.maxDetourMinutes
-      );
-      setActiveMatch(match);
-    } catch (err) {
-      console.error('Error calculating real route match:', err);
-      setActiveMatch(null);
-    } finally {
-      setIsMatchComputing(false);
-    }
-  }, []);
-
-  // Sync data: fetch from Express + database backend
-  const refreshData = useCallback(async () => {
-    if (isFetchingRef.current) {
-      return;
-    }
-    isFetchingRef.current = true;
-    setIsLoadingData(true);
-    setBackendError(null);
-
-    // Circuit breaker: ensure banner/spinner is cleared within 8s even if network stalls
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-    }
-    loadingTimeoutRef.current = setTimeout(() => {
-      setIsLoadingData(false);
-      isFetchingRef.current = false;
-    }, 8000);
-
-    try {
-      const [fetchedReqs, fetchedJourneys, fetchedActs] = await Promise.all([
-        deliveriesApi.getDeliveries(),
-        journeysApi.getJourneys(),
-        activitiesApi.getActivities(),
-      ]);
-
-      if (fetchedReqs.length > 0) {
-        if (!areDeliveriesEqual(requestsRef.current, fetchedReqs)) {
-          setRequests(fetchedReqs);
-        }
-        persistRequests(fetchedReqs);
-      }
-      if (fetchedJourneys.length > 0) {
-        if (!areJourneysEqual(journeysRef.current, fetchedJourneys)) {
-          setJourneys(fetchedJourneys);
-        }
-        persistJourneys(fetchedJourneys);
-      }
-      if (fetchedActs.length > 0) {
-        setActivities(fetchedActs);
-      }
-
-      setBackendStatus('connected');
-
-      // Auto-select initial match ONLY if user has not yet selected one
-      if (!selectedRequestRef.current && !selectedJourneyRef.current) {
-        const activeReqs = fetchedReqs.length > 0 ? fetchedReqs : requestsRef.current;
-        const activeJrns = fetchedJourneys.length > 0 ? fetchedJourneys : journeysRef.current;
-        if (activeReqs.length > 0 && activeJrns.length > 0) {
-          selectRequestAndJourney(activeReqs[0], activeJrns[0]);
-        }
-      }
-    } catch (err: any) {
-      console.warn('[Sync] Express backend offline, preserving local cache:', err.message);
-      setBackendError(err.message || 'Failed to synchronize with backend.');
-    } finally {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
-      isFetchingRef.current = false;
-      setIsLoadingData(false);
-    }
-  }, [selectRequestAndJourney]);
-
-  useEffect(() => {
-    refreshData();
-
-    // Cross-device automatic synchronization: periodic refetch fallback (30s)
-    const interval = setInterval(() => {
-      refreshData();
-    }, 30000);
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        refreshData();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
   }, [refreshData]);
-
-  // Synchronize whenever user authentication changes
-  useEffect(() => {
-    if (user?.id) {
-      refreshData();
-    }
-  }, [user?.id, refreshData]);
 
   // Create Delivery Request
   const createRequest = async (data: {

@@ -58,7 +58,7 @@ export const MatchingView: React.FC = () => {
     if (currentSelectedRequest && activeJourney) {
       selectRequestAndJourney(currentSelectedRequest, activeJourney);
     }
-  }, [currentSelectedRequest?.id, activeJourney?.id, selectRequestAndJourney]);
+  }, [currentSelectedRequest, activeJourney, selectRequestAndJourney]);
 
   const handleSelectRequest = (req: DeliveryRequest) => {
     setLocalSelectedRequest(req);

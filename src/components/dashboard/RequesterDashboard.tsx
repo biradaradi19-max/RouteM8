@@ -33,6 +33,13 @@ interface RequesterDashboardProps {
   onInspectMatch: (req: DeliveryRequest) => void;
 }
 
+function computeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
   onOpenCreateRequest,
   onInspectMatch,
@@ -55,12 +62,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
   const [activeCallDelivery, setActiveCallDelivery] = useState<DeliveryRequest | null>(null);
 
   // Time-aware greeting
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  };
+  const [greeting] = useState(computeGreeting);
 
   // Filter requests belonging to this requester (or all if unauthenticated/demo)
   const myRequests = requests.filter(r => {
@@ -190,7 +192,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           </div>
 
           <h1 style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
-            {getGreeting()}, {user?.fullName ? user.fullName.split(' ')[0] : 'Requester'}
+            {greeting}, {user?.fullName ? user.fullName.split(' ')[0] : 'Requester'}
           </h1>
           <p style={{ maxWidth: '640px', margin: 0, fontSize: '0.9375rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
             Need groceries, parcels, or university campus items transported? Route M8 matches your delivery needs with verified commuters already traveling that way.

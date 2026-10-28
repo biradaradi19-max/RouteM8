@@ -69,12 +69,9 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [match, propPickup, propDropoff]);
 
   // Fallback to leaflet if google map key is cleared
-
-  useEffect(() => {
-    if (!googleKey && mapEngine === 'google') {
-      setMapEngine('leaflet');
-    }
-  }, [googleKey, mapEngine]);
+  if (!googleKey && mapEngine === 'google') {
+    setMapEngine('leaflet');
+  }
 
   // Leaflet references
   const mapContainerRef = useRef<HTMLDivElement>(null);
