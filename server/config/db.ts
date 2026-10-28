@@ -15,7 +15,7 @@ export async function connectDB(uri?: string): Promise<typeof mongoose | null> {
     return mongoose;
   }
 
-  const ATLAS_URI = 'mongodb+srv://biradaradi27_db_user:S0tBxFu6UpmALHw9@routem8.gxbbldm.mongodb.net/routem8?retryWrites=true&w=majority';
+  const ATLAS_URI = 'mongodb+srv://biradaradi27_db_user:adi12345%40.com@routem8.gxbbldm.mongodb.net/routem8?retryWrites=true&w=majority';
   const mongoUri = uri || process.env.MONGODB_URI || ATLAS_URI;
 
   // Never buffer queries indefinitely when disconnected; fail fast or use fallback
