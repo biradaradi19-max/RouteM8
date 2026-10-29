@@ -18,6 +18,8 @@ export interface UseTransporterLocationOptions {
   isTransporter?: boolean;
   minIntervalMs?: number;
   minDistanceMeters?: number;
+  autoStart?: boolean;
+  initialLocation?: TransporterLocation | null;
 }
 
 export interface UseTransporterLocationResult {
@@ -37,6 +39,8 @@ export function useTransporterLocation({
   isTransporter = false,
   minIntervalMs = 3000,
   minDistanceMeters = 10,
+  autoStart = false,
+  initialLocation = null,
 }: UseTransporterLocationOptions): UseTransporterLocationResult {
   const [isSharing, setIsSharing] = useState<boolean>(false);
   const [permissionState, setPermissionState] = useState<GeolocationPermissionState>(() => {
@@ -45,7 +49,7 @@ export function useTransporterLocation({
     }
     return 'unknown';
   });
-  const [location, setLocation] = useState<TransporterLocation | null>(null);
+  const [location, setLocation] = useState<TransporterLocation | null>(initialLocation || null);
   const [error, setError] = useState<string | null>(null);
 
   const watchIdRef = useRef<number | null>(null);
@@ -125,20 +129,26 @@ export function useTransporterLocation({
     // Setup HTTP fallback polling for serverless environments where WebSockets are unavailable
     let pollInterval: any = null;
     if (deliveryStatus === 'matched' || deliveryStatus === 'in_transit') {
+      const intervalMs = deliveryStatus === 'in_transit' ? 2500 : 4000;
       pollInterval = setInterval(() => {
         if (!isMounted) return;
-        deliveriesApi.getLatestLocation(deliveryId).then((loc) => {
-          if (isMounted && loc) {
-            setLocation((prev) => {
-              if (!prev) return loc;
-              if (new Date(loc.updatedAt).getTime() > new Date(prev.updatedAt).getTime()) {
-                return loc;
-              }
-              return prev;
-            });
-          }
-        }).catch(() => {});
-      }, 5000);
+        deliveriesApi
+          .getLatestLocation(deliveryId)
+          .then((loc) => {
+            if (isMounted && loc) {
+              setLocation((prev) => {
+                if (!prev) return loc;
+                const prevTime = new Date(prev.updatedAt).getTime();
+                const newTime = new Date(loc.updatedAt).getTime();
+                if (newTime >= prevTime) {
+                  return loc;
+                }
+                return prev;
+              });
+            }
+          })
+          .catch(() => {});
+      }, intervalMs);
     }
 
     return () => {
@@ -240,28 +250,33 @@ export function useTransporterLocation({
           updatedAt: new Date(now).toISOString(),
         });
 
-        // Broadcast to Express + Socket.IO server (which persists to MongoDB)
+        // Broadcast to Express + Socket.IO server (opportunistic when available)
         emitLocationUpdate(
           deliveryId,
           latitude,
           longitude,
           currentCoord.heading ?? undefined,
           currentCoord.speed ?? undefined
-        ).then((res) => {
-          if (!res.success && res.error) {
-            setError(res.error);
-          }
-        });
+        ).catch(() => {});
 
-        // Dual-transport: also report via HTTP REST in case WebSockets are unavailable/serverless
-        deliveriesApi.updateLocation(deliveryId, {
-          latitude,
-          longitude,
-          heading: currentCoord.heading ?? undefined,
-          speed: currentCoord.speed ?? undefined,
-        }).catch((err) => {
-          console.warn('[useTransporterLocation] HTTP updateLocation error:', err);
-        });
+        // Dual-transport: primary and reliable HTTP REST for serverless
+        deliveriesApi
+          .updateLocation(deliveryId, {
+            latitude,
+            longitude,
+            heading: currentCoord.heading ?? undefined,
+            speed: currentCoord.speed ?? undefined,
+          })
+          .then((res) => {
+            if (res.success) {
+              setError(null);
+            } else if (res.error) {
+              setError(res.error);
+            }
+          })
+          .catch((err) => {
+            console.warn('[useTransporterLocation] HTTP updateLocation error:', err);
+          });
       }
     };
 
@@ -288,6 +303,17 @@ export function useTransporterLocation({
     }
   }, [deliveryId, isTransporter, deliveryStatus, minIntervalMs, minDistanceMeters, stopSharing]);
 
+  // Auto-start sharing if autoStart is true or if transporter's active delivery is in transit
+  useEffect(() => {
+    if (
+      (autoStart || (isTransporter && deliveryStatus === 'in_transit')) &&
+      !isSharing &&
+      permissionState !== 'denied'
+    ) {
+      startSharing();
+    }
+  }, [autoStart, isTransporter, deliveryStatus, isSharing, permissionState, startSharing]);
+
   const toggleSharing = useCallback(async () => {
     if (isSharing) {
       stopSharing();
@@ -296,7 +322,7 @@ export function useTransporterLocation({
     }
   }, [isSharing, startSharing, stopSharing]);
 
-  const isStale = isCoordinateStale(location?.updatedAt);
+  const isStale = isCoordinateStale(location?.updatedAt, 60000);
 
   return {
     isSharing,

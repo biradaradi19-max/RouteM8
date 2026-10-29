@@ -379,6 +379,30 @@ describe('Delivery Transit & Handover PIN Verification API Flows', () => {
       expect(getData.longitude).toBe(-122.1668);
       expect(getData.heading).toBe(145);
       expect(getData.speed).toBe(8.5);
+
+      // Verify GET /api/deliveries/:id returns lastKnownLocation embedded
+      const getDelRes = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001?nocache=2`, {
+        cache: 'no-store',
+      });
+      const delData: any = await getDelRes.json();
+      expect(getDelRes.status).toBe(200);
+      expect(delData.lastKnownLocation).toBeDefined();
+      expect(delData.lastKnownLocation.latitude).toBe(37.4275);
+    });
+
+    it('rejects location updates from an unassigned partner with 403', async () => {
+      const res = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mock-token-partner-2', // partner-2 is not assigned
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          latitude: 37.428,
+          longitude: -122.167,
+        }),
+      });
+      expect(res.status).toBe(403);
     });
   });
 });

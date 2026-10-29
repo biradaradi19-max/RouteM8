@@ -21,7 +21,7 @@ import {
   X,
   RefreshCw,
 } from 'lucide-react';
-import type { DeliveryRequest, PublishedJourney } from '../../types';
+import type { DeliveryRequest, PublishedJourney, TransporterLocation } from '../../types';
 import { calculateHaversineDistance } from '../../services/routing';
 import { MapView } from '../map/MapView';
 import { CallButton } from '../audio/CallButton';
@@ -1474,18 +1474,34 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
 };
 
 // Sub-component for Live GPS and Map on active partner delivery
-const PartnerLiveMapWithGps: React.FC<{ delivery: DeliveryRequest }> = ({ delivery }) => {
-  const {
-    isSharing,
-    location,
-    error: gpsError,
-    startSharing,
-    stopSharing,
-  } = useTransporterLocation({
+const PartnerLiveMapWithGps: React.FC<{
+  delivery: DeliveryRequest;
+  customSharing?: boolean;
+  customLocation?: TransporterLocation | null;
+  customError?: string | null;
+  onStartSharing?: () => void;
+  onStopSharing?: () => void;
+}> = ({
+  delivery,
+  customSharing,
+  customLocation,
+  customError,
+  onStartSharing,
+  onStopSharing,
+}) => {
+  const hookResult = useTransporterLocation({
     deliveryId: delivery.id,
     deliveryStatus: delivery.status,
     isTransporter: true,
+    autoStart: delivery.status === 'in_transit',
+    initialLocation: delivery.lastKnownLocation,
   });
+
+  const isSharing = customSharing !== undefined ? customSharing : hookResult.isSharing;
+  const location = customLocation !== undefined ? customLocation : hookResult.location;
+  const gpsError = customError !== undefined ? customError : hookResult.error;
+  const startSharing = onStartSharing || hookResult.startSharing;
+  const stopSharing = onStopSharing || hookResult.stopSharing;
 
   return (
     <div style={{

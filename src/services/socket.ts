@@ -136,22 +136,34 @@ export async function emitLocationUpdate(
   heading?: number,
   speed?: number
 ): Promise<{ success: boolean; rateLimited?: boolean; error?: string }> {
-  const s = await getSocket();
-  return new Promise((resolve) => {
-    s.emit(
-      'location:update',
-      { deliveryId, latitude, longitude, heading, speed },
-      (res: any) => {
-        if (!res) {
-          resolve({ success: false, error: 'No response from server' });
-        } else if (res.error) {
-          resolve({ success: false, error: res.error });
-        } else if (res.rateLimited) {
-          resolve({ success: false, rateLimited: true });
-        } else {
-          resolve({ success: true });
+  try {
+    const s = await getSocket();
+    if (!s.connected) {
+      return { success: false, error: 'Socket disconnected' };
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        resolve({ success: false, error: 'Socket request timed out' });
+      }, 3000);
+
+      s.emit(
+        'location:update',
+        { deliveryId, latitude, longitude, heading, speed },
+        (res: any) => {
+          clearTimeout(timer);
+          if (!res) {
+            resolve({ success: false, error: 'No response from server' });
+          } else if (res.error) {
+            resolve({ success: false, error: res.error });
+          } else if (res.rateLimited) {
+            resolve({ success: false, rateLimited: true });
+          } else {
+            resolve({ success: true });
+          }
         }
-      }
-    );
-  });
+      );
+    });
+  } catch {
+    return { success: false, error: 'Socket unavailable' };
+  }
 }

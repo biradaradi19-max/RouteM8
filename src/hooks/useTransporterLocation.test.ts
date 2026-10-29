@@ -181,4 +181,86 @@ describe('useTransporterLocation Hook', () => {
     expect(result.current.isSharing).toBe(false);
     expect(mockClearWatch).toHaveBeenCalledWith(101);
   });
+
+  it('should auto-start GPS sharing when isTransporter and status is in_transit', async () => {
+    const { result } = renderHook(() =>
+      useTransporterLocation({
+        deliveryId: 'del-auto-1',
+        deliveryStatus: 'in_transit',
+        isTransporter: true,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSharing).toBe(true);
+      expect(mockWatchPosition).toHaveBeenCalled();
+    });
+  });
+
+  it('should initialize immediately with initialLocation and detect staleness', async () => {
+    const staleTime = new Date(Date.now() - 90000).toISOString(); // 90s ago
+    const initial = {
+      deliveryId: 'del-stale-1',
+      transporterId: 'tr-1',
+      latitude: 18.5204,
+      longitude: 73.8567,
+      updatedAt: staleTime,
+    };
+
+    const { result } = renderHook(() =>
+      useTransporterLocation({
+        deliveryId: 'del-stale-1',
+        deliveryStatus: 'in_transit',
+        isTransporter: false,
+        initialLocation: initial,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.location).toEqual(initial);
+      expect(result.current.isStale).toBe(true);
+    });
+  });
+
+  it('should succeed silently via HTTP REST when socket is disconnected', async () => {
+    vi.mocked(socketService.emitLocationUpdate).mockResolvedValueOnce({
+      success: false,
+      error: 'Socket disconnected',
+    });
+    vi.mocked(deliveriesApi.updateLocation).mockResolvedValueOnce({
+      success: true,
+      location: { latitude: 18.5204, longitude: 73.8567 },
+    });
+
+    const { result } = renderHook(() =>
+      useTransporterLocation({
+        deliveryId: 'del-serverless-1',
+        deliveryStatus: 'in_transit',
+        isTransporter: true,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSharing).toBe(true);
+    });
+
+    act(() => {
+      watchCallback({
+        coords: {
+          latitude: 18.5204,
+          longitude: 73.8567,
+          heading: 90,
+          speed: 12,
+          accuracy: 5,
+        },
+        timestamp: Date.now(),
+      });
+    });
+
+    await waitFor(() => {
+      expect(deliveriesApi.updateLocation).toHaveBeenCalled();
+      // Should not surface socket error because HTTP succeeded
+      expect(result.current.error).toBeNull();
+    });
+  });
 });

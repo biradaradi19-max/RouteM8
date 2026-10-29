@@ -4,7 +4,8 @@ import type { RouteMatchResult, TransporterLocation } from '../../types';
 import { Compass, Layers } from 'lucide-react';
 import { GoogleMapView } from './GoogleMapView';
 import { getGoogleMapsApiKey, getGoogleMapsMapId, isGoogleMapsConfigured, setRuntimeGoogleMapsConfig } from '../../services/googleMapsConfig';
-import { fetchRouteBetween } from '../../services/routing';
+import { fetchRouteBetween, calculateHaversineDistance } from '../../services/routing';
+import { isCoordinateStale } from '../../services/geolocation';
 
 export interface MapViewProps {
   match?: RouteMatchResult | null;
@@ -38,6 +39,51 @@ export const MapView: React.FC<MapViewProps> = ({
   // Turn-by-turn road network route for deliveries without a commuter match object
   const [directRoutePolyline, setDirectRoutePolyline] = useState<[number, number][] | null>(null);
   const [routeStats, setRouteStats] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+
+  // Live road navigation polyline & metrics from active transporter GPS to dropoff destination
+  const [liveNavPolyline, setLiveNavPolyline] = useState<[number, number][] | null>(null);
+  const [liveNavStats, setLiveNavStats] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+  const lastNavOriginRef = useRef<[number, number] | null>(null);
+
+  useEffect(() => {
+    const dropoff = propDropoff || (match ? match.dropoffCoords : undefined);
+    if (!transporterLocation || !dropoff) {
+      setLiveNavPolyline(null);
+      setLiveNavStats(null);
+      lastNavOriginRef.current = null;
+      return;
+    }
+
+    const currentPos: [number, number] = [transporterLocation.latitude, transporterLocation.longitude];
+
+    // Throttle OSRM routing calls: only refetch if partner moved >= 20m from last routed position
+    if (lastNavOriginRef.current) {
+      const movedMeters = calculateHaversineDistance(lastNavOriginRef.current, currentPos) * 1000;
+      if (movedMeters < 20) {
+        return;
+      }
+    }
+
+    lastNavOriginRef.current = currentPos;
+    let isCurrent = true;
+
+    fetchRouteBetween(currentPos, dropoff)
+      .then((res) => {
+        if (isCurrent && res.polyline && res.polyline.length > 0) {
+          setLiveNavPolyline(res.polyline);
+          setLiveNavStats({ distanceKm: res.distanceKm, durationMin: res.durationMin });
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setLiveNavPolyline([currentPos, dropoff]);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [transporterLocation?.latitude, transporterLocation?.longitude, propDropoff, match]);
 
   useEffect(() => {
     const pickup = propPickup || (match ? match.pickupCoords : undefined);
@@ -77,6 +123,12 @@ export const MapView: React.FC<MapViewProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
+  const hasFittedBoundsRef = useRef<boolean>(false);
+
+  // Reset bounds fitting when target route endpoints change
+  useEffect(() => {
+    hasFittedBoundsRef.current = false;
+  }, [match, propPickup, propDropoff]);
 
   // Initialize Leaflet map instance once when in leaflet mode
   useEffect(() => {
@@ -178,10 +230,12 @@ export const MapView: React.FC<MapViewProps> = ({
 
     // 2.5 Direct Errands Delivery Route Polyline (when match object is not present)
     if (!match && directRoutePolyline && directRoutePolyline.length > 0) {
+      const isNavActive = Boolean(liveNavPolyline && liveNavPolyline.length > 0);
       const deliveryLine = L.polyline(directRoutePolyline, {
-        color: '#059669',
-        weight: 4.5,
-        opacity: 0.9,
+        color: isNavActive ? '#10B981' : '#059669',
+        weight: isNavActive ? 3.5 : 4.5,
+        opacity: isNavActive ? 0.45 : 0.9,
+        dashArray: isNavActive ? '5, 8' : undefined,
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(layerGroup);
@@ -190,6 +244,22 @@ export const MapView: React.FC<MapViewProps> = ({
         : 'Direct Delivery Route';
       deliveryLine.bindTooltip(tooltipText, { sticky: true });
       directRoutePolyline.forEach((pt) => allPoints.push(pt));
+    }
+
+    // 2.6 Active Turn-by-Turn Road Navigation from Live Transporter GPS
+    if (liveNavPolyline && liveNavPolyline.length > 0) {
+      const navLine = L.polyline(liveNavPolyline, {
+        color: '#059669',
+        weight: 5.5,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(layerGroup);
+      const navTooltip = liveNavStats
+        ? `Live Navigation (${liveNavStats.distanceKm.toFixed(1)} km · ~${liveNavStats.durationMin} min to destination)`
+        : 'Live Road Navigation Route';
+      navLine.bindTooltip(navTooltip, { sticky: true });
+      liveNavPolyline.forEach((pt) => allPoints.push(pt));
     }
 
     // 3. Origin & Destination Markers (when match exists)
@@ -228,20 +298,27 @@ export const MapView: React.FC<MapViewProps> = ({
       allPoints.push(dropoff);
     }
 
-    // 6. Transporter Live GPS Location Marker (with animated pulsing ring)
+    // 6. Transporter Live GPS Location Marker (with animated pulsing ring & staleness detection)
     if (transporterLocation) {
+      const isStale = isCoordinateStale(transporterLocation.updatedAt, 60000);
+      const ringBg = isStale ? 'rgba(245, 158, 11, 0.22)' : 'rgba(16, 185, 129, 0.35)';
+      const ringAnim = isStale ? 'none' : 'pulse 1.8s infinite';
+      const borderColor = isStale ? '#F59E0B' : '#34D399';
+      const iconColor = isStale ? '#F59E0B' : '#34D399';
+      const statusTitle = isStale ? 'Transporter Location (Signal Stale)' : 'Transporter Live GPS';
+
       const transporterIcon = L.divIcon({
         className: 'transporter-live-map-icon',
         html: `
           <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
-            <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(16, 185, 129, 0.35); animation: pulse 1.8s infinite;"></div>
+            <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: ${ringBg}; animation: ${ringAnim};"></div>
             <div style="
               width: 32px;
               height: 32px;
               border-radius: 50%;
               background: #06150F;
-              border: 2.5px solid #34D399;
-              color: #34D399;
+              border: 2.5px solid ${borderColor};
+              color: ${iconColor};
               display: flex;
               align-items: center;
               justify-content: center;
@@ -261,17 +338,38 @@ export const MapView: React.FC<MapViewProps> = ({
       const transMarker = L.marker([transporterLocation.latitude, transporterLocation.longitude], {
         icon: transporterIcon,
       }).addTo(layerGroup);
-      transMarker.bindPopup(`<b>Transporter Live Location</b><br/>Updated: ${new Date(transporterLocation.updatedAt).toLocaleTimeString()}`);
+      transMarker.bindPopup(`<b>${statusTitle}</b><br/>${isStale ? 'Last recorded' : 'Live stream'}: ${new Date(transporterLocation.updatedAt).toLocaleTimeString()}`);
       allPoints.push([transporterLocation.latitude, transporterLocation.longitude]);
     }
 
-    // Fit map bounds smoothly
-    if (allPoints.length > 0) {
+    // Fit map bounds smoothly on initial load (avoiding jarring resets on live GPS updates)
+    if (allPoints.length > 0 && !hasFittedBoundsRef.current) {
       const bounds = L.latLngBounds(allPoints);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+      hasFittedBoundsRef.current = true;
     }
-  }, [mapEngine, match, propPickup, propDropoff, pickupAddress, dropoffAddress, transporterLocation, directRoutePolyline, routeStats]);
+  }, [mapEngine, match, propPickup, propDropoff, pickupAddress, dropoffAddress, transporterLocation, directRoutePolyline, routeStats, liveNavPolyline, liveNavStats]);
 
+
+  const handleRecenter = () => {
+    hasFittedBoundsRef.current = false;
+    const map = mapInstanceRef.current;
+    if (map) {
+      const points: L.LatLngExpression[] = [];
+      const pickup = propPickup || (match ? match.pickupCoords : undefined);
+      const dropoff = propDropoff || (match ? match.dropoffCoords : undefined);
+      if (pickup) points.push(pickup);
+      if (dropoff) points.push(dropoff);
+      if (transporterLocation) points.push([transporterLocation.latitude, transporterLocation.longitude]);
+      if (match) {
+        points.push(match.originCoords);
+        points.push(match.destCoords);
+      }
+      if (points.length > 0) {
+        map.fitBounds(L.latLngBounds(points), { padding: [50, 50], maxZoom: 14 });
+      }
+    }
+  };
 
   const handleSaveRuntimeKey = (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,6 +385,35 @@ export const MapView: React.FC<MapViewProps> = ({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '440px', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
       
+      {/* Re-center Control Button */}
+      <button
+        type="button"
+        onClick={handleRecenter}
+        title="Re-center map to fit route and live transporter"
+        style={{
+          position: 'absolute',
+          top: '0.875rem',
+          left: '0.875rem',
+          zIndex: 1000,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.375rem',
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid var(--border-medium)',
+          borderRadius: 'var(--radius-full)',
+          padding: '0.35rem 0.75rem',
+          boxShadow: 'var(--shadow-sm)',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          color: 'var(--text-primary)',
+          cursor: 'pointer',
+        }}
+      >
+        <Compass size={14} />
+        <span>Re-center</span>
+      </button>
+
       {/* Provider Selector Switch in Top Right */}
       <div
         style={{

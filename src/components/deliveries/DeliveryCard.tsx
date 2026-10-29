@@ -85,6 +85,8 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
     deliveryStatus: req.status,
     // Only the specifically assigned transporter for THIS delivery may broadcast GPS
     isTransporter: isAssignedTransporter,
+    autoStart: isAssignedTransporter && req.status === 'in_transit',
+    initialLocation: req.lastKnownLocation,
   });
 
   const handleVerifyPin = async () => {

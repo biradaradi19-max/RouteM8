@@ -63,6 +63,7 @@ export interface InMemDelivery {
   pickupDistanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
+  lastKnownLocation?: any;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -202,10 +203,14 @@ function formatDelivery(doc: any, forUserId?: string) {
     description: doc.description || '',
     category: doc.category || 'other',
     pickupAddress: doc.pickupAddress || 'Address not specified',
-    pickupCoords: Array.isArray(doc.pickupCoords) ? doc.pickupCoords : [37.4275, -122.1697],
+    pickupCoords: Array.isArray(doc.pickupCoords) && doc.pickupCoords.length === 2
+      ? [Number(doc.pickupCoords[0]), Number(doc.pickupCoords[1])]
+      : doc.pickupCoords,
     pickupPlaceId: doc.pickupPlaceId,
     dropoffAddress: doc.dropoffAddress || 'Address not specified',
-    dropoffCoords: Array.isArray(doc.dropoffCoords) ? doc.dropoffCoords : [37.3861, -122.0839],
+    dropoffCoords: Array.isArray(doc.dropoffCoords) && doc.dropoffCoords.length === 2
+      ? [Number(doc.dropoffCoords[0]), Number(doc.dropoffCoords[1])]
+      : doc.dropoffCoords,
     dropoffPlaceId: doc.dropoffPlaceId,
     itemSize: doc.itemSize || 'standard',
     weightEstimateKg: typeof doc.weightEstimateKg === 'number' ? doc.weightEstimateKg : 1.0,
@@ -221,6 +226,9 @@ function formatDelivery(doc: any, forUserId?: string) {
     transporterName: doc.transporterName,
     transporterAvatar: doc.transporterAvatar,
     transporterVehicle: doc.transporterVehicle,
+    ...((doc.lastKnownLocation || inMemoryLocations.get(docId))
+      ? { lastKnownLocation: doc.lastKnownLocation || inMemoryLocations.get(docId) }
+      : {}),
     ...(showPin && doc.handoverPin ? { handoverPin: doc.handoverPin } : {}),
     pinAttempts: doc.pinAttempts || 0,
     pinLockedUntil: doc.pinLockedUntil,
@@ -1387,7 +1395,11 @@ router.get('/:id/location', async (req, res): Promise<void> => {
 
     if (isDbConnected()) {
       try {
-        const latestLoc = await Location.findOne({ deliveryId }).sort({ createdAt: -1 });
+        const queryId = toMongoIdFilter(deliveryId);
+        const latestLoc = await Location.findOne({
+          $or: [{ deliveryId }, { deliveryId: queryId?.toString() }],
+        }).sort({ updatedAt: -1, _id: -1 });
+
         if (latestLoc) {
           res.json({
             deliveryId: latestLoc.deliveryId,
@@ -1396,8 +1408,15 @@ router.get('/:id/location', async (req, res): Promise<void> => {
             longitude: latestLoc.longitude,
             heading: latestLoc.heading,
             speed: latestLoc.speed,
-            updatedAt: latestLoc.updatedAt.toISOString(),
+            updatedAt: latestLoc.updatedAt instanceof Date ? latestLoc.updatedAt.toISOString() : new Date(latestLoc.updatedAt || Date.now()).toISOString(),
           });
+          return;
+        }
+
+        // Fallback to delivery document's lastKnownLocation if available
+        const delDoc = await DeliveryRequest.findOne({ _id: queryId });
+        if (delDoc && (delDoc as any).lastKnownLocation) {
+          res.json((delDoc as any).lastKnownLocation);
           return;
         }
       } catch (dbErr: any) {
@@ -1445,10 +1464,15 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
     // Check DB first if connected
     if (isDbConnected()) {
       try {
-        const delivery = await DeliveryRequest.findById(deliveryId);
+        const queryId = toMongoIdFilter(deliveryId);
+        let delivery = await DeliveryRequest.findOne({ _id: queryId });
         if (!delivery) {
-          res.status(404).json({ error: 'Delivery not found' });
-          return;
+          const fallback = await findDelivery(deliveryId);
+          if (!fallback) {
+            res.status(404).json({ error: 'Delivery not found' });
+            return;
+          }
+          throw new Error('Delivery not found in DB, using fallback');
         }
 
         if (delivery.transporterId !== uid) {
@@ -1461,8 +1485,19 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           return;
         }
 
-        const locDoc = await Location.create({
-          deliveryId,
+        const nowIso = new Date().toISOString();
+        const payload = {
+          deliveryId: String(delivery._id || deliveryId),
+          transporterId: uid,
+          latitude,
+          longitude,
+          heading: typeof heading === 'number' ? heading : undefined,
+          speed: typeof speed === 'number' ? speed : undefined,
+          updatedAt: nowIso,
+        };
+
+        await Location.create({
+          deliveryId: String(delivery._id || deliveryId),
           transporterId: uid,
           latitude,
           longitude,
@@ -1470,15 +1505,10 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           speed: typeof speed === 'number' ? speed : undefined,
         });
 
-        const payload = {
-          deliveryId,
-          transporterId: uid,
-          latitude: locDoc.latitude,
-          longitude: locDoc.longitude,
-          heading: locDoc.heading,
-          speed: locDoc.speed,
-          updatedAt: locDoc.updatedAt.toISOString(),
-        };
+        await DeliveryRequest.updateOne(
+          { _id: queryId },
+          { $set: { lastKnownLocation: payload } }
+        );
 
         inMemoryLocations.set(deliveryId, payload);
         await firestorePersistence.saveLocation(deliveryId, payload);
@@ -1491,7 +1521,9 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
         res.json({ success: true, location: payload });
         return;
       } catch (dbErr: any) {
-        console.warn('[DB Location Fallback] Location create fallback:', dbErr.message);
+        if (dbErr.message !== 'Delivery not found in DB, using fallback') {
+          console.warn('[DB Location Fallback] Location create fallback:', dbErr.message);
+        }
       }
     }
 
@@ -1522,6 +1554,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
       updatedAt: new Date().toISOString(),
     };
 
+    target.lastKnownLocation = payload;
     inMemoryLocations.set(deliveryId, payload);
     await firestorePersistence.saveLocation(deliveryId, payload);
 

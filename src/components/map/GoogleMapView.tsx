@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   APIProvider,
   Map,
@@ -7,7 +7,8 @@ import {
 } from '@vis.gl/react-google-maps';
 import type { RouteMatchResult, TransporterLocation } from '../../types';
 import { Compass, Navigation, Package, Flag, AlertCircle } from 'lucide-react';
-import { fetchRouteBetween } from '../../services/routing';
+import { fetchRouteBetween, calculateHaversineDistance } from '../../services/routing';
+import { isCoordinateStale } from '../../services/geolocation';
 
 interface GoogleMapViewProps {
   apiKey: string;
@@ -31,6 +32,13 @@ const MapController: React.FC<{
 }> = ({ match, pickupCoords, dropoffCoords, transporterLocation }) => {
   const map = useMap();
   const [directRoutePath, setDirectRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [liveNavPath, setLiveNavPath] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const lastNavOriginRef = useRef<[number, number] | null>(null);
+  const hasFittedBoundsRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    hasFittedBoundsRef.current = false;
+  }, [match, pickupCoords, dropoffCoords]);
 
   useEffect(() => {
     if (match || !pickupCoords || !dropoffCoords) {
@@ -59,6 +67,42 @@ const MapController: React.FC<{
     };
   }, [match, pickupCoords, dropoffCoords]);
 
+  // Compute live road route from transporter to dropoff
+  useEffect(() => {
+    if (!transporterLocation || !dropoffCoords) {
+      setLiveNavPath(null);
+      lastNavOriginRef.current = null;
+      return;
+    }
+
+    const currentPos: [number, number] = [transporterLocation.latitude, transporterLocation.longitude];
+    if (lastNavOriginRef.current) {
+      const movedM = calculateHaversineDistance(lastNavOriginRef.current, currentPos) * 1000;
+      if (movedM < 20) return;
+    }
+
+    lastNavOriginRef.current = currentPos;
+    let isCurrent = true;
+
+    fetchRouteBetween(currentPos, dropoffCoords)
+      .then((res) => {
+        if (isCurrent && res.polyline && res.polyline.length > 0) {
+          setLiveNavPath(res.polyline.map(([lat, lng]) => ({ lat, lng })));
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setLiveNavPath([
+            { lat: currentPos[0], lng: currentPos[1] },
+            { lat: dropoffCoords[0], lng: dropoffCoords[1] },
+          ]);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [transporterLocation?.latitude, transporterLocation?.longitude, dropoffCoords]);
 
   // Draw Polylines using Google Maps native Polyline API
   useEffect(() => {
@@ -92,17 +136,30 @@ const MapController: React.FC<{
       polylines.push(detourLine);
     }
 
+    // 2.5 Active Live Road Navigation from Transporter to Dropoff
+    if (liveNavPath && liveNavPath.length > 0) {
+      const navLine = new google.maps.Polyline({
+        path: liveNavPath,
+        strokeColor: '#059669',
+        strokeOpacity: 0.95,
+        strokeWeight: 5.5,
+        map,
+      });
+      polylines.push(navLine);
+    }
+
     // 3. Delivery Route Polyline between Pickup and Dropoff (when match object is not present)
     if (!match && pickupCoords && dropoffCoords) {
+      const isNavActive = Boolean(liveNavPath && liveNavPath.length > 0);
       const deliveryPath = directRoutePath || [
         { lat: pickupCoords[0], lng: pickupCoords[1] },
         { lat: dropoffCoords[0], lng: dropoffCoords[1] },
       ];
       const deliveryLine = new google.maps.Polyline({
         path: deliveryPath,
-        strokeColor: '#059669',
-        strokeOpacity: 0.85,
-        strokeWeight: 4,
+        strokeColor: isNavActive ? '#10B981' : '#059669',
+        strokeOpacity: isNavActive ? 0.45 : 0.85,
+        strokeWeight: isNavActive ? 3 : 4,
         map,
       });
       polylines.push(deliveryLine);
@@ -111,9 +168,9 @@ const MapController: React.FC<{
     return () => {
       polylines.forEach((line) => line.setMap(null));
     };
-  }, [map, match, pickupCoords, dropoffCoords, directRoutePath]);
+  }, [map, match, pickupCoords, dropoffCoords, directRoutePath, liveNavPath]);
 
-  // Adjust camera bounds smoothly to frame all active locations
+  // Adjust camera bounds smoothly to frame all active locations on initial load
   useEffect(() => {
     if (!map) return;
 
@@ -140,9 +197,12 @@ const MapController: React.FC<{
       return;
     }
 
-    const bounds = new google.maps.LatLngBounds();
-    points.forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
+    if (!hasFittedBoundsRef.current) {
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach((p) => bounds.extend(p));
+      map.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
+      hasFittedBoundsRef.current = true;
+    }
   }, [map, match, pickupCoords, dropoffCoords, transporterLocation]);
 
   return null;
@@ -312,88 +372,105 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
           )}
 
           {/* 5. Live Transporter GPS Location Marker */}
-          {transporterLocation && (
-            <AdvancedMarker
-              position={{ lat: transporterLocation.latitude, lng: transporterLocation.longitude }}
-              title="Transporter Live Location"
-            >
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {/* Animated pulsating radar ring */}
-                <span
-                  style={{
-                    position: 'absolute',
-                    width: '46px',
-                    height: '46px',
-                    borderRadius: '50%',
-                    backgroundColor: 'rgba(16, 185, 129, 0.35)',
-                    animation: 'pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                  }}
-                />
+          {transporterLocation && (() => {
+            const isStale = isCoordinateStale(transporterLocation.updatedAt, 60000);
+            const ringBg = isStale ? 'rgba(245, 158, 11, 0.22)' : 'rgba(16, 185, 129, 0.35)';
+            const ringAnim = isStale ? 'none' : 'pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite';
+            const markerBorder = isStale ? '#F59E0B' : '#34D399';
+            const markerColor = isStale ? '#F59E0B' : 'var(--color-mint-400, #34D399)';
 
-                {/* Primary vehicle marker bubble */}
-                <div
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '50%',
-                    backgroundColor: 'var(--color-forest-900, #06150F)',
-                    color: 'var(--color-mint-400, #34D399)',
-                    border: '2.5px solid #34D399',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
-                    transform: transporterLocation.heading ? `rotate(${transporterLocation.heading}deg)` : undefined,
-                    transition: 'transform 0.4s ease, all 0.2s ease',
-                  }}
-                >
-                  <Navigation size={18} strokeWidth={2.5} style={{ fill: 'currentColor' }} />
+            return (
+              <AdvancedMarker
+                position={{ lat: transporterLocation.latitude, lng: transporterLocation.longitude }}
+                title={isStale ? 'Transporter Location (Signal Stale)' : 'Transporter Live GPS'}
+              >
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {/* Animated pulsating radar ring */}
+                  <span
+                    style={{
+                      position: 'absolute',
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '50%',
+                      backgroundColor: ringBg,
+                      animation: ringAnim,
+                    }}
+                  />
+
+                  {/* Primary vehicle marker bubble */}
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--color-forest-900, #06150F)',
+                      color: markerColor,
+                      border: `2.5px solid ${markerBorder}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+                      transform: transporterLocation.heading ? `rotate(${transporterLocation.heading}deg)` : undefined,
+                      transition: 'transform 0.4s ease, all 0.2s ease',
+                    }}
+                  >
+                    <Navigation size={18} strokeWidth={2.5} style={{ fill: 'currentColor' }} />
+                  </div>
                 </div>
-              </div>
-            </AdvancedMarker>
-          )}
+              </AdvancedMarker>
+            );
+          })()}
         </Map>
       </APIProvider>
 
       {/* Floating Live Tracking Badge / Status Bar */}
-      {(transporterLocation || isLiveTracking) && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '1rem',
-            left: '1rem',
-            zIndex: 10,
-            backgroundColor: 'rgba(6, 21, 15, 0.88)',
-            backdropFilter: 'blur(10px)',
-            color: '#FFFFFF',
-            border: '1px solid rgba(52, 211, 153, 0.35)',
-            borderRadius: 'var(--radius-md)',
-            padding: '0.5rem 0.875rem',
-            boxShadow: 'var(--shadow-lg)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.625rem',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-          }}
-        >
-          <span
+      {(transporterLocation || isLiveTracking) && (() => {
+        const isStale = isCoordinateStale(transporterLocation?.updatedAt, 60000);
+        return (
+          <div
             style={{
-              width: '9px',
-              height: '9px',
-              borderRadius: '50%',
-              backgroundColor: '#10B981',
-              boxShadow: '0 0 10px #10B981',
+              position: 'absolute',
+              top: '1rem',
+              left: '1rem',
+              zIndex: 10,
+              backgroundColor: 'rgba(6, 21, 15, 0.88)',
+              backdropFilter: 'blur(10px)',
+              color: '#FFFFFF',
+              border: `1px solid ${isStale ? 'rgba(245, 158, 11, 0.4)' : 'rgba(52, 211, 153, 0.35)'}`,
+              borderRadius: 'var(--radius-md)',
+              padding: '0.5rem 0.875rem',
+              boxShadow: 'var(--shadow-lg)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.625rem',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
             }}
-          />
-          <span>{isLiveTracking && !transporterLocation ? 'Connecting GPS...' : 'Live Transporter GPS'}</span>
-          {transporterLocation?.speed !== undefined && transporterLocation?.speed !== null && (
-            <span style={{ opacity: 0.8, fontSize: '0.75rem', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '0.5rem' }}>
-              {(transporterLocation.speed * 3.6).toFixed(0)} km/h
+          >
+            <span
+              style={{
+                width: '9px',
+                height: '9px',
+                borderRadius: '50%',
+                backgroundColor: isStale ? '#F59E0B' : '#10B981',
+                boxShadow: isStale ? '0 0 8px #F59E0B' : '0 0 10px #10B981',
+              }}
+            />
+            <span>
+              {isLiveTracking && !transporterLocation
+                ? 'Connecting GPS...'
+                : isStale
+                ? `Transporter Signal Stale (${transporterLocation?.updatedAt ? new Date(transporterLocation.updatedAt).toLocaleTimeString() : 'no signal'})`
+                : 'Live Transporter GPS'}
             </span>
-          )}
-        </div>
-      )}
+            {transporterLocation?.speed !== undefined && transporterLocation?.speed !== null && (
+              <span style={{ opacity: 0.8, fontSize: '0.75rem', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '0.5rem' }}>
+                {(transporterLocation.speed * 3.6).toFixed(0)} km/h
+              </span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Route Legend (when route match is displayed) */}
       {match && (

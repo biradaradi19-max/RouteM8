@@ -38,6 +38,15 @@ export interface IDeliveryRequest extends Document {
   distanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
+  lastKnownLocation?: {
+    deliveryId: string;
+    transporterId: string;
+    latitude: number;
+    longitude: number;
+    heading?: number;
+    speed?: number;
+    updatedAt: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -181,6 +190,9 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
     estimatedDetourMinutes: {
       type: Number,
       default: 5,
+    },
+    lastKnownLocation: {
+      type: Schema.Types.Mixed,
     },
   },
   {

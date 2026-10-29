@@ -310,7 +310,12 @@ export const deliveriesApi = {
 
   async getLatestLocation(id: string) {
     try {
-      const res = await fetch(`${API_BASE}/deliveries/${encodeURIComponent(id)}/location`);
+      const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/location`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
+      });
       const parsed = await safeReadJson<any>(res);
       return parsed.ok ? parsed.data : null;
     } catch {

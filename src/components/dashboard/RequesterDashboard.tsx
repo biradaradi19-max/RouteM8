@@ -816,6 +816,7 @@ const RequesterLiveTrackingMap: React.FC<{ delivery: DeliveryRequest }> = ({ del
     deliveryId: delivery.id,
     deliveryStatus: delivery.status,
     isTransporter: false,
+    initialLocation: delivery.lastKnownLocation,
   });
 
   const isLive = delivery.status === 'in_transit' && !!location && !isStale;

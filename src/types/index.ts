@@ -109,6 +109,7 @@ export interface DeliveryRequest {
   estimatedDurationMin?: number;
   matchType?: 'nearby' | 'corridor';
   dispatchStatus?: 'idle' | 'searching_partner' | 'expanding_search' | 'partner_assigned' | 'no_partner_available' | 'cancelled';
+  lastKnownLocation?: TransporterLocation;
 }
 
 export interface DispatchOpportunityPayload {

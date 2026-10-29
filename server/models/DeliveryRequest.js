@@ -138,6 +138,9 @@ const DeliveryRequestSchema = new Schema({
         type: Number,
         default: 5,
     },
+    lastKnownLocation: {
+        type: Schema.Types.Mixed,
+    },
 }, {
     timestamps: true,
 });
