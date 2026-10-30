@@ -6,7 +6,10 @@ import * as livekitService from '../services/livekit';
 // Mock LiveKit Client
 const mockLocalParticipant = {
   setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
+  setCameraEnabled: vi.fn().mockResolvedValue(undefined),
+  publishData: vi.fn().mockResolvedValue(undefined),
   audioTrackPublications: new Map(),
+  videoTrackPublications: new Map(),
 };
 
 const mockRoomEventListeners = new Map<string, Function>();
@@ -46,6 +49,7 @@ vi.mock('livekit-client', () => {
       ParticipantConnected: 'participantConnected',
       ParticipantDisconnected: 'participantDisconnected',
       ActiveSpeakersChanged: 'activeSpeakersChanged',
+      DataReceived: 'dataReceived',
       Reconnecting: 'reconnecting',
       Reconnected: 'reconnected',
     },
@@ -282,5 +286,129 @@ describe('useLiveKitCall Hook', () => {
       expect(mockRoomInstance.disconnect).toHaveBeenCalled();
       expect(result.current.callState).toBe('disconnected');
     });
+  });
+
+  it('should start video call with camera enabled and video mode', async () => {
+    vi.mocked(livekitService.requestLiveKitToken).mockResolvedValueOnce({
+      success: true,
+      data: {
+        token: 'mock-jwt-token-video',
+        serverUrl: 'wss://test.livekit.cloud',
+        room: 'delivery-del-video-1',
+        participantIdentity: 'usr-customer',
+        participantName: 'Customer',
+        role: 'Customer',
+        callType: 'video',
+      },
+      error: null,
+    });
+
+    const { result } = renderHook(() =>
+      useLiveKitCall({
+        deliveryId: 'del-video-1',
+        deliveryStatus: 'in_transit',
+        otherPartyName: 'Ravi',
+        initialCallType: 'video',
+      })
+    );
+
+    await act(async () => {
+      await result.current.startCall('video');
+    });
+
+    expect(result.current.callState).toBe('connected');
+    expect(result.current.callType).toBe('video');
+    expect(mockLocalParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
+    expect(result.current.isVideoEnabled).toBe(true);
+
+    // Toggle camera off
+    await act(async () => {
+      await result.current.toggleCamera();
+    });
+
+    expect(mockLocalParticipant.setCameraEnabled).toHaveBeenCalledWith(false);
+    expect(result.current.isVideoEnabled).toBe(false);
+  });
+
+  it('should handle camera permission denial and set permissionDeniedType to camera', async () => {
+    const camError = new Error('Camera permission denied');
+    camError.name = 'NotAllowedError';
+    mockGetUserMedia.mockRejectedValueOnce(camError);
+
+    const { result } = renderHook(() =>
+      useLiveKitCall({
+        deliveryId: 'del-video-perm',
+        deliveryStatus: 'in_transit',
+        otherPartyName: 'Ravi',
+      })
+    );
+
+    await act(async () => {
+      await result.current.startCall('video');
+    });
+
+    expect(result.current.callState).toBe('error');
+    expect(result.current.permissionDeniedType).toBe('camera');
+    expect(result.current.error).toContain('Camera/microphone permission was denied');
+  });
+
+  it('should transmit and receive auxiliary GPS telemetry over LiveKit data channel', async () => {
+    vi.mocked(livekitService.requestLiveKitToken).mockResolvedValueOnce({
+      success: true,
+      data: {
+        token: 'mock-jwt-token-data',
+        serverUrl: 'wss://test.livekit.cloud',
+        room: 'delivery-del-data-1',
+        participantIdentity: 'usr-partner',
+        participantName: 'Partner',
+        role: 'Transporter',
+      },
+      error: null,
+    });
+
+    const onDataReceivedMock = vi.fn();
+    const { result } = renderHook(() =>
+      useLiveKitCall({
+        deliveryId: 'del-data-1',
+        deliveryStatus: 'in_transit',
+        otherPartyName: 'Customer',
+        onDataReceived: onDataReceivedMock,
+      })
+    );
+
+    await act(async () => {
+      await result.current.startCall('audio');
+    });
+
+    // 1. Send data channel packet
+    let sendResult = false;
+    await act(async () => {
+      sendResult = await result.current.sendData({
+        type: 'gps_telemetry',
+        latitude: 18.3325,
+        longitude: 77.0821,
+        accuracy: 12.5,
+      });
+    });
+
+    expect(sendResult).toBe(true);
+    expect(mockLocalParticipant.publishData).toHaveBeenCalled();
+
+    // 2. Simulate incoming data channel packet from remote peer
+    const dataReceivedListener = mockRoomEventListeners.get('dataReceived');
+    expect(dataReceivedListener).toBeDefined();
+
+    const incomingPayload = new TextEncoder().encode(
+      JSON.stringify({ type: 'gps_telemetry', latitude: 18.3325, longitude: 77.0821, accuracy: 12.5 })
+    );
+
+    act(() => {
+      dataReceivedListener!(incomingPayload, { identity: 'usr-remote' });
+    });
+
+    expect(onDataReceivedMock).toHaveBeenCalledWith(
+      { type: 'gps_telemetry', latitude: 18.3325, longitude: 77.0821, accuracy: 12.5 },
+      { identity: 'usr-remote' }
+    );
   });
 });

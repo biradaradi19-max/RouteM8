@@ -113,7 +113,8 @@ describe('useTransporterLocation Hook', () => {
         37.43,
         -122.17,
         180,
-        15
+        15,
+        10
       );
       expect(deliveriesApi.updateLocation).toHaveBeenCalledWith(
         'del-1',
@@ -122,6 +123,7 @@ describe('useTransporterLocation Hook', () => {
           longitude: -122.17,
           heading: 180,
           speed: 15,
+          accuracy: 10,
         })
       );
     });
@@ -261,6 +263,108 @@ describe('useTransporterLocation Hook', () => {
       expect(deliveriesApi.updateLocation).toHaveBeenCalled();
       // Should not surface socket error because HTTP succeeded
       expect(result.current.error).toBeNull();
+    });
+  });
+
+  it('should reject coarse accuracy (> 1000m) and not broadcast false coordinates', async () => {
+    const { result } = renderHook(() =>
+      useTransporterLocation({
+        deliveryId: 'del-coarse-1',
+        deliveryStatus: 'in_transit',
+        isTransporter: true,
+      })
+    );
+
+    await act(async () => {
+      await result.current.startSharing();
+    });
+
+    // Simulate coarse network/IP position (e.g. Pune IP fallback with 35,000m accuracy)
+    act(() => {
+      watchCallback({
+        coords: {
+          latitude: 18.5204,
+          longitude: 73.8567,
+          accuracy: 35000, // 35 km
+        },
+        timestamp: Date.now(),
+      });
+    });
+
+    // Should NOT broadcast coarse location
+    expect(socketService.emitLocationUpdate).not.toHaveBeenCalled();
+    expect(deliveriesApi.updateLocation).not.toHaveBeenCalled();
+    expect(result.current.error).toContain('Acquiring GPS satellite fix');
+
+    // When real satellite fix arrives (e.g. Tondar with 12m accuracy)
+    act(() => {
+      watchCallback({
+        coords: {
+          latitude: 18.3325,
+          longitude: 77.0821,
+          accuracy: 12,
+        },
+        timestamp: Date.now() + 1000,
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.location?.latitude).toBe(18.3325);
+      expect(result.current.location?.longitude).toBe(77.0821);
+      expect(result.current.error).toBeNull();
+      expect(deliveriesApi.updateLocation).toHaveBeenCalledWith(
+        'del-coarse-1',
+        expect.objectContaining({
+          latitude: 18.3325,
+          longitude: 77.0821,
+          accuracy: 12,
+        })
+      );
+    });
+  });
+
+  it('should not abort sharing on transient timeout and should recover when GPS locks', async () => {
+    const { result } = renderHook(() =>
+      useTransporterLocation({
+        deliveryId: 'del-timeout-1',
+        deliveryStatus: 'in_transit',
+        isTransporter: true,
+      })
+    );
+
+    await act(async () => {
+      await result.current.startSharing();
+    });
+
+    expect(result.current.isSharing).toBe(true);
+
+    // Simulate transient timeout (code 3)
+    act(() => {
+      watchErrorCallback({
+        code: 3,
+        message: 'Timeout',
+      });
+    });
+
+    // Crucial: isSharing remains TRUE and clearWatch is NOT called
+    expect(result.current.isSharing).toBe(true);
+    expect(mockClearWatch).not.toHaveBeenCalled();
+
+    // Subsequent satellite acquisition succeeds
+    act(() => {
+      watchCallback({
+        coords: {
+          latitude: 18.3325,
+          longitude: 77.0821,
+          accuracy: 15,
+        },
+        timestamp: Date.now(),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.location?.latitude).toBe(18.3325);
+      expect(result.current.location?.longitude).toBe(77.0821);
     });
   });
 });

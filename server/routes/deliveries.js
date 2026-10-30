@@ -1212,6 +1212,7 @@ router.post('/:id/proof', requireAuth, upload.single('photo'), async (req, res) 
 // GET /api/deliveries/:id/location - Get latest GPS location for delivery
 router.get('/:id/location', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         const deliveryId = String(req.params.id);
         if (isDbConnected()) {
             try {
@@ -1227,6 +1228,7 @@ router.get('/:id/location', async (req, res) => {
                         longitude: latestLoc.longitude,
                         heading: latestLoc.heading,
                         speed: latestLoc.speed,
+                        accuracy: latestLoc.accuracy,
                         updatedAt: latestLoc.updatedAt instanceof Date ? latestLoc.updatedAt.toISOString() : new Date(latestLoc.updatedAt || Date.now()).toISOString(),
                     });
                     return;
@@ -1265,7 +1267,7 @@ router.post('/:id/location', requireAuth, async (req, res) => {
     try {
         const uid = req.user.uid;
         const deliveryId = String(req.params.id);
-        const { latitude, longitude, heading, speed } = req.body || {};
+        const { latitude, longitude, heading, speed, accuracy, clientTimestamp } = req.body || {};
         if (typeof latitude !== 'number' || typeof longitude !== 'number') {
             res.status(400).json({ error: 'Latitude and longitude must be numbers' });
             return;
@@ -1274,6 +1276,11 @@ router.post('/:id/location', requireAuth, async (req, res) => {
             res.status(400).json({ error: 'Coordinates out of bounds' });
             return;
         }
+        const numericAccuracy = typeof accuracy === 'number' && !Number.isNaN(accuracy) && accuracy >= 0 ? accuracy : undefined;
+        const updateTime = typeof clientTimestamp === 'number' && !Number.isNaN(clientTimestamp) && clientTimestamp > 0
+            ? new Date(clientTimestamp)
+            : new Date();
+        const nowIso = updateTime.toISOString();
         // Check DB first if connected
         if (isDbConnected()) {
             try {
@@ -1295,7 +1302,15 @@ router.post('/:id/location', requireAuth, async (req, res) => {
                     res.status(400).json({ error: `Cannot share location for delivery in status "${delivery.status}"` });
                     return;
                 }
-                const nowIso = new Date().toISOString();
+                // Out-of-order stale update guard
+                const existingLastKnown = delivery.lastKnownLocation;
+                if (existingLastKnown && existingLastKnown.updatedAt) {
+                    const existingTime = new Date(existingLastKnown.updatedAt).getTime();
+                    if (updateTime.getTime() < existingTime) {
+                        res.json({ success: true, location: existingLastKnown, stale: true });
+                        return;
+                    }
+                }
                 const payload = {
                     deliveryId: String(delivery._id || deliveryId),
                     transporterId: uid,
@@ -1303,6 +1318,7 @@ router.post('/:id/location', requireAuth, async (req, res) => {
                     longitude,
                     heading: typeof heading === 'number' ? heading : undefined,
                     speed: typeof speed === 'number' ? speed : undefined,
+                    accuracy: numericAccuracy,
                     updatedAt: nowIso,
                 };
                 await Location.create({
@@ -1312,6 +1328,7 @@ router.post('/:id/location', requireAuth, async (req, res) => {
                     longitude,
                     heading: typeof heading === 'number' ? heading : undefined,
                     speed: typeof speed === 'number' ? speed : undefined,
+                    accuracy: numericAccuracy,
                 });
                 await DeliveryRequest.updateOne({ _id: queryId }, { $set: { lastKnownLocation: payload } });
                 inMemoryLocations.set(deliveryId, payload);
@@ -1343,6 +1360,14 @@ router.post('/:id/location', requireAuth, async (req, res) => {
             res.status(400).json({ error: `Cannot share location for delivery in status "${target.status}"` });
             return;
         }
+        // Out-of-order stale update guard for in-memory
+        if (target.lastKnownLocation && target.lastKnownLocation.updatedAt) {
+            const existingTime = new Date(target.lastKnownLocation.updatedAt).getTime();
+            if (updateTime.getTime() < existingTime) {
+                res.json({ success: true, location: target.lastKnownLocation, stale: true });
+                return;
+            }
+        }
         const payload = {
             deliveryId,
             transporterId: uid,
@@ -1350,7 +1375,8 @@ router.post('/:id/location', requireAuth, async (req, res) => {
             longitude,
             heading: typeof heading === 'number' ? heading : undefined,
             speed: typeof speed === 'number' ? speed : undefined,
-            updatedAt: new Date().toISOString(),
+            accuracy: numericAccuracy,
+            updatedAt: nowIso,
         };
         target.lastKnownLocation = payload;
         inMemoryLocations.set(deliveryId, payload);

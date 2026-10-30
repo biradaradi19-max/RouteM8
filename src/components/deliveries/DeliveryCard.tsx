@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { DeliveryRequest } from '../../types';
+import type { DeliveryRequest, TransporterLocation } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { useTransporterLocation } from '../../hooks/useTransporterLocation';
@@ -57,18 +57,30 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
     ? (req.requesterName || 'Customer')
     : (req.transporterName || 'Transporter');
 
-  // LiveKit audio call session for this delivery
+  const [p2pLocation, setP2pLocation] = useState<TransporterLocation | null>(null);
+
+  // LiveKit audio & video call session for this delivery
   const call = useLiveKitCall({
     deliveryId: req.id,
     deliveryStatus: req.status,
     deliveryTitle: req.title,
     otherPartyName,
+    onDataReceived: (data) => {
+      if (
+        data &&
+        data.type === 'gps_telemetry' &&
+        typeof data.latitude === 'number' &&
+        typeof data.longitude === 'number'
+      ) {
+        setP2pLocation(data as TransporterLocation);
+      }
+    },
   });
 
-  const handleStartCall = async () => {
+  const handleStartCall = async (mode: 'audio' | 'video' = 'audio') => {
     setIsCallModalOpen(true);
     if (call.callState === 'idle' || call.callState === 'disconnected' || call.callState === 'error') {
-      await call.startCall();
+      await call.startCall(mode);
     }
   };
 
@@ -87,6 +99,15 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
     isTransporter: isAssignedTransporter,
     autoStart: isAssignedTransporter && req.status === 'in_transit',
     initialLocation: req.lastKnownLocation,
+    onLocationBroadcast: (loc) => {
+      // If LiveKit room is connected, send auxiliary location update via data channel
+      if (call.callState === 'connected') {
+        call.sendData({
+          type: 'gps_telemetry',
+          ...loc,
+        });
+      }
+    },
   });
 
   const handleVerifyPin = async () => {
@@ -292,10 +313,11 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
           {/* Controls toolbar */}
           {(req.status === 'matched' || req.status === 'in_transit') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {/* Live Audio Call Button */}
+              {/* Live Audio & Video Call Button */}
               {isParticipant && (
                 <CallButton
-                  onClick={handleStartCall}
+                  onClick={() => handleStartCall('audio')}
+                  onVideoClick={() => handleStartCall('video')}
                   otherPartyRole={otherPartyRole}
                   isCallActive={call.callState === 'connected' || call.callState === 'connecting'}
                 />
@@ -436,10 +458,11 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {/* Audio Call Action Button */}
+          {/* Audio & Video Call Action Button */}
           {isParticipant && (req.status === 'matched' || req.status === 'in_transit') && (
             <CallButton
-              onClick={handleStartCall}
+              onClick={() => handleStartCall('audio')}
+              onVideoClick={() => handleStartCall('video')}
               otherPartyRole={otherPartyRole}
               isCallActive={call.callState === 'connected' || call.callState === 'connecting'}
             />
@@ -633,7 +656,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
         </div>
       )}
 
-      {/* LiveKit WebRTC Audio Call Modal */}
+      {/* LiveKit WebRTC Audio & Video Call Modal */}
       <AudioCallModal
         isOpen={isCallModalOpen}
         onClose={() => setIsCallModalOpen(false)}
@@ -641,6 +664,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
         otherPartyRole={otherPartyRole}
         deliveryTitle={req.title}
         call={call}
+        hasP2pGpsSync={Boolean(p2pLocation)}
       />
     </div>
   );

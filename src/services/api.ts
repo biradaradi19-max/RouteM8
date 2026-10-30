@@ -325,7 +325,14 @@ export const deliveriesApi = {
 
   async updateLocation(
     id: string,
-    coords: { latitude: number; longitude: number; heading?: number; speed?: number }
+    coords: {
+      latitude: number;
+      longitude: number;
+      heading?: number;
+      speed?: number;
+      accuracy?: number;
+      clientTimestamp?: number;
+    }
   ): Promise<{ success: boolean; location?: any; error?: string }> {
     try {
       const res = await fetchWithAuth(`${API_BASE}/deliveries/${encodeURIComponent(id)}/location`, {
@@ -387,18 +394,19 @@ export const journeysApi = {
 };
 
 export const livekitApi = {
-  async getToken(deliveryId: string): Promise<{
+  async getToken(deliveryId: string, callType: 'audio' | 'video' = 'audio'): Promise<{
     token: string;
     serverUrl: string;
     room: string;
     participantIdentity: string;
     participantName: string;
     role: 'Customer' | 'Transporter';
+    callType?: 'audio' | 'video';
   }> {
     const res = await fetchWithAuth(`${API_BASE}/livekit/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deliveryId }),
+      body: JSON.stringify({ deliveryId, callType }),
     });
 
     const parsed = await safeReadJson<any>(res);

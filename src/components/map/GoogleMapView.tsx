@@ -102,7 +102,7 @@ const MapController: React.FC<{
     return () => {
       isCurrent = false;
     };
-  }, [transporterLocation?.latitude, transporterLocation?.longitude, dropoffCoords]);
+  }, [transporterLocation, dropoffCoords]);
 
   // Draw Polylines using Google Maps native Polyline API
   useEffect(() => {

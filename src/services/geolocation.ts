@@ -15,6 +15,48 @@ export interface BroadcastCoordinate {
   timestamp: number;
 }
 
+/**
+ * Maximum accuracy radius in meters to accept as a valid delivery vehicle tracking coordinate.
+ * Readings worse than this (e.g. 5,000m - 50,000m) are coarse cell-tower or ISP IP geolocations
+ * (such as Pune IP routing fallback when physically located in Tondar) and must NOT be broadcast
+ * as verified live vehicle transit positions.
+ */
+export const GPS_MAX_ACCEPTABLE_ACCURACY_METERS = 1000;
+export const GPS_HIGH_ACCURACY_THRESHOLD_METERS = 50;
+
+export type GpsConfidenceTier = 'high' | 'medium' | 'low' | 'unusable';
+
+export function getGpsConfidenceTier(accuracyMeters?: number | null): GpsConfidenceTier {
+  if (accuracyMeters == null || Number.isNaN(accuracyMeters)) return 'low';
+  if (accuracyMeters <= GPS_HIGH_ACCURACY_THRESHOLD_METERS) return 'high';
+  if (accuracyMeters <= 200) return 'medium';
+  if (accuracyMeters <= GPS_MAX_ACCEPTABLE_ACCURACY_METERS) return 'low';
+  return 'unusable';
+}
+
+export interface GpsDiagnosticEvent {
+  source: 'partner_watch' | 'partner_discovery' | 'customer_poll' | 'socket_rx' | 'api_tx';
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number | null;
+  heading?: number | null;
+  speed?: number | null;
+  timestamp: number;
+  ageMs?: number;
+  apiSuccess?: boolean;
+  statusMessage?: string;
+}
+
+export function logGpsDiagnostics(event: GpsDiagnosticEvent): void {
+  const ageSec = event.ageMs !== undefined ? `${(event.ageMs / 1000).toFixed(1)}s` : '0s';
+  const acc = event.accuracyMeters != null ? `±${Math.round(event.accuracyMeters)}m` : 'unknown';
+  const status = event.statusMessage ? ` (${event.statusMessage})` : '';
+  const api = event.apiSuccess !== undefined ? ` api=${event.apiSuccess ? 'OK' : 'FAIL'}` : '';
+  console.debug(
+    `[GPS-Diag:${event.source}] lat=${event.latitude.toFixed(6)} lng=${event.longitude.toFixed(6)} acc=${acc} age=${ageSec}${api}${status}`
+  );
+}
+
 export interface BroadcastThresholds {
   minIntervalMs?: number; // Minimum time between consecutive backend updates (default: 5000ms)
   minDistanceMeters?: number; // Minimum distance change to force an immediate update (default: 15m)
@@ -102,10 +144,14 @@ export function shouldBroadcastLocation(
   return distanceMoved >= minDistance;
 }
 
+export interface ExtendedPositionOptions extends PositionOptions {
+  maxAccuracyMeters?: number;
+}
+
 /**
  * Promise-based current position retrieval with browser geolocation.
  */
-export async function getCurrentPositionAsync(options?: PositionOptions): Promise<[number, number]> {
+export async function getCurrentPositionAsync(options?: ExtendedPositionOptions): Promise<[number, number]> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     throw new Error('Geolocation is not supported by your browser.');
   }
@@ -113,7 +159,29 @@ export async function getCurrentPositionAsync(options?: PositionOptions): Promis
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        resolve([pos.coords.latitude, pos.coords.longitude]);
+        const { latitude, longitude, accuracy } = pos.coords;
+        logGpsDiagnostics({
+          source: 'partner_discovery',
+          latitude,
+          longitude,
+          accuracyMeters: accuracy,
+          timestamp: pos.timestamp || Date.now(),
+        });
+
+        if (
+          options?.maxAccuracyMeters &&
+          typeof accuracy === 'number' &&
+          accuracy > options.maxAccuracyMeters
+        ) {
+          reject(
+            new Error(
+              `GPS accuracy (±${(accuracy / 1000).toFixed(1)} km) is too coarse. Please ensure GPS is enabled for precise location.`
+            )
+          );
+          return;
+        }
+
+        resolve([latitude, longitude]);
       },
       (err) => {
         reject(new Error(formatGeolocationError(err)));

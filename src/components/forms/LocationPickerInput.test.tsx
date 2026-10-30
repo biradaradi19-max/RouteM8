@@ -39,11 +39,13 @@ describe('LocationPickerInput Component', () => {
     fireEvent.click(locateBtn);
 
     await waitFor(() => {
-      expect(getCurrentPositionSpy).toHaveBeenCalledWith({
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      });
+      expect(getCurrentPositionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        })
+      );
     });
 
     await waitFor(() => {

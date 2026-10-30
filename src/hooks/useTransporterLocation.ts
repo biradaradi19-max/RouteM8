@@ -6,6 +6,10 @@ import {
   isCoordinateStale,
   shouldBroadcastLocation,
   type BroadcastCoordinate,
+  GPS_MAX_ACCEPTABLE_ACCURACY_METERS,
+  getGpsConfidenceTier,
+  type GpsConfidenceTier,
+  logGpsDiagnostics,
 } from '../services/geolocation';
 import { deliveriesApi } from '../services/api';
 import { joinDeliveryRoom, emitLocationUpdate } from '../services/socket';
@@ -20,6 +24,7 @@ export interface UseTransporterLocationOptions {
   minDistanceMeters?: number;
   autoStart?: boolean;
   initialLocation?: TransporterLocation | null;
+  onLocationBroadcast?: (location: TransporterLocation) => void;
 }
 
 export interface UseTransporterLocationResult {
@@ -28,6 +33,8 @@ export interface UseTransporterLocationResult {
   location: TransporterLocation | null;
   error: string | null;
   isStale: boolean;
+  accuracy: number | null;
+  confidence: GpsConfidenceTier;
   startSharing: () => Promise<void>;
   stopSharing: () => void;
   toggleSharing: () => Promise<void>;
@@ -41,6 +48,7 @@ export function useTransporterLocation({
   minDistanceMeters = 10,
   autoStart = false,
   initialLocation = null,
+  onLocationBroadcast,
 }: UseTransporterLocationOptions): UseTransporterLocationResult {
   const [isSharing, setIsSharing] = useState<boolean>(false);
   const [permissionState, setPermissionState] = useState<GeolocationPermissionState>(() => {
@@ -54,6 +62,11 @@ export function useTransporterLocation({
 
   const watchIdRef = useRef<number | null>(null);
   const lastBroadcastRef = useRef<BroadcastCoordinate | null>(null);
+  const onLocationBroadcastRef = useRef(onLocationBroadcast);
+
+  useEffect(() => {
+    onLocationBroadcastRef.current = onLocationBroadcast;
+  }, [onLocationBroadcast]);
 
   const [prevDeliveryId, setPrevDeliveryId] = useState(deliveryId);
   if (deliveryId !== prevDeliveryId) {
@@ -221,6 +234,25 @@ export function useTransporterLocation({
 
       setPermissionState('granted');
       const now = Date.now();
+
+      logGpsDiagnostics({
+        source: 'partner_watch',
+        latitude,
+        longitude,
+        accuracyMeters: accuracy,
+        heading,
+        speed,
+        timestamp: now,
+      });
+
+      // Filter out low-confidence coarse IP/Wi-Fi estimates (> 1000m, e.g. Pune IP while in Tondar)
+      if (typeof accuracy === 'number' && accuracy > GPS_MAX_ACCEPTABLE_ACCURACY_METERS) {
+        setError(
+          `Acquiring GPS satellite fix (current accuracy ±${(accuracy / 1000).toFixed(1)} km is too coarse). Waiting for satellites...`
+        );
+        return;
+      }
+
       const currentCoord: BroadcastCoordinate = {
         latitude,
         longitude,
@@ -239,16 +271,27 @@ export function useTransporterLocation({
       ) {
         lastBroadcastRef.current = currentCoord;
 
-        // Optimistically update local view
-        setLocation({
+        // Optimistically update local view with fresh GPS position and accuracy
+        const locPayload: TransporterLocation = {
           deliveryId,
           transporterId: '',
           latitude,
           longitude,
           heading: currentCoord.heading ?? undefined,
           speed: currentCoord.speed ?? undefined,
+          accuracy: accuracy !== null && !Number.isNaN(accuracy) ? accuracy : undefined,
           updatedAt: new Date(now).toISOString(),
-        });
+        };
+        setLocation(locPayload);
+
+        // Notify auxiliary broadcast listeners (e.g. active LiveKit WebRTC data channel)
+        if (onLocationBroadcastRef.current) {
+          try {
+            onLocationBroadcastRef.current(locPayload);
+          } catch {
+            // Ignore auxiliary broadcast errors
+          }
+        }
 
         // Broadcast to Express + Socket.IO server (opportunistic when available)
         emitLocationUpdate(
@@ -256,7 +299,8 @@ export function useTransporterLocation({
           latitude,
           longitude,
           currentCoord.heading ?? undefined,
-          currentCoord.speed ?? undefined
+          currentCoord.speed ?? undefined,
+          accuracy !== null && !Number.isNaN(accuracy) ? accuracy : undefined
         ).catch(() => {});
 
         // Dual-transport: primary and reliable HTTP REST for serverless
@@ -266,6 +310,8 @@ export function useTransporterLocation({
             longitude,
             heading: currentCoord.heading ?? undefined,
             speed: currentCoord.speed ?? undefined,
+            accuracy: accuracy !== null && !Number.isNaN(accuracy) ? accuracy : undefined,
+            clientTimestamp: now,
           })
           .then((res) => {
             if (res.success) {
@@ -285,14 +331,25 @@ export function useTransporterLocation({
       setError(formatted);
       if (err.code === 1) {
         setPermissionState('denied');
+        stopSharing();
+      } else {
+        // Code 2 (POSITION_UNAVAILABLE) or Code 3 (TIMEOUT):
+        // Transient error during satellite acquisition. DO NOT stop sharing!
+        // Keep watcher alive so position updates automatically flow when satellites lock.
+        logGpsDiagnostics({
+          source: 'partner_watch',
+          latitude: 0,
+          longitude: 0,
+          timestamp: Date.now(),
+          statusMessage: `Transient watchPosition error code ${err.code}: ${err.message}`,
+        });
       }
-      stopSharing();
     };
 
     try {
       const id = navigator.geolocation.watchPosition(onWatchSuccess, onWatchError, {
         enableHighAccuracy: true,
-        timeout: 15000,
+        timeout: 20000,
         maximumAge: 0,
       });
       watchIdRef.current = id;
@@ -323,6 +380,8 @@ export function useTransporterLocation({
   }, [isSharing, startSharing, stopSharing]);
 
   const isStale = isCoordinateStale(location?.updatedAt, 60000);
+  const accuracy = location?.accuracy ?? null;
+  const confidence = getGpsConfidenceTier(accuracy);
 
   return {
     isSharing,
@@ -330,6 +389,8 @@ export function useTransporterLocation({
     location,
     error,
     isStale,
+    accuracy,
+    confidence,
     startSharing,
     stopSharing,
     toggleSharing,

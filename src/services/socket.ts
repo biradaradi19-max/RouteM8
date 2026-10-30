@@ -134,7 +134,8 @@ export async function emitLocationUpdate(
   latitude: number,
   longitude: number,
   heading?: number,
-  speed?: number
+  speed?: number,
+  accuracy?: number
 ): Promise<{ success: boolean; rateLimited?: boolean; error?: string }> {
   try {
     const s = await getSocket();
@@ -148,7 +149,7 @@ export async function emitLocationUpdate(
 
       s.emit(
         'location:update',
-        { deliveryId, latitude, longitude, heading, speed },
+        { deliveryId, latitude, longitude, heading, speed, accuracy },
         (res: any) => {
           clearTimeout(timer);
           if (!res) {

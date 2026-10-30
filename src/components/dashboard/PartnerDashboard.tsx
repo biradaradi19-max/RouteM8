@@ -82,6 +82,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
 
   // Audio call modal state for contacting customer
   const [activeCallDelivery, setActiveCallDelivery] = useState<DeliveryRequest | null>(null);
+  const [activeCallMode, setActiveCallMode] = useState<'audio' | 'video'>('audio');
 
   // Partner Face/Identity verification modal state
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
@@ -724,7 +725,14 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <CallButton
-                        onClick={() => setActiveCallDelivery(del)}
+                        onClick={() => {
+                          setActiveCallDelivery(del);
+                          setActiveCallMode('audio');
+                        }}
+                        onVideoClick={() => {
+                          setActiveCallDelivery(del);
+                          setActiveCallMode('video');
+                        }}
                         otherPartyRole="Customer"
                         otherPartyName={del.requesterName}
                       />
@@ -1454,10 +1462,11 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         </section>
       )}
 
-      {/* Audio Call Modal for Customer contact */}
+      {/* Audio & Video Call Modal for Customer contact */}
       {activeCallDelivery && (
         <PartnerAudioCallWrapper
           delivery={activeCallDelivery}
+          initialMode={activeCallMode}
           onClose={() => setActiveCallDelivery(null)}
         />
       )}
@@ -1522,9 +1531,28 @@ const PartnerLiveMapWithGps: React.FC<{
         gap: '0.5rem',
         fontSize: '0.8125rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Radio size={15} color={isSharing ? 'var(--color-mint-500)' : 'var(--text-tertiary)'} className={isSharing ? 'pulse-animation' : ''} />
-          <span>Live GPS Sharing: <strong style={{ color: isSharing ? 'var(--color-mint-600)' : 'var(--text-secondary)' }}>{isSharing ? 'Transmitting to Customer' : 'Paused'}</strong></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Radio size={15} color={isSharing ? 'var(--color-mint-500)' : 'var(--text-tertiary)'} className={isSharing ? 'pulse-animation' : ''} />
+            <span>Live GPS Sharing: <strong style={{ color: isSharing ? 'var(--color-mint-600)' : 'var(--text-secondary)' }}>{isSharing ? 'Transmitting to Customer' : 'Paused'}</strong></span>
+          </div>
+
+          {location && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+              {location.accuracy != null && (
+                <span style={{
+                  padding: '0.125rem 0.375rem',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: location.accuracy <= 50 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                  color: location.accuracy <= 50 ? 'var(--color-mint-600)' : '#D97706',
+                  fontWeight: 600,
+                }}>
+                  ±{Math.round(location.accuracy)}m {location.accuracy <= 50 ? 'GPS' : 'Coarse'}
+                </span>
+              )}
+              <span>({location.latitude.toFixed(4)}, {location.longitude.toFixed(4)})</span>
+            </div>
+          )}
         </div>
         <button
           onClick={isSharing ? stopSharing : startSharing}
@@ -1536,8 +1564,9 @@ const PartnerLiveMapWithGps: React.FC<{
       </div>
 
       {gpsError && (
-        <div style={{ padding: '0.5rem 1rem', fontSize: '0.75rem', color: 'var(--status-danger-text)', backgroundColor: 'var(--status-cancelled-bg)' }}>
-          {gpsError}
+        <div style={{ padding: '0.5rem 1rem', fontSize: '0.75rem', color: 'var(--status-danger-text)', backgroundColor: 'var(--status-cancelled-bg)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <AlertCircle size={14} />
+          <span>{gpsError}</span>
         </div>
       )}
 
@@ -1555,18 +1584,25 @@ const PartnerLiveMapWithGps: React.FC<{
   );
 };
 
-// Sub-component wrapper for LiveKit Audio Call in Partner context
+// Sub-component wrapper for LiveKit Audio & Video Call in Partner context
 const PartnerAudioCallWrapper: React.FC<{
   delivery: DeliveryRequest;
+  initialMode?: 'audio' | 'video';
   onClose: () => void;
-}> = ({ delivery, onClose }) => {
+}> = ({ delivery, initialMode = 'audio', onClose }) => {
   const otherPartyName = delivery.requesterName || 'Customer';
   const call = useLiveKitCall({
     deliveryId: delivery.id,
     deliveryStatus: delivery.status,
     deliveryTitle: delivery.title,
     otherPartyName,
+    initialCallType: initialMode,
   });
+
+  useEffect(() => {
+    call.startCall(initialMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AudioCallModal

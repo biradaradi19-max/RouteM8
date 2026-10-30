@@ -7,7 +7,7 @@ import {
   X,
   Globe,
 } from 'lucide-react';
-import { getCurrentPositionAsync, isValidCoordinate } from '../../services/geolocation';
+import { getCurrentPositionAsync, isValidCoordinate, GPS_MAX_ACCEPTABLE_ACCURACY_METERS } from '../../services/geolocation';
 import {
   searchGlobalPlaces,
   resolvePlaceCoordinates,
@@ -146,6 +146,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
         enableHighAccuracy: true,
         timeout: 15000,
         maximumAge: 0,
+        maxAccuracyMeters: GPS_MAX_ACCEPTABLE_ACCURACY_METERS,
       });
       const [lat, lng] = pos;
 

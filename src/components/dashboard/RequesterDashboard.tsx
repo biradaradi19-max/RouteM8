@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -58,8 +58,9 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
   const [copiedPinId, setCopiedPinId] = useState<string | null>(null);
   const [expandedMapReqId, setExpandedMapReqId] = useState<string | null>(null);
 
-  // Audio call modal state for active delivery
+  // Audio & video call modal state for active delivery
   const [activeCallDelivery, setActiveCallDelivery] = useState<DeliveryRequest | null>(null);
+  const [activeCallMode, setActiveCallMode] = useState<'audio' | 'video'>('audio');
 
   // Time-aware greeting
   const [greeting] = useState(computeGreeting);
@@ -424,10 +425,17 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Transporter Audio Call Button */}
+                    {/* Transporter Audio & Video Call Button */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <CallButton
-                        onClick={() => setActiveCallDelivery(del)}
+                        onClick={() => {
+                          setActiveCallDelivery(del);
+                          setActiveCallMode('audio');
+                        }}
+                        onVideoClick={() => {
+                          setActiveCallDelivery(del);
+                          setActiveCallMode('video');
+                        }}
                         otherPartyRole="Transporter"
                         otherPartyName={del.transporterName}
                       />
@@ -773,10 +781,11 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         )}
       </section>
 
-      {/* Audio Call Modal for Customer-Transporter contact */}
+      {/* Audio & Video Call Modal for Customer-Transporter contact */}
       {activeCallDelivery && (
         <RequesterAudioCallWrapper
           delivery={activeCallDelivery}
+          initialMode={activeCallMode}
           onClose={() => setActiveCallDelivery(null)}
         />
       )}
@@ -785,18 +794,25 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
   );
 };
 
-// Sub-component wrapper for LiveKit Audio Call in Requester context
+// Sub-component wrapper for LiveKit Audio & Video Call in Requester context
 const RequesterAudioCallWrapper: React.FC<{
   delivery: DeliveryRequest;
+  initialMode?: 'audio' | 'video';
   onClose: () => void;
-}> = ({ delivery, onClose }) => {
+}> = ({ delivery, initialMode = 'audio', onClose }) => {
   const otherPartyName = delivery.transporterName || 'Transporter';
   const call = useLiveKitCall({
     deliveryId: delivery.id,
     deliveryStatus: delivery.status,
     deliveryTitle: delivery.title,
     otherPartyName,
+    initialCallType: initialMode,
   });
+
+  useEffect(() => {
+    call.startCall(initialMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AudioCallModal
@@ -839,13 +855,32 @@ const RequesterLiveTrackingMap: React.FC<{ delivery: DeliveryRequest }> = ({ del
         gap: '0.5rem',
         fontSize: '0.8125rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Radio size={14} color={isLive ? 'var(--color-mint-500)' : 'var(--text-tertiary)'} className={isLive ? 'pulse-animation' : ''} />
-          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-            {delivery.status === 'in_transit'
-              ? (location ? (isStale ? 'Last recorded transporter location' : 'Live Transporter GPS Streaming') : 'Waiting for transporter GPS signal...')
-              : 'Delivery assigned • Transporter preparing pickup'}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Radio size={14} color={isLive ? 'var(--color-mint-500)' : 'var(--text-tertiary)'} className={isLive ? 'pulse-animation' : ''} />
+            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+              {delivery.status === 'in_transit'
+                ? (location ? (isStale ? 'Transporter signal paused' : 'Live Transporter GPS') : 'Waiting for partner GPS signal...')
+                : 'Delivery assigned • Partner preparing pickup'}
+            </span>
+          </div>
+
+          {location && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+              {location.accuracy != null && (
+                <span style={{
+                  padding: '0.125rem 0.375rem',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: location.accuracy <= 50 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                  color: location.accuracy <= 50 ? 'var(--color-mint-600)' : '#D97706',
+                  fontWeight: 600,
+                }}>
+                  ±{Math.round(location.accuracy)}m {location.accuracy <= 50 ? 'GPS' : 'Coarse'}
+                </span>
+              )}
+              <span>• Updated {new Date(location.updatedAt).toLocaleTimeString()}</span>
+            </div>
+          )}
         </div>
         {delivery.estimatedDurationMin && (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>

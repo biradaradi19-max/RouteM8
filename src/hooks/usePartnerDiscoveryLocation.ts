@@ -1,4 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  isValidCoordinate,
+  GPS_MAX_ACCEPTABLE_ACCURACY_METERS,
+  logGpsDiagnostics,
+} from '../services/geolocation';
 
 export type PartnerLocationStatus =
   | 'idle'
@@ -11,6 +16,7 @@ export type PartnerLocationStatus =
 
 export interface UsePartnerDiscoveryLocationReturn {
   coords: [number, number] | null;
+  accuracy?: number | null;
   locationStatus: PartnerLocationStatus;
   errorMessage: string | null;
   lastUpdated: Date | null;
@@ -20,6 +26,7 @@ export interface UsePartnerDiscoveryLocationReturn {
 
 export function usePartnerDiscoveryLocation(): UsePartnerDiscoveryLocationReturn {
   const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<PartnerLocationStatus>('getting_location');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -63,23 +70,33 @@ export function usePartnerDiscoveryLocation(): UsePartnerDiscoveryLocationReturn
         if (!isMountedRef.current) return;
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
+        const acc = pos.coords.accuracy;
 
-        if (
-          typeof lat === 'number' &&
-          typeof lng === 'number' &&
-          Number.isFinite(lat) &&
-          Number.isFinite(lng) &&
-          lat >= -90 &&
-          lat <= 90 &&
-          lng >= -180 &&
-          lng <= 180
-        ) {
+        logGpsDiagnostics({
+          source: 'partner_discovery',
+          latitude: lat,
+          longitude: lng,
+          accuracyMeters: acc,
+          timestamp: pos.timestamp || Date.now(),
+        });
+
+        if (isValidCoordinate(lat, lng)) {
+          if (typeof acc === 'number' && acc > GPS_MAX_ACCEPTABLE_ACCURACY_METERS) {
+            setCoords(null);
+            setAccuracy(acc);
+            setLocationStatus('getting_location');
+            setErrorMessage(`Waiting for accurate GPS lock (current accuracy ±${(acc / 1000).toFixed(1)} km is too coarse)...`);
+            return;
+          }
+
           setCoords([lat, lng]);
+          setAccuracy(acc ?? null);
           setLocationStatus('ready');
           setErrorMessage(null);
           setLastUpdated(new Date(pos.timestamp || Date.now()));
         } else {
           setCoords(null);
+          setAccuracy(null);
           setLocationStatus('error');
           setErrorMessage('Received invalid GPS coordinates from device.');
         }
@@ -143,6 +160,7 @@ export function usePartnerDiscoveryLocation(): UsePartnerDiscoveryLocationReturn
 
   return {
     coords,
+    accuracy,
     locationStatus,
     errorMessage,
     lastUpdated,

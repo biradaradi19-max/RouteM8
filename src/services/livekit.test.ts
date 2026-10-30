@@ -25,13 +25,31 @@ describe('LiveKit Service — Token Request & Backend Integration', () => {
 
     const res = await requestLiveKitToken('del-123');
 
-    expect(livekitApi.getToken).toHaveBeenCalledWith('del-123');
+    expect(livekitApi.getToken).toHaveBeenCalledWith('del-123', 'audio');
     expect(res.success).toBe(true);
     expect(res.error).toBeNull();
     expect(res.data?.token).toBe('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test-jwt');
     expect(res.data?.serverUrl).toBe('wss://routem8-prod.livekit.cloud');
     expect(res.data?.room).toBe('delivery-del-123');
     expect(res.data?.role).toBe('Customer');
+  });
+
+  it('should pass video callType when requested', async () => {
+    vi.mocked(livekitApi.getToken).mockResolvedValueOnce({
+      token: 'jwt-video-token',
+      serverUrl: 'wss://routem8-prod.livekit.cloud',
+      room: 'delivery-del-123',
+      participantIdentity: 'usr-customer-1',
+      participantName: 'Customer (Alex)',
+      role: 'Customer',
+      callType: 'video',
+    });
+
+    const res = await requestLiveKitToken('del-123', 'video');
+
+    expect(livekitApi.getToken).toHaveBeenCalledWith('del-123', 'video');
+    expect(res.success).toBe(true);
+    expect(res.data?.callType).toBe('video');
   });
 
   it('should handle backend error when credentials are not configured', async () => {

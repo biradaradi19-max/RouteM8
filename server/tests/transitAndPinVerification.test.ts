@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createApp } from '../app.js';
-import { inMemoryDeliveries } from '../routes/deliveries.js';
+import { inMemoryDeliveries, inMemoryLocations } from '../routes/deliveries.js';
 
 describe('Delivery Transit & Handover PIN Verification API Flows', () => {
   let server: Server;
@@ -36,7 +36,9 @@ describe('Delivery Transit & Handover PIN Verification API Flows', () => {
       target.handoverPin = '4821';
       target.pinAttempts = 0;
       target.pinLockedUntil = undefined;
+      target.lastKnownLocation = undefined;
     }
+    inMemoryLocations.delete('6712b001a1b2c3d4e5f60001');
   });
 
   // =========================================================================
@@ -403,6 +405,59 @@ describe('Delivery Transit & Handover PIN Verification API Flows', () => {
         }),
       });
       expect(res.status).toBe(403);
+    });
+
+    it('persists accuracy and protects against out-of-order stale updates', async () => {
+      const now = Date.now();
+      // 1. Post a new location at t = now (in Tondar)
+      const res1 = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mock-token-partner-1',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          latitude: 18.3325,
+          longitude: 77.0821,
+          accuracy: 12.5,
+          clientTimestamp: now,
+        }),
+      });
+      const data1: any = await res1.json();
+      expect(res1.status).toBe(200);
+      expect(data1.location.latitude).toBe(18.3325);
+      expect(data1.location.longitude).toBe(77.0821);
+      expect(data1.location.accuracy).toBe(12.5);
+
+      // 2. Post a stale/out-of-order location packet timestamped in the past (t = now - 50000)
+      const res2 = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer mock-token-partner-1',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          latitude: 18.5204, // old Pune position
+          longitude: 73.8567,
+          accuracy: 35000,
+          clientTimestamp: now - 50000,
+        }),
+      });
+      const data2: any = await res2.json();
+      expect(res2.status).toBe(200);
+      expect(data2.stale).toBe(true);
+      // The current location must NOT have been overwritten by old Pune position
+      expect(data2.location.latitude).toBe(18.3325);
+      expect(data2.location.longitude).toBe(77.0821);
+
+      // 3. Confirm GET /api/deliveries/:id/location still serves the fresh Tondar coordinates
+      const getRes = await fetch(`${baseUrl}/api/deliveries/6712b001a1b2c3d4e5f60001/location?nocache=3`, {
+        cache: 'no-store',
+      });
+      const getData: any = await getRes.json();
+      expect(getData.latitude).toBe(18.3325);
+      expect(getData.longitude).toBe(77.0821);
+      expect(getData.accuracy).toBe(12.5);
     });
   });
 });

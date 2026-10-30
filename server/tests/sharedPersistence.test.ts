@@ -1,13 +1,47 @@
 // @vitest-environment node
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi, afterAll } from 'vitest';
 
 describe('Shared Persistence Cross-Container Storage', () => {
   let firestorePersistence: any;
+  const inMemoryStore = new Map<string, any>();
+  const originalFetch = globalThis.fetch;
 
   beforeAll(async () => {
     process.env.ENABLE_FIRESTORE_TESTS = '1';
+
+    // Mock fetch to simulate Firebase Realtime Database without depending on external cloud network availability
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const method = init?.method || 'GET';
+
+      const deliveryMatch = urlStr.match(/\/deliveries\/([^/]+)\.json/);
+      if (deliveryMatch) {
+        const id = decodeURIComponent(deliveryMatch[1]);
+        if (method === 'PUT') {
+          const body = JSON.parse(init?.body as string);
+          inMemoryStore.set(id, body);
+          return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (method === 'GET') {
+          const data = inMemoryStore.get(id);
+          return new Response(JSON.stringify(data || null), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (method === 'DELETE') {
+          inMemoryStore.delete(id);
+          return new Response(JSON.stringify(null), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
+      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as any;
+
     const mod = await import('../services/firestorePersistence.js');
     firestorePersistence = mod.firestorePersistence;
+  });
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+    delete process.env.ENABLE_FIRESTORE_TESTS;
   });
 
   it('saves, retrieves, updates, and removes deliveries in shared persistence', async () => {

@@ -31,6 +31,10 @@ const LocationSchema = new Schema({
         type: Number,
         min: 0,
     },
+    accuracy: {
+        type: Number,
+        min: 0,
+    },
 }, {
     timestamps: true,
 });

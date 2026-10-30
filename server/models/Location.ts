@@ -7,6 +7,7 @@ export interface ILocation extends Document {
   longitude: number;
   heading?: number;
   speed?: number;
+  accuracy?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +42,10 @@ const LocationSchema = new Schema<ILocation>(
       max: 360,
     },
     speed: {
+      type: Number,
+      min: 0,
+    },
+    accuracy: {
       type: Number,
       min: 0,
     },

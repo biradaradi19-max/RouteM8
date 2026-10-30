@@ -32,6 +32,18 @@ vi.mock('../services/api', () => ({
   },
 }));
 
+// Mock Socket.IO service to avoid unhandled ECONNREFUSED network attempts in unit tests
+vi.mock('../services/socket', () => ({
+  getSocket: vi.fn().mockResolvedValue({
+    on: vi.fn(),
+    off: vi.fn(),
+    emit: vi.fn(),
+    disconnect: vi.fn(),
+    connected: false,
+  }),
+  emitLocationUpdate: vi.fn(),
+}));
+
 describe('Route M8 AppContext — Empty Datasets & Backend Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();

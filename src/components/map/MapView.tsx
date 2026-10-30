@@ -83,7 +83,7 @@ export const MapView: React.FC<MapViewProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [transporterLocation?.latitude, transporterLocation?.longitude, propDropoff, match]);
+  }, [transporterLocation, propDropoff, match]);
 
   useEffect(() => {
     const pickup = propPickup || (match ? match.pickupCoords : undefined);
@@ -142,9 +142,12 @@ export const MapView: React.FC<MapViewProps> = ({
 
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Default center in Silicon Valley / Palo Alto
+    const initialCenter: L.LatLngExpression = transporterLocation
+      ? [transporterLocation.latitude, transporterLocation.longitude]
+      : (propPickup || (match ? match.pickupCoords : [18.35, 77.08]));
+
     const map = L.map(mapContainerRef.current, {
-      center: [37.4275, -122.1668],
+      center: initialCenter,
       zoom: 12,
       zoomControl: false,
     });
@@ -165,6 +168,7 @@ export const MapView: React.FC<MapViewProps> = ({
       map.remove();
       mapInstanceRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapEngine]);
 
   // Update Leaflet Route Polylines and Markers whenever data changes

@@ -45,6 +45,7 @@ export interface IDeliveryRequest extends Document {
     longitude: number;
     heading?: number;
     speed?: number;
+    accuracy?: number;
     updatedAt: string;
   };
   createdAt: Date;

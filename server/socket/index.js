@@ -3,6 +3,7 @@ import { verifyFirebaseIdToken } from '../config/firebaseAdmin.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { Location } from '../models/Location.js';
 import { partnerPresenceService } from '../services/partnerPresence.js';
+import { toMongoIdFilter, inMemoryLocations } from '../routes/deliveries.js';
 export function setupSocketServer(httpServer) {
     const io = new SocketIOServer(httpServer, {
         cors: {
@@ -142,7 +143,7 @@ export function setupSocketServer(httpServer) {
         // Live GPS Location Update from delivery partner
         socket.on('location:update', async (data, callback) => {
             try {
-                const { deliveryId, latitude, longitude, heading, speed } = data;
+                const { deliveryId, latitude, longitude, heading, speed, accuracy, clientTimestamp } = data;
                 if (!deliveryId || typeof latitude !== 'number' || typeof longitude !== 'number') {
                     if (callback)
                         callback({ error: 'Invalid coordinate payload' });
@@ -154,7 +155,7 @@ export function setupSocketServer(httpServer) {
                         callback({ error: 'Coordinates out of bounds' });
                     return;
                 }
-                // Rate limit: 1 update per 1 second per transporter
+                // Rate limit: 1 update per 800ms per transporter
                 const now = Date.now();
                 const lastUpdate = lastLocationUpdates.get(userId) || 0;
                 if (now - lastUpdate < 800) {
@@ -164,7 +165,8 @@ export function setupSocketServer(httpServer) {
                 }
                 lastLocationUpdates.set(userId, now);
                 // Verify delivery assignment and status
-                const delivery = await DeliveryRequest.findById(deliveryId);
+                const queryId = toMongoIdFilter(deliveryId);
+                const delivery = await DeliveryRequest.findOne({ _id: queryId });
                 if (!delivery) {
                     if (callback)
                         callback({ error: 'Delivery not found' });
@@ -181,6 +183,21 @@ export function setupSocketServer(httpServer) {
                         callback({ error: `Location sharing stopped: delivery is ${delivery.status}` });
                     return;
                 }
+                const numericAccuracy = typeof accuracy === 'number' && !Number.isNaN(accuracy) && accuracy >= 0 ? accuracy : undefined;
+                const updateTime = typeof clientTimestamp === 'number' && !Number.isNaN(clientTimestamp) && clientTimestamp > 0
+                    ? new Date(clientTimestamp)
+                    : new Date();
+                const nowIso = updateTime.toISOString();
+                // Out-of-order stale update guard
+                const existingLastKnown = delivery.lastKnownLocation;
+                if (existingLastKnown && existingLastKnown.updatedAt) {
+                    const existingTime = new Date(existingLastKnown.updatedAt).getTime();
+                    if (updateTime.getTime() < existingTime) {
+                        if (callback)
+                            callback({ success: true, location: existingLastKnown, stale: true });
+                        return;
+                    }
+                }
                 // Persist latest location to MongoDB
                 const locDoc = await Location.create({
                     deliveryId,
@@ -189,6 +206,7 @@ export function setupSocketServer(httpServer) {
                     longitude,
                     heading: typeof heading === 'number' ? heading : undefined,
                     speed: typeof speed === 'number' ? speed : undefined,
+                    accuracy: numericAccuracy,
                 });
                 const locationPayload = {
                     deliveryId,
@@ -197,8 +215,13 @@ export function setupSocketServer(httpServer) {
                     longitude,
                     heading: locDoc.heading,
                     speed: locDoc.speed,
-                    updatedAt: locDoc.createdAt.toISOString(),
+                    accuracy: numericAccuracy,
+                    updatedAt: nowIso,
                 };
+                // Update DeliveryRequest document's cached lastKnownLocation
+                await DeliveryRequest.updateOne({ _id: queryId }, { $set: { lastKnownLocation: locationPayload } });
+                // Update in-memory cache for fast retrieval
+                inMemoryLocations.set(deliveryId, locationPayload);
                 // Broadcast to delivery room
                 io.to(`delivery:${deliveryId}`).emit('location:change', locationPayload);
                 if (callback)

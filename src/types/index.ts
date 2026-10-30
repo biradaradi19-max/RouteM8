@@ -187,6 +187,7 @@ export interface TransporterLocation {
   longitude: number;
   heading?: number;
   speed?: number;
+  accuracy?: number;
   updatedAt: string;
 }
 

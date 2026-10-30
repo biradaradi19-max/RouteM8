@@ -1391,6 +1391,7 @@ router.post(
 // GET /api/deliveries/:id/location - Get latest GPS location for delivery
 router.get('/:id/location', async (req, res): Promise<void> => {
   try {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     const deliveryId = String(req.params.id);
 
     if (isDbConnected()) {
@@ -1408,6 +1409,7 @@ router.get('/:id/location', async (req, res): Promise<void> => {
             longitude: latestLoc.longitude,
             heading: latestLoc.heading,
             speed: latestLoc.speed,
+            accuracy: (latestLoc as any).accuracy,
             updatedAt: latestLoc.updatedAt instanceof Date ? latestLoc.updatedAt.toISOString() : new Date(latestLoc.updatedAt || Date.now()).toISOString(),
           });
           return;
@@ -1449,7 +1451,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
   try {
     const uid = req.user!.uid;
     const deliveryId = String(req.params.id);
-    const { latitude, longitude, heading, speed } = req.body || {};
+    const { latitude, longitude, heading, speed, accuracy, clientTimestamp } = req.body || {};
 
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
       res.status(400).json({ error: 'Latitude and longitude must be numbers' });
@@ -1460,6 +1462,15 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
       res.status(400).json({ error: 'Coordinates out of bounds' });
       return;
     }
+
+    const numericAccuracy =
+      typeof accuracy === 'number' && !Number.isNaN(accuracy) && accuracy >= 0 ? accuracy : undefined;
+
+    const updateTime =
+      typeof clientTimestamp === 'number' && !Number.isNaN(clientTimestamp) && clientTimestamp > 0
+        ? new Date(clientTimestamp)
+        : new Date();
+    const nowIso = updateTime.toISOString();
 
     // Check DB first if connected
     if (isDbConnected()) {
@@ -1485,7 +1496,16 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           return;
         }
 
-        const nowIso = new Date().toISOString();
+        // Out-of-order stale update guard
+        const existingLastKnown = (delivery as any).lastKnownLocation;
+        if (existingLastKnown && existingLastKnown.updatedAt) {
+          const existingTime = new Date(existingLastKnown.updatedAt).getTime();
+          if (updateTime.getTime() < existingTime) {
+            res.json({ success: true, location: existingLastKnown, stale: true });
+            return;
+          }
+        }
+
         const payload = {
           deliveryId: String(delivery._id || deliveryId),
           transporterId: uid,
@@ -1493,6 +1513,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           longitude,
           heading: typeof heading === 'number' ? heading : undefined,
           speed: typeof speed === 'number' ? speed : undefined,
+          accuracy: numericAccuracy,
           updatedAt: nowIso,
         };
 
@@ -1503,6 +1524,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           longitude,
           heading: typeof heading === 'number' ? heading : undefined,
           speed: typeof speed === 'number' ? speed : undefined,
+          accuracy: numericAccuracy,
         });
 
         await DeliveryRequest.updateOne(
@@ -1544,6 +1566,15 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
       return;
     }
 
+    // Out-of-order stale update guard for in-memory
+    if (target.lastKnownLocation && target.lastKnownLocation.updatedAt) {
+      const existingTime = new Date(target.lastKnownLocation.updatedAt).getTime();
+      if (updateTime.getTime() < existingTime) {
+        res.json({ success: true, location: target.lastKnownLocation, stale: true });
+        return;
+      }
+    }
+
     const payload = {
       deliveryId,
       transporterId: uid,
@@ -1551,7 +1582,8 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
       longitude,
       heading: typeof heading === 'number' ? heading : undefined,
       speed: typeof speed === 'number' ? speed : undefined,
-      updatedAt: new Date().toISOString(),
+      accuracy: numericAccuracy,
+      updatedAt: nowIso,
     };
 
     target.lastKnownLocation = payload;
@@ -1570,4 +1602,3 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
 });
 
 export default router;
-

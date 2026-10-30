@@ -3,13 +3,13 @@ import { AccessToken } from 'livekit-server-sdk';
 import { requireAuth } from '../middleware/auth.js';
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { isDbConnected } from '../config/db.js';
-import { findDelivery } from './deliveries.js';
+import { findDelivery, toMongoIdFilter } from './deliveries.js';
 const router = Router();
 // POST /api/livekit/token - Generate LiveKit AccessToken for verified delivery participants
 router.post('/token', requireAuth, async (req, res) => {
     try {
         const uid = req.user.uid;
-        const { deliveryId } = req.body;
+        const { deliveryId, callType = 'audio' } = req.body || {};
         if (!deliveryId) {
             res.status(400).json({ error: 'deliveryId is required' });
             return;
@@ -17,7 +17,8 @@ router.post('/token', requireAuth, async (req, res) => {
         let delivery = null;
         if (isDbConnected()) {
             try {
-                delivery = await DeliveryRequest.findById(deliveryId);
+                const queryId = toMongoIdFilter(deliveryId);
+                delivery = await DeliveryRequest.findOne({ _id: queryId });
             }
             catch {
                 delivery = null;
@@ -38,16 +39,16 @@ router.post('/token', requireAuth, async (req, res) => {
             res.status(403).json({ error: 'Forbidden: You are not an authorized participant in this delivery' });
             return;
         }
-        // Audio calls are only permitted during active engagement (matched or in_transit)
+        // Audio/video calls are only permitted during active engagement (matched or in_transit)
         if (delivery.status !== 'matched' && delivery.status !== 'in_transit') {
             res.status(400).json({
-                error: `Audio calling is not available for deliveries in '${delivery.status}' status. Calls require 'matched' or 'in_transit' status.`,
+                error: `Calling is not available for deliveries in '${delivery.status}' status. Calls require 'matched' or 'in_transit' status.`,
             });
             return;
         }
         const apiKey = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;
-        const serverUrl = process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://routem8-dev.livekit.cloud';
+        const serverUrl = process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://routem8-5l64i76u.livekit.cloud';
         const participantName = isRequester ? delivery.requesterName : delivery.transporterName || 'Delivery Partner';
         const participantRole = isRequester ? 'Customer' : 'Transporter';
         const roomName = `delivery-${delId}`;
@@ -61,6 +62,7 @@ router.post('/token', requireAuth, async (req, res) => {
                     participantIdentity: uid,
                     participantName,
                     role: participantRole,
+                    callType,
                 });
                 return;
             }
@@ -70,7 +72,7 @@ router.post('/token', requireAuth, async (req, res) => {
             });
             return;
         }
-        // Mint short-lived access token with audio grants
+        // Mint short-lived access token with audio, video, and data channel grants
         const at = new AccessToken(apiKey, apiSecret, {
             identity: uid,
             name: participantName,
@@ -91,6 +93,7 @@ router.post('/token', requireAuth, async (req, res) => {
             participantIdentity: uid,
             participantName,
             role: participantRole,
+            callType,
         });
     }
     catch (err) {

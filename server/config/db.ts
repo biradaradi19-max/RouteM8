@@ -53,7 +53,7 @@ export function sanitizeMongoUri(rawUri?: string): string | null {
   }
 
   // Check if URI matches format: mongodb(+srv)://user:pass@host/db?query
-  const match = trimmed.match(/^mongodb(\+srv)?:\/\/([^:]+):(.+)@([^@\/]+)(\/[^?]*)?(\?.*)?$/);
+  const match = trimmed.match(/^mongodb(\+srv)?:\/\/([^:]+):(.+)@([^@/]+)(\/[^?]*)?(\?.*)?$/);
   if (!match) return trimmed;
 
   const [, srv, user, pass, host, pathPart, queryPart] = match;

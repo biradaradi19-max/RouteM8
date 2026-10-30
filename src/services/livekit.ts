@@ -12,6 +12,7 @@ export interface LiveKitTokenResponse {
   participantIdentity: string;
   participantName: string;
   role: 'Customer' | 'Transporter';
+  callType?: 'audio' | 'video';
 }
 
 export interface RequestLiveKitTokenResult {
@@ -27,10 +28,11 @@ export interface RequestLiveKitTokenResult {
  * Secrets are never exposed to the client.
  */
 export async function requestLiveKitToken(
-  deliveryId: string
+  deliveryId: string,
+  callType: 'audio' | 'video' = 'audio'
 ): Promise<RequestLiveKitTokenResult> {
   try {
-    const data = await livekitApi.getToken(deliveryId);
+    const data = await livekitApi.getToken(deliveryId, callType);
 
     const resolvedServerUrl = data.serverUrl || getLiveKitServerUrl();
 
@@ -43,6 +45,7 @@ export async function requestLiveKitToken(
         participantIdentity: data.participantIdentity,
         participantName: data.participantName,
         role: data.role,
+        callType: data.callType || callType,
       },
       error: null,
     };
