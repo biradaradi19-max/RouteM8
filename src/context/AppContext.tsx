@@ -17,7 +17,7 @@ import { calculateRouteMatch } from '../services/routing';
 import { getSocket } from '../services/socket';
 import { useAuth } from './AuthContext';
 
-export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile';
+export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile' | 'privacy' | 'terms';
 export type RoleMode = 'requester' | 'transporter';
 export type BackendConnectionStatus = 'connected' | 'connecting' | 'offline';
 
@@ -83,7 +83,7 @@ export interface AppContextType {
   updateRequestStatus: (requestId: string, nextStatus: DeliveryStatus, pinAttempt?: string) => Promise<{ success: boolean; message?: string }>;
 }
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+export const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_THEME_KEY = 'routem8_theme_v1';
 const LOCAL_STORAGE_REQS_KEY = 'routem8_requests_v1';
@@ -132,7 +132,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
   // Navigation & Role Mode state
-  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const getInitialView = (): AppView => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+      if (path === '/privacy-policy' || path === '/privacy') {
+        return 'privacy';
+      }
+      if (path === '/terms' || path === '/terms-of-service') {
+        return 'terms';
+      }
+    }
+    return 'landing';
+  };
+
+  const [currentView, setCurrentViewState] = useState<AppView>(getInitialView);
+
+  const setCurrentView = useCallback((view: AppView) => {
+    setCurrentViewState(view);
+    if (typeof window !== 'undefined') {
+      let targetPath = '';
+      if (view === 'privacy') {
+        targetPath = '/privacy-policy';
+      } else if (view === 'terms') {
+        targetPath = '/terms';
+      } else if (view === 'landing') {
+        targetPath = '/';
+      }
+
+      if (targetPath) {
+        if (window.location.pathname !== targetPath) {
+          window.history.pushState({ view }, '', targetPath);
+        }
+      } else if (
+        window.location.pathname === '/privacy-policy' ||
+        window.location.pathname === '/privacy' ||
+        window.location.pathname === '/terms' ||
+        window.location.pathname === '/terms-of-service'
+      ) {
+        window.history.pushState({ view }, '', '/');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+      if (path === '/privacy-policy' || path === '/privacy') {
+        setCurrentViewState('privacy');
+      } else if (path === '/terms' || path === '/terms-of-service') {
+        setCurrentViewState('terms');
+      } else if (path === '' || path === '/') {
+        setCurrentViewState('landing');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [activeRoleFilter, setActiveRoleFilter] = useState<'all' | 'requester' | 'transporter'>('all');
 
   const [activeRoleMode, setActiveRoleModeState] = useState<RoleMode>(() => {

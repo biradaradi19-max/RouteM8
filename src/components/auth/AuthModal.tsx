@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { AppContext } from '../../context/AppContext';
 import { 
   X, 
   ShieldCheck, 
@@ -35,6 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     error, 
     clearError 
   } = useAuth();
+  const appContext = useContext(AppContext);
 
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot_password' | 'onboarding'>(initialMode);
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
@@ -454,6 +456,52 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <>Enter Dashboard <CheckCircle2 size={16} /></>
             )}
           </button>
+
+          {mode === 'signup' && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textAlign: 'center', margin: '0.5rem 0 0.25rem 0', lineHeight: 1.4 }}>
+              By registering, you agree to our{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  appContext?.setCurrentView('terms');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-mint-600)',
+                  textDecoration: 'underline',
+                  padding: 0,
+                  fontSize: 'inherit',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                Terms of Service
+              </button>{' '}
+              and{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  appContext?.setCurrentView('privacy');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-mint-600)',
+                  textDecoration: 'underline',
+                  padding: 0,
+                  fontSize: 'inherit',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                Privacy Policy
+              </button>
+              .
+            </p>
+          )}
 
           {/* Google Sign-In Option for signin and signup modes */}
           {(mode === 'signin' || mode === 'signup') && (

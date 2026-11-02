@@ -342,6 +342,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
           borderTop: '1px solid var(--border-subtle)',
           backgroundColor: 'var(--bg-surface-subtle)'
         }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            marginBottom: '0.625rem',
+            fontSize: '0.6875rem',
+            color: 'var(--text-tertiary)',
+          }}>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentView('privacy');
+                if (onCloseMobile) onCloseMobile();
+              }}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: 'inherit', color: 'inherit', cursor: 'pointer' }}
+            >
+              Privacy Policy
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentView('terms');
+                if (onCloseMobile) onCloseMobile();
+              }}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: 'inherit', color: 'inherit', cursor: 'pointer' }}
+            >
+              Terms of Service
+            </button>
+          </div>
           {isAuthenticated && user ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>

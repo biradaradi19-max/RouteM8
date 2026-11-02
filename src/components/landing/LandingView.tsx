@@ -749,10 +749,42 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <div>
               © 2026 Route M8 Technologies Inc. All rights reserved.
             </div>
-            <div style={{ display: 'flex', gap: '1.5rem' }}>
-              <span>Privacy Policy</span>
-              <span>Terms of Service</span>
-              <span>Community Code of Conduct</span>
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setCurrentView('privacy')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  transition: 'color 0.15s ease',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-tertiary)'; }}
+              >
+                Privacy Policy
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentView('terms')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  transition: 'color 0.15s ease',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-tertiary)'; }}
+              >
+                Terms of Service
+              </button>
+              <span style={{ color: 'var(--text-tertiary)' }}>Community Code of Conduct</span>
             </div>
           </div>
         </div>

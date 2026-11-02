@@ -7,6 +7,8 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { MatchingView } from './components/matching/MatchingView';
 import { DeliveriesView } from './components/deliveries/DeliveriesView';
 import { LandingView } from './components/landing/LandingView';
+import { PrivacyPolicyView } from './components/legal/PrivacyPolicyView';
+import { TermsOfServiceView } from './components/legal/TermsOfServiceView';
 import { CreateRequestModal } from './components/forms/CreateRequestModal';
 import { PublishJourneyModal } from './components/forms/PublishJourneyModal';
 import { AuthModal } from './components/auth/AuthModal';
@@ -54,6 +56,14 @@ const MainAppContent: React.FC = () => {
             onGoToDashboard={() => setCurrentView('dashboard')}
             onOpenAuth={() => setIsAuthModalOpen(true)}
           />
+        </main>
+      ) : currentView === 'privacy' ? (
+        <main style={{ flex: 1 }}>
+          <PrivacyPolicyView />
+        </main>
+      ) : currentView === 'terms' ? (
+        <main style={{ flex: 1 }}>
+          <TermsOfServiceView />
         </main>
       ) : (
         <div style={{ display: 'flex', flex: 1, minHeight: 'calc(100vh - var(--header-height))' }}>
