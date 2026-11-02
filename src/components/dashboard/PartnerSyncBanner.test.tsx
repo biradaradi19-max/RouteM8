@@ -73,6 +73,11 @@ describe('PartnerDashboard — Corridors Synchronization & Error Banners', () =>
       updateProfile: vi.fn(),
       submitVerificationRequest: vi.fn(),
       verifyStudentOrWork: vi.fn(),
+      isPhoneVerificationModalOpen: false,
+      openPhoneVerificationModal: vi.fn(),
+      closePhoneVerificationModal: vi.fn(),
+      recordPhoneVerificationSuccess: vi.fn().mockResolvedValue(undefined),
+      refreshIdToken: vi.fn().mockResolvedValue(null),
     });
   });
 

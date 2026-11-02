@@ -48,6 +48,15 @@ router.post('/token', requireAuth, async (req: AuthenticatedRequest, res: Respon
       return;
     }
 
+    // Phone verification claim check: participant must have a verified phone number claim from Firebase Auth
+    if (!req.user?.phoneNumber && !req.user?.phoneVerified) {
+      res.status(403).json({
+        error: 'Phone verification required: You must have a verified phone number to join delivery call rooms.',
+        requiresPhoneVerification: true,
+      });
+      return;
+    }
+
     // Audio/video calls are only permitted during active engagement (matched or in_transit)
     if (delivery.status !== 'matched' && delivery.status !== 'in_transit') {
       res.status(400).json({

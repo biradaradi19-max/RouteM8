@@ -52,6 +52,11 @@ export interface AuthContextType {
   updateProfile: (updates: SafeProfileUpdates | Record<string, any>) => Promise<boolean>;
   submitVerificationRequest: (submission: VerificationSubmission) => Promise<VerificationResult>;
   verifyStudentOrWork: (organization: string, type: 'student' | 'work') => Promise<VerificationResult>;
+  isPhoneVerificationModalOpen: boolean;
+  openPhoneVerificationModal: () => void;
+  closePhoneVerificationModal: () => void;
+  recordPhoneVerificationSuccess: (phoneNumber: string) => Promise<void>;
+  refreshIdToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -81,6 +86,13 @@ function saveStoredProfile(uid: string, profile: Partial<UserProfile>): void {
 
 function buildUserProfile(fbUser: any, custom?: Partial<UserProfile>): UserProfile {
   const stored = getStoredProfile(fbUser.uid) || {};
+  const hasPhoneProvider = Boolean(
+    fbUser.phoneNumber ||
+    fbUser.providerData?.some((p: any) => p.providerId === 'phone') ||
+    stored.isPhoneVerified
+  );
+  const resolvedPhone = fbUser.phoneNumber || custom?.phone || stored.phone;
+
   return {
     id: fbUser.uid,
     email: fbUser.email || '',
@@ -96,7 +108,9 @@ function buildUserProfile(fbUser: any, custom?: Partial<UserProfile>): UserProfi
     completedCommutes: stored.completedCommutes ?? 0,
     rating: stored.rating ?? 5.0,
     bio: custom?.bio || stored.bio,
-    phone: custom?.phone || stored.phone,
+    phone: resolvedPhone,
+    isPhoneVerified: hasPhoneProvider,
+    phoneVerifiedAt: stored.phoneVerifiedAt,
     commuteVehicle: custom?.commuteVehicle || stored.commuteVehicle,
   };
 }
@@ -429,6 +443,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const [isPhoneVerificationModalOpen, setIsPhoneVerificationModalOpen] = useState<boolean>(false);
+  const openPhoneVerificationModal = useCallback(() => setIsPhoneVerificationModalOpen(true), []);
+  const closePhoneVerificationModal = useCallback(() => setIsPhoneVerificationModalOpen(false), []);
+
+  const refreshIdToken = useCallback(async (): Promise<string | null> => {
+    if (!firebaseAuth.currentUser) return null;
+    try {
+      return await firebaseAuth.currentUser.getIdToken(true);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const recordPhoneVerificationSuccess = useCallback(async (phoneNumber: string): Promise<void> => {
+    if (!user) return;
+    const nowIso = new Date().toISOString();
+    const updatedProfile: UserProfile = {
+      ...user,
+      phone: phoneNumber,
+      isPhoneVerified: true,
+      phoneVerifiedAt: nowIso,
+      trustScore: Math.min(100, user.trustScore + 5),
+    };
+    saveStoredProfile(user.id, updatedProfile);
+    setUser(updatedProfile);
+    await refreshIdToken();
+  }, [user, refreshIdToken]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -447,6 +489,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateProfile,
         submitVerificationRequest,
         verifyStudentOrWork,
+        isPhoneVerificationModalOpen,
+        openPhoneVerificationModal,
+        closePhoneVerificationModal,
+        recordPhoneVerificationSuccess,
+        refreshIdToken,
       }}
     >
       {children}

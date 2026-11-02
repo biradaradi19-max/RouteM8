@@ -190,5 +190,27 @@ describe('LiveKit Cloud Integration & Server Token Minting Flows', () => {
     const completedData: any = await completedRes.json();
     expect(completedData.error).toContain('Calling is not available for deliveries in \'completed\' status');
   });
+
+  it('8. rejects token request with 403 when user lacks a verified phone number', async () => {
+    const target = inMemoryDeliveries.find((d) => d.id === testDeliveryId);
+    if (target) {
+      target.status = 'matched';
+      target.transporterId = 'unverified-phone-partner';
+    }
+
+    const res = await fetch(`${baseUrl}/api/livekit/token`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer mock-token-unverified-phone-partner',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ deliveryId: testDeliveryId }),
+    });
+
+    expect(res.status).toBe(403);
+    const data: any = await res.json();
+    expect(data.error).toContain('Phone verification required');
+    expect(data.requiresPhoneVerification).toBe(true);
+  });
 });
 

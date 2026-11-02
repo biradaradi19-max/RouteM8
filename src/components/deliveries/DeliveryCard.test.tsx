@@ -66,6 +66,11 @@ describe('DeliveryCard — Partner Accept & Decline Delivery Buttons', () => {
       updateProfile: vi.fn(),
       submitVerificationRequest: vi.fn(),
       verifyStudentOrWork: vi.fn(),
+      isPhoneVerificationModalOpen: false,
+      openPhoneVerificationModal: vi.fn(),
+      closePhoneVerificationModal: vi.fn(),
+      recordPhoneVerificationSuccess: vi.fn().mockResolvedValue(undefined),
+      refreshIdToken: vi.fn().mockResolvedValue(null),
     });
 
     vi.spyOn(AppContextModule, 'useApp').mockReturnValue({
@@ -261,6 +266,11 @@ describe('DeliveryCard — Partner Accept & Decline Delivery Buttons', () => {
         updateProfile: vi.fn(),
         submitVerificationRequest: vi.fn(),
         verifyStudentOrWork: vi.fn(),
+        isPhoneVerificationModalOpen: false,
+        openPhoneVerificationModal: vi.fn(),
+        closePhoneVerificationModal: vi.fn(),
+        recordPhoneVerificationSuccess: vi.fn().mockResolvedValue(undefined),
+        refreshIdToken: vi.fn().mockResolvedValue(null),
       });
 
       render(

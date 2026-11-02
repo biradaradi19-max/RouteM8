@@ -114,6 +114,11 @@ describe('DashboardView Component — Separate Requester and Delivery Partner Ex
       updateProfile: vi.fn(),
       submitVerificationRequest: vi.fn(),
       verifyStudentOrWork: vi.fn(),
+      isPhoneVerificationModalOpen: false,
+      openPhoneVerificationModal: vi.fn(),
+      closePhoneVerificationModal: vi.fn(),
+      recordPhoneVerificationSuccess: vi.fn().mockResolvedValue(undefined),
+      refreshIdToken: vi.fn().mockResolvedValue(null),
     });
 
     vi.spyOn(AppContextModule, 'useApp').mockReturnValue({

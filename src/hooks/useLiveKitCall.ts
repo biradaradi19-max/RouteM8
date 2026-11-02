@@ -71,6 +71,7 @@ export interface UseLiveKitCallResult {
   error: string | null;
   permissionDeniedType: 'microphone' | 'camera' | null;
   missingConfig: boolean;
+  requiresPhoneVerification: boolean;
   durationSeconds: number;
   roomName: string | null;
   startCall: (mode?: CallType) => Promise<void>;
@@ -101,6 +102,7 @@ export function useLiveKitCall({
   const [error, setError] = useState<string | null>(null);
   const [permissionDeniedType, setPermissionDeniedType] = useState<'microphone' | 'camera' | null>(null);
   const [missingConfig, setMissingConfig] = useState<boolean>(false);
+  const [requiresPhoneVerification, setRequiresPhoneVerification] = useState<boolean>(false);
   const [durationSeconds, setDurationSeconds] = useState<number>(0);
   const [roomName, setRoomName] = useState<string | null>(null);
 
@@ -254,6 +256,7 @@ export function useLiveKitCall({
     setError(null);
     setPermissionDeniedType(null);
     setMissingConfig(false);
+    setRequiresPhoneVerification(false);
     setCallState('requesting_permission');
 
     // 1. Check & request browser media permissions
@@ -305,6 +308,10 @@ export function useLiveKitCall({
     const tokenRes = await requestLiveKitToken(deliveryId, selectedMode);
 
     if (!tokenRes.success || !tokenRes.data) {
+      const isPhoneReq =
+        Boolean((tokenRes as any).requiresPhoneVerification) ||
+        Boolean(tokenRes.error?.toLowerCase().includes('phone verification'));
+      setRequiresPhoneVerification(isPhoneReq);
       setError(tokenRes.error || 'Failed to authenticate call with server.');
       setMissingConfig(Boolean(tokenRes.missingConfig));
       setCallState('error');
@@ -614,6 +621,7 @@ export function useLiveKitCall({
     error,
     permissionDeniedType,
     missingConfig,
+    requiresPhoneVerification,
     durationSeconds,
     roomName,
     startCall,

@@ -22,6 +22,8 @@ export interface UserProfile {
   completedDeliveries: number;
   completedCommutes: number;
   phone?: string;
+  isPhoneVerified?: boolean;
+  phoneVerifiedAt?: string;
   bio?: string;
   commuteVehicle?: string; // e.g., "Tesla Model 3" or "Subaru Outback" or "Bicycle / Transit"
   rating: number; // e.g. 4.95

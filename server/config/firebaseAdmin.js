@@ -50,11 +50,14 @@ export async function verifyFirebaseIdToken(token) {
     if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || process.env.ALLOW_TEST_TOKENS === 'true') {
         if (token.startsWith('mock-token-')) {
             const uid = token.replace('mock-token-', '');
+            const isUnverifiedPhone = uid.includes('unverified-phone') || uid.includes('no-phone');
             return {
                 uid,
                 email: `${uid}@test.example.com`,
                 name: `Test User ${uid}`,
                 emailVerified: true,
+                phoneNumber: isUnverifiedPhone ? undefined : '+16505551234',
+                phoneVerified: !isUnverifiedPhone,
             };
         }
     }
@@ -72,6 +75,8 @@ export async function verifyFirebaseIdToken(token) {
             name: decoded.name,
             picture: decoded.picture,
             emailVerified: decoded.email_verified,
+            phoneNumber: decoded.phone_number,
+            phoneVerified: Boolean(decoded.phone_number),
         };
     }
     catch (err) {
@@ -87,6 +92,8 @@ export async function verifyFirebaseIdToken(token) {
                             email: payload.email,
                             name: payload.name,
                             emailVerified: payload.email_verified,
+                            phoneNumber: payload.phone_number,
+                            phoneVerified: Boolean(payload.phone_number),
                         };
                     }
                 }

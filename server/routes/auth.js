@@ -79,6 +79,8 @@ router.get('/me', requireAuth, async (req, res) => {
                 rating: user.rating,
                 avatarUrl: user.avatarUrl,
                 bio: user.bio,
+                phone: verifiedUser.phoneNumber || user.phoneNumber || user.phone,
+                isPhoneVerified: Boolean(verifiedUser.phoneNumber || user.phoneVerified),
                 partnerAvailable: user.partnerAvailable,
             },
         });
@@ -213,6 +215,8 @@ router.put('/profile', requireAuth, async (req, res) => {
                 rating: user.rating,
                 avatarUrl: user.avatarUrl,
                 bio: user.bio,
+                phone: verifiedUser.phoneNumber || user.phoneNumber || user.phone,
+                isPhoneVerified: Boolean(verifiedUser.phoneNumber || user.phoneVerified),
                 partnerAvailable: user.partnerAvailable,
             },
         });

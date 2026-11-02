@@ -17,9 +17,14 @@ import {
   sendPasswordResetEmail,
   onAuthStateChanged,
   updateProfile,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  linkWithPhoneNumber,
   type Auth,
   type User as FirebaseUser,
   type UserCredential,
+  type ConfirmationResult,
+  type ApplicationVerifier,
 } from 'firebase/auth';
 
 /**
@@ -92,6 +97,86 @@ export async function signUpWithFirebaseEmail(email: string, password: string): 
 }
 
 /**
+ * Pre-configured Firebase Test Phone Numbers for Spark tier development & demo.
+ * Configured in Firebase Console under Authentication > Sign-in method > Phone > Phone numbers for testing.
+ */
+export interface FirebaseTestPhoneNumber {
+  phoneNumber: string;
+  code: string;
+  label: string;
+  region: string;
+  description: string;
+}
+
+export const FIREBASE_TEST_PHONE_NUMBERS: FirebaseTestPhoneNumber[] = [
+  {
+    phoneNumber: '+1 650-555-1234',
+    code: '123456',
+    label: 'US Test Partner (Demo)',
+    region: 'US (+1)',
+    description: 'Preconfigured for Spark development & testing',
+  },
+  {
+    phoneNumber: '+1 650-555-5678',
+    code: '654321',
+    label: 'US Test Customer (Demo)',
+    region: 'US (+1)',
+    description: 'Preconfigured for Spark development & testing',
+  },
+  {
+    phoneNumber: '+91 99999 12345',
+    code: '123456',
+    label: 'India Test Partner (Demo)',
+    region: 'IN (+91)',
+    description: 'Preconfigured for Spark development & testing',
+  },
+];
+
+/**
+ * Creates or resets a reCAPTCHA verifier for Firebase Phone Authentication.
+ */
+export function createRecaptchaVerifier(
+  containerIdOrElement: string | HTMLElement,
+  options?: {
+    size?: 'invisible' | 'normal' | 'compact';
+    callback?: () => void;
+    'expired-callback'?: () => void;
+  }
+): RecaptchaVerifier {
+  return new RecaptchaVerifier(auth, containerIdOrElement, {
+    size: options?.size || 'invisible',
+    callback: options?.callback,
+    'expired-callback': options?.['expired-callback'],
+  });
+}
+
+/**
+ * Dispatches a 6-digit phone verification OTP code via Firebase Auth.
+ * Automatically links the phone number to the current account if already logged in.
+ */
+export async function sendFirebasePhoneOtp(
+  phoneNumber: string,
+  verifier: ApplicationVerifier
+): Promise<ConfirmationResult> {
+  const sanitized = phoneNumber.replace(/[\s()-]/g, '');
+  if (auth.currentUser) {
+    return linkWithPhoneNumber(auth.currentUser, sanitized, verifier);
+  }
+  return signInWithPhoneNumber(auth, sanitized, verifier);
+}
+
+/**
+ * Submits the 6-digit verification code to Firebase Auth for confirmation.
+ */
+export async function confirmFirebasePhoneOtp(
+  confirmationResult: ConfirmationResult,
+  verificationCode: string
+): Promise<UserCredential> {
+  const sanitizedCode = verificationCode.trim().replace(/\D/g, '');
+  return confirmationResult.confirm(sanitizedCode);
+}
+
+/**
  * Sign out from Firebase Auth
  */
 export async function signOutFromFirebase(): Promise<void> {
@@ -139,6 +224,24 @@ export function getFirebaseAuthErrorMessage(error: unknown): string {
       return 'Password should be at least 6 characters.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
+    case 'auth/invalid-phone-number':
+      return 'Please enter a valid phone number with country code (e.g., +1 650-555-1234).';
+    case 'auth/missing-phone-number':
+      return 'Phone number is required.';
+    case 'auth/quota-exceeded':
+      return 'Firebase SMS quota exceeded. Real cellular SMS requires the Firebase Blaze plan. Please select one of the preconfigured test phone numbers (e.g., +1 650-555-1234) on the free Spark tier.';
+    case 'auth/billing-not-enabled':
+      return 'Cellular SMS delivery requires Firebase Blaze billing. For testing on the free Spark plan, please use a preconfigured test phone number.';
+    case 'auth/invalid-verification-code':
+      return 'Invalid 6-digit verification code. Please check the code and try again.';
+    case 'auth/code-expired':
+      return 'The verification code has expired. Please request a new code.';
+    case 'auth/credential-already-in-use':
+      return 'This phone number is already linked to another Route M8 account.';
+    case 'auth/provider-already-linked':
+      return 'Your account is already linked to a verified phone number.';
+    case 'auth/captcha-check-failed':
+      return 'reCAPTCHA verification failed. Please try again.';
     case 'auth/network-request-failed':
       return 'Network error. Please check your internet connection.';
     default:
@@ -198,4 +301,15 @@ export async function logFirebaseEvent(
   }
 }
 
-export { initializeApp, getAnalytics, onAuthStateChanged, type FirebaseUser, type UserCredential };
+export {
+  initializeApp,
+  getAnalytics,
+  onAuthStateChanged,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  linkWithPhoneNumber,
+  type FirebaseUser,
+  type UserCredential,
+  type ConfirmationResult,
+  type ApplicationVerifier,
+};
