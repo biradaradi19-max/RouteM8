@@ -133,7 +133,31 @@ export const FIREBASE_TEST_PHONE_NUMBERS: FirebaseTestPhoneNumber[] = [
 ];
 
 /**
+ * Safely clears a RecaptchaVerifier instance and empties the DOM container
+ * to prevent "reCAPTCHA has already been rendered in this element" errors.
+ */
+export function clearRecaptchaVerifier(
+  verifier?: ApplicationVerifier | null,
+  container?: string | HTMLElement | null
+): void {
+  if (verifier && typeof (verifier as any).clear === 'function') {
+    try {
+      (verifier as any).clear();
+    } catch {
+      // Ignore clear errors if widget was already disposed or in transition
+    }
+  }
+  if (container) {
+    const el = typeof container === 'string' ? document.getElementById(container) : container;
+    if (el) {
+      el.innerHTML = '';
+    }
+  }
+}
+
+/**
  * Creates or resets a reCAPTCHA verifier for Firebase Phone Authentication.
+ * Cleans up any existing widget elements in the target container first.
  */
 export function createRecaptchaVerifier(
   containerIdOrElement: string | HTMLElement,
@@ -143,6 +167,14 @@ export function createRecaptchaVerifier(
     'expired-callback'?: () => void;
   }
 ): RecaptchaVerifier {
+  // Ensure target container is emptied of any stale grecaptcha child iframes/widgets
+  const el = typeof containerIdOrElement === 'string'
+    ? document.getElementById(containerIdOrElement)
+    : containerIdOrElement;
+  if (el) {
+    el.innerHTML = '';
+  }
+
   return new RecaptchaVerifier(auth, containerIdOrElement, {
     size: options?.size || 'invisible',
     callback: options?.callback,

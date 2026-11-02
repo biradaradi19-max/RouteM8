@@ -5,6 +5,7 @@ import {
   sendFirebasePhoneOtp,
   confirmFirebasePhoneOtp,
   createRecaptchaVerifier,
+  clearRecaptchaVerifier,
 } from './firebase';
 import * as firebaseAuth from 'firebase/auth';
 
@@ -61,9 +62,14 @@ describe('Firebase Phone Verification Service (Spark Tier & Blaze Readiness)', (
     );
   });
 
-  it('3. creates a RecaptchaVerifier instance', () => {
-    const verifier = createRecaptchaVerifier('recaptcha-container', { size: 'invisible' });
+  it('3. creates a RecaptchaVerifier instance and empties existing container children', () => {
+    const container = document.createElement('div');
+    container.innerHTML = '<iframe src="stale-recaptcha"></iframe>';
+    expect(container.children.length).toBe(1);
+
+    const verifier = createRecaptchaVerifier(container, { size: 'invisible' });
     expect(verifier).toBeDefined();
+    expect(container.innerHTML).toBe('');
     expect(firebaseAuth.RecaptchaVerifier).toHaveBeenCalled();
   });
 
@@ -87,5 +93,16 @@ describe('Firebase Phone Verification Service (Spark Tier & Blaze Readiness)', (
 
     await confirmFirebasePhoneOtp(mockConfirmationResult, ' 123-456 ');
     expect(mockConfirm).toHaveBeenCalledWith('123456');
+  });
+
+  it('6. safely clears RecaptchaVerifier and empties target container', () => {
+    const mockClear = vi.fn();
+    const mockVerifier = { clear: mockClear } as any;
+    const container = document.createElement('div');
+    container.innerHTML = '<div>leftover widget</div>';
+
+    clearRecaptchaVerifier(mockVerifier, container);
+    expect(mockClear).toHaveBeenCalled();
+    expect(container.innerHTML).toBe('');
   });
 });

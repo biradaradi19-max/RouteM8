@@ -48,11 +48,42 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number>(0);
+  const [containerId, setContainerId] = useState<string>(() => `phone-recaptcha-${Math.random().toString(36).substring(2, 9)}`);
 
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
   const recaptchaVerifierRef = useRef<any>(null);
+  const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
   const digitInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const timerRef = useRef<any>(null);
+  const isSendingOtpRef = useRef<boolean>(false);
+
+  // Safely dispose the active reCAPTCHA verifier and clear DOM container
+  const cleanupRecaptcha = useCallback(() => {
+    if (recaptchaVerifierRef.current) {
+      try {
+        recaptchaVerifierRef.current.clear();
+      } catch {
+        // Ignore disposal error
+      }
+      recaptchaVerifierRef.current = null;
+    }
+    if (typeof window !== 'undefined' && (window as any).recaptchaVerifier) {
+      try {
+        (window as any).recaptchaVerifier.clear();
+      } catch {
+        // Ignore global ref clear error
+      }
+      (window as any).recaptchaVerifier = null;
+    }
+    if (recaptchaContainerRef.current) {
+      recaptchaContainerRef.current.innerHTML = '';
+    }
+  }, []);
+
+  const handleClose = useCallback(() => {
+    cleanupRecaptcha();
+    onClose();
+  }, [cleanupRecaptcha, onClose]);
 
   // Initialize selected test phone number if user.phone matches one
   useEffect(() => {
@@ -64,20 +95,13 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
     }
   }, [user?.phone]);
 
-  // Clean up timer and reCAPTCHA on unmount or close
+  // Clean up timer and reCAPTCHA on unmount (including React StrictMode unmount)
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (recaptchaVerifierRef.current) {
-        try {
-          recaptchaVerifierRef.current.clear();
-        } catch {
-          // Ignore clear error
-        }
-        recaptchaVerifierRef.current = null;
-      }
+      cleanupRecaptcha();
     };
-  }, []);
+  }, [cleanupRecaptcha]);
 
   // Handle countdown timer for code resend
   useEffect(() => {
@@ -97,15 +121,39 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
     };
   }, [countdown]);
 
-  // Reset state when modal opens
+  // Listen for Escape key to close modal safely
   useEffect(() => {
-    if (isOpen) {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleClose]);
+
+  // Reset state and cleanly dispose reCAPTCHA when modal opens or closes
+  useEffect(() => {
+    if (!isOpen) {
+      cleanupRecaptcha();
       setStep('phone');
       setError(null);
       setOtpDigits(['', '', '', '', '', '']);
+      setIsLoading(false);
+      isSendingOtpRef.current = false;
+      confirmationResultRef.current = null;
+      if (timerRef.current) clearInterval(timerRef.current);
+    } else {
+      // Fresh container ID for this modal opening session
+      setContainerId(`phone-recaptcha-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`);
+      setStep('phone');
+      setError(null);
+      setOtpDigits(['', '', '', '', '', '']);
+      setIsLoading(false);
+      isSendingOtpRef.current = false;
       confirmationResultRef.current = null;
     }
-  }, [isOpen]);
+  }, [isOpen, cleanupRecaptcha]);
 
   const handleSelectTestNumber = (testNum: FirebaseTestPhoneNumber) => {
     setSelectedTestNumber(testNum);
@@ -116,6 +164,12 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
   // Step 1: Send OTP Verification Code
   const handleSendCode = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    // Prevent multiple concurrent OTP send attempts
+    if (isSendingOtpRef.current || isLoading) {
+      return;
+    }
+
     setError(null);
 
     const sanitized = phoneNumber.trim().replace(/[\s()-]/g, '');
@@ -129,17 +183,28 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
       return;
     }
 
+    // Ensure DOM container exists
+    const container = recaptchaContainerRef.current || document.getElementById(containerId);
+    if (!container) {
+      setError('Verification initialization failed: container not found. Please try again.');
+      return;
+    }
+
+    isSendingOtpRef.current = true;
     setIsLoading(true);
 
     try {
-      // Re-create RecaptchaVerifier if needed
-      if (!recaptchaVerifierRef.current) {
-        recaptchaVerifierRef.current = createRecaptchaVerifier('phone-recaptcha-container', {
+      // Maintain ONLY ONE active RecaptchaVerifier instance per modal lifecycle.
+      // Do not create a new verifier if an existing one is already active and rendered.
+      let verifier = recaptchaVerifierRef.current;
+      if (!verifier) {
+        verifier = createRecaptchaVerifier(container, {
           size: 'invisible',
         });
+        recaptchaVerifierRef.current = verifier;
       }
 
-      const confirmation = await sendFirebasePhoneOtp(sanitized, recaptchaVerifierRef.current);
+      const confirmation = await sendFirebasePhoneOtp(sanitized, verifier);
       confirmationResultRef.current = confirmation;
 
       setStep('otp');
@@ -156,15 +221,11 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
       setError(userMessage);
       setIsLoading(false);
 
-      // Reset recaptcha verifier on error so it can be re-rendered cleanly
-      if (recaptchaVerifierRef.current) {
-        try {
-          recaptchaVerifierRef.current.clear();
-        } catch {
-          // Ignore
-        }
-        recaptchaVerifierRef.current = null;
-      }
+      // Reset recaptcha verifier on error and cycle container ID so subsequent attempts start clean
+      cleanupRecaptcha();
+      setContainerId(`phone-recaptcha-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`);
+    } finally {
+      isSendingOtpRef.current = false;
     }
   };
 
@@ -239,6 +300,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
 
         setStep('success');
         setIsLoading(false);
+        cleanupRecaptcha();
 
         if (onSuccess) {
           onSuccess(sanitizedPhone);
@@ -246,7 +308,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
 
         // Auto-close modal after brief celebration
         setTimeout(() => {
-          onClose();
+          handleClose();
         }, 1600);
       } catch (err: any) {
         console.warn('[Phone Auth Confirm Error]', err);
@@ -255,7 +317,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
         setIsLoading(false);
       }
     },
-    [otpDigits, phoneNumber, recordPhoneVerificationSuccess, onSuccess, onClose]
+    [otpDigits, phoneNumber, recordPhoneVerificationSuccess, onSuccess, handleClose, cleanupRecaptcha]
   );
 
   // Quick fill predefined test code
@@ -265,6 +327,13 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
       setOtpDigits(digits);
       handleConfirmOtp(selectedTestNumber.code);
     }
+  };
+
+  const handlePhoneNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhoneNumber(e.target.value);
+    setSelectedTestNumber(null);
+    setError(null);
+    cleanupRecaptcha();
   };
 
   if (!isOpen) return null;
@@ -284,9 +353,20 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
         padding: '1rem',
         animation: 'fadeIn 0.2s ease-out',
       }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleClose();
+        }
+      }}
     >
       {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-      <div id="phone-recaptcha-container" style={{ display: 'none' }} />
+      <div
+        key={containerId}
+        ref={recaptchaContainerRef}
+        id={containerId}
+        data-testid="phone-recaptcha-container"
+        style={{ display: 'none' }}
+      />
 
       <div
         className="card-elevated"
@@ -340,7 +420,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             disabled={isLoading}
             style={{
               background: 'none',
@@ -491,10 +571,7 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
                     id="phoneNumberInput"
                     type="tel"
                     value={phoneNumber}
-                    onChange={(e) => {
-                      setPhoneNumber(e.target.value);
-                      setSelectedTestNumber(null);
-                    }}
+                    onChange={handlePhoneNumberChange}
                     placeholder="+1 650-555-1234"
                     disabled={isLoading}
                     style={{
@@ -673,7 +750,11 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
               >
                 <button
                   type="button"
-                  onClick={() => setStep('phone')}
+                  onClick={() => {
+                    setStep('phone');
+                    setOtpDigits(['', '', '', '', '', '']);
+                    setError(null);
+                  }}
                   disabled={isLoading}
                   style={{
                     background: 'none',
@@ -689,7 +770,11 @@ export const PhoneVerificationModal: React.FC<PhoneVerificationModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => handleSendCode()}
+                  onClick={() => {
+                    if (countdown > 0 || isLoading || isSendingOtpRef.current) return;
+                    setOtpDigits(['', '', '', '', '', '']);
+                    handleSendCode();
+                  }}
                   disabled={countdown > 0 || isLoading}
                   style={{
                     background: 'none',
