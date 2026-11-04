@@ -42,8 +42,12 @@ export const TermsOfServiceView: React.FC = () => {
         }}
       >
         <div className="container" style={{ maxWidth: '960px', margin: '0 auto', padding: '0 1.25rem' }}>
-          <button
-            onClick={() => setCurrentView('landing')}
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              setCurrentView('landing');
+            }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -56,11 +60,12 @@ export const TermsOfServiceView: React.FC = () => {
               cursor: 'pointer',
               marginBottom: '1.25rem',
               padding: 0,
+              textDecoration: 'none',
             }}
           >
             <ArrowLeft size={16} />
             <span>Back to Route M8</span>
-          </button>
+          </a>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
             <span
@@ -81,7 +86,7 @@ export const TermsOfServiceView: React.FC = () => {
               <Scale size={14} /> Legal Agreement
             </span>
             <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
-              Last Revised: November 2, 2026
+              Last Revised: November 4, 2026
             </span>
           </div>
 
@@ -159,8 +164,12 @@ export const TermsOfServiceView: React.FC = () => {
               <strong>[BUSINESS_ENTITY_NAME]</strong> (&quot;Route M8&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;),
               you (&quot;User&quot;, &quot;Customer&quot;, &quot;Transporter&quot;, or &quot;you&quot;) agree to be legally bound
               by these Terms of Service (&quot;Terms&quot;) and our{' '}
-              <button
-                onClick={() => setCurrentView('privacy')}
+              <a
+                href="/privacy-policy"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setCurrentView('privacy');
+                }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -172,7 +181,7 @@ export const TermsOfServiceView: React.FC = () => {
                 }}
               >
                 Privacy Policy
-              </button>
+              </a>
               . If you do not agree to these Terms, you may not access or use the Platform.
             </p>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
@@ -730,24 +739,36 @@ export const TermsOfServiceView: React.FC = () => {
         >
           <div>© 2026 Route M8 Technologies Inc. All rights reserved.</div>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-            <button
-              onClick={() => setCurrentView('landing')}
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
+            <a
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                setCurrentView('landing');
+              }}
+              style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
             >
               Home
-            </button>
-            <button
-              onClick={() => setCurrentView('privacy')}
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
+            </a>
+            <a
+              href="/privacy-policy"
+              onClick={(e) => {
+                e.preventDefault();
+                setCurrentView('privacy');
+              }}
+              style={{ color: 'var(--color-mint-600, #059669)', fontWeight: 600, textDecoration: 'none' }}
             >
               Privacy Policy
-            </button>
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              style={{ background: 'none', border: 'none', color: 'var(--color-mint-600, #059669)', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+            </a>
+            <a
+              href="/dashboard"
+              onClick={(e) => {
+                e.preventDefault();
+                setCurrentView('dashboard');
+              }}
+              style={{ color: 'var(--color-mint-600, #059669)', fontWeight: 600, textDecoration: 'none' }}
             >
               Dashboard
-            </button>
+            </a>
           </div>
         </div>
       </footer>

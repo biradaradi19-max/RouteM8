@@ -457,52 +457,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
           </button>
 
-          {mode === 'signup' && (
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textAlign: 'center', margin: '0.5rem 0 0.25rem 0', lineHeight: 1.4 }}>
-              By registering, you agree to our{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  appContext?.setCurrentView('terms');
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--color-mint-600)',
-                  textDecoration: 'underline',
-                  padding: 0,
-                  fontSize: 'inherit',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                Terms of Service
-              </button>{' '}
-              and{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  appContext?.setCurrentView('privacy');
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--color-mint-600)',
-                  textDecoration: 'underline',
-                  padding: 0,
-                  fontSize: 'inherit',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                Privacy Policy
-              </button>
-              .
-            </p>
-          )}
-
           {/* Google Sign-In Option for signin and signup modes */}
           {(mode === 'signin' || mode === 'signup') && (
             <>
@@ -562,6 +516,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </>
                 )}
               </button>
+
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textAlign: 'center', margin: '0.625rem 0 0 0', lineHeight: 1.4 }}>
+                By signing in or registering, you agree to our{' '}
+                <a
+                  href="/terms"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onClose();
+                    appContext?.setCurrentView('terms');
+                  }}
+                  style={{
+                    color: 'var(--color-mint-600)',
+                    textDecoration: 'underline',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a
+                  href="/privacy-policy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onClose();
+                    appContext?.setCurrentView('privacy');
+                  }}
+                  style={{
+                    color: 'var(--color-mint-600)',
+                    textDecoration: 'underline',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Privacy Policy
+                </a>
+                .
+              </p>
             </>
           )}
         </form>

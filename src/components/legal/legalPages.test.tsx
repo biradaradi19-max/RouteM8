@@ -45,7 +45,7 @@ vi.mock('../../context/AuthContext', () => ({
   }),
 }));
 
-describe('PrivacyPolicyView Component', () => {
+describe('PrivacyPolicyView Component — Google OAuth & Platform Compliance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn().mockResolvedValue({
@@ -64,47 +64,99 @@ describe('PrivacyPolicyView Component', () => {
     );
 
     expect(screen.getByRole('heading', { name: /Route M8 Privacy Policy/i })).toBeTruthy();
-    expect(screen.getByText(/Effective Date: November 2, 2026/i)).toBeTruthy();
-    expect(screen.getByText(/We do not sell your personal data or continuous location histories/i)).toBeTruthy();
+    expect(screen.getByText(/Effective Date: November 4, 2026/i)).toBeTruthy();
+    expect(screen.getByText(/Privacy Commitments at a Glance/i)).toBeTruthy();
   });
 
-  it('explains collection of account information, phone numbers, and delivery addresses', () => {
+  it('contains dedicated Google User Data section meeting Google OAuth Branding Verification', () => {
     render(
       <AppProvider>
         <PrivacyPolicyView />
       </AppProvider>
     );
 
-    expect(screen.getByText(/Account & Profile Information/i)).toBeTruthy();
-    expect(screen.getByText(/Phone Numbers & Verification/i)).toBeTruthy();
-    expect(screen.getByText(/Delivery Addresses & Coordinates/i)).toBeTruthy();
-    expect(screen.getByText(/Handover Verification PINs/i)).toBeTruthy();
+    expect(screen.getAllByText(/2. Google User Data & Google API Services User Data Policy Compliance/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Exact Google User Data We Access/i)).toBeTruthy();
+    expect(screen.getByText(/Specific Purposes for Google User Data/i)).toBeTruthy();
+    expect(screen.getByText(/Google API Services User Data Policy Compliance Statement \(Limited Use\)/i)).toBeTruthy();
+    expect(screen.getByText(/do not sell, rent, or lease/i)).toBeTruthy();
   });
 
-  it('explains real-time GPS tracking lifecycle during active deliveries', () => {
+  it('explains collection of account information, phone numbers, delivery addresses, and PINs', () => {
     render(
       <AppProvider>
         <PrivacyPolicyView />
       </AppProvider>
     );
 
-    expect(screen.getByText(/2. Real-Time GPS Tracking & Geolocation Flow/i)).toBeTruthy();
-    expect(screen.getByText(/Active Delivery Lifecycle Only/i)).toBeTruthy();
-    expect(screen.getByText(/High-Accuracy GPS & Zero Synthetic Fallbacks/i)).toBeTruthy();
-    expect(screen.getByText(/Immediate Tracking Teardown/i)).toBeTruthy();
+    expect(screen.getAllByText(/3. Detailed Categories of Information We Collect/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/3.1 Name, Email & Phone Number/i)).toBeTruthy();
+    expect(screen.getByText(/3.2 Delivery Addresses & Coordinates/i)).toBeTruthy();
+    expect(screen.getByText(/3.3 Handover Verification PINs/i)).toBeTruthy();
+    expect(screen.getByText(/3.4 Identity & Delivery Proof Photos/i)).toBeTruthy();
   });
 
-  it('details Google and Firebase Authentication security protocols', () => {
+  it('details Google and Firebase Authentication security protocols and token claims', () => {
     render(
       <AppProvider>
         <PrivacyPolicyView />
       </AppProvider>
     );
 
-    expect(screen.getByText(/3. Google & Firebase Authentication/i)).toBeTruthy();
-    expect(screen.getByText(/Phone Authentication \(Spark & Blaze Tiers\):/i)).toBeTruthy();
-    expect(screen.getByText(/Google Identity Services:/i)).toBeTruthy();
-    expect(screen.getByText(/4. LiveKit Cloud Audio & Video Calls/i)).toBeTruthy();
+    expect(screen.getAllByText(/4. Authentication & Phone Verification Protocols/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Firebase Phone Authentication:/i)).toBeTruthy();
+    expect(screen.getByText(/Cryptographic Token Validation:/i)).toBeTruthy();
+  });
+
+  it('explains real-time GPS tracking lifecycle during active deliveries with exact start/stop criteria', () => {
+    render(
+      <AppProvider>
+        <PrivacyPolicyView />
+      </AppProvider>
+    );
+
+    expect(screen.getAllByText(/5. Real-Time GPS Tracking During Active Deliveries/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/5.1 When Tracking Starts/i)).toBeTruthy();
+    expect(screen.getByText(/5.2 How Coordinates are Handled/i)).toBeTruthy();
+    expect(screen.getByText(/5.3 When Tracking Stops/i)).toBeTruthy();
+    expect(screen.getByText(/5.4 Who Has Access & Why Needed/i)).toBeTruthy();
+  });
+
+  it('details MongoDB Atlas database architecture and Firebase data storage', () => {
+    render(
+      <AppProvider>
+        <PrivacyPolicyView />
+      </AppProvider>
+    );
+
+    expect(screen.getAllByText(/7. MongoDB & Firebase Data Storage Architecture/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/MongoDB Atlas:/i)).toBeTruthy();
+    expect(screen.getByText(/Firebase Authentication:/i)).toBeTruthy();
+  });
+
+  it('details LiveKit Cloud WebRTC voice calling and Socket.IO real-time channels', () => {
+    render(
+      <AppProvider>
+        <PrivacyPolicyView />
+      </AppProvider>
+    );
+
+    expect(screen.getAllByText(/8. LiveKit Audio & Video Calling Data/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Zero Audio\/Video Recording:/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/9. Socket.IO Real-Time Communications/i).length).toBeGreaterThan(0);
+  });
+
+  it('explains data retention periods, realistic deletion procedures, and user rights', () => {
+    render(
+      <AppProvider>
+        <PrivacyPolicyView />
+      </AppProvider>
+    );
+
+    expect(screen.getAllByText(/12. Data Retention and Deletion Policy/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/13. Data Security Measures/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/14. Your Privacy Rights & Controls/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/15. Children's Privacy/i).length).toBeGreaterThan(0);
   });
 
   it('contains clear business and legal placeholders without invented fake credentials', () => {
@@ -119,6 +171,7 @@ describe('PrivacyPolicyView Component', () => {
     expect(screen.getAllByText(/\[CONTACT_EMAIL\]/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/\[DATA_PROTECTION_OFFICER_EMAIL\]/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/\[RETENTION_PERIOD, e\.g\., 24 months\]/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\[DELETION_TIMEFRAME, e\.g\., 30 days\]/i).length).toBeGreaterThan(0);
   });
 });
 
@@ -141,7 +194,7 @@ describe('TermsOfServiceView Component', () => {
     );
 
     expect(screen.getByRole('heading', { name: /Route M8 Terms of Service/i })).toBeTruthy();
-    expect(screen.getByText(/Last Revised: November 2, 2026/i)).toBeTruthy();
+    expect(screen.getByText(/Last Revised: November 4, 2026/i)).toBeTruthy();
     expect(screen.getByText(/Key Principles at a Glance/i)).toBeTruthy();
   });
 
@@ -298,8 +351,8 @@ describe('Navigation and URL routing integration', () => {
       </AppProvider>
     );
 
-    const privacyBtn = screen.getByRole('button', { name: /Privacy Policy/i });
-    fireEvent.click(privacyBtn);
+    const privacyLink = screen.getByRole('link', { name: /Privacy Policy/i });
+    fireEvent.click(privacyLink);
     expect(screen.getByTestId('active-landing-view').textContent).toBe('privacy');
   });
 });
