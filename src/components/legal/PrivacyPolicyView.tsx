@@ -231,8 +231,7 @@ export const PrivacyPolicyView: React.FC = () => {
               <FileText size={22} color="var(--color-mint-600, #059669)" /> 1. Introduction & Overview of Route M8
             </h2>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
-              Route M8 (&quot;Platform&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), operated by <strong>[BUSINESS_ENTITY_NAME]</strong>,
-              is a peer-to-peer delivery and real-time tracking platform that matches individuals needing local package transport
+              Route M8 (&quot;Platform&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) is an individually operated peer-to-peer delivery and real-time tracking platform managed and operated by <strong>Aditya Biradar</strong>, based in India. Route M8 matches individuals needing local package transport
               (&quot;Requesters&quot; or &quot;Customers&quot;) with everyday commuters and travelers already traveling along compatible
               road corridors (&quot;Transporters&quot; or &quot;Delivery Partners&quot;).
             </p>
@@ -844,20 +843,23 @@ export const PrivacyPolicyView: React.FC = () => {
               <Trash2 size={22} color="var(--color-mint-600, #059669)" /> 12. Data Retention and Deletion Policy
             </h2>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
-              We retain personal data only for as long as necessary to provide our service, resolve disputes, and comply with legal requirements:
+              Route M8 discloses its actual current data retention and deletion practices:
             </p>
             <ul style={{ color: 'var(--text-secondary)', lineHeight: 1.7, paddingLeft: '1.25rem', margin: 0 }}>
               <li>
-                <strong>Active Account Profiles:</strong> Profile information (name, email, phone number, vehicle data) is retained for as long as your Route M8 account remains active.
+                <strong>No Automated TTL Expiration:</strong> Route M8&apos;s MongoDB databases and Firebase Authentication services do not currently utilize automated Time-To-Live (TTL) expiration indexes or automated purging scripts.
               </li>
               <li>
-                <strong>Completed Deliveries & Invoices:</strong> Completed delivery records (pickup/dropoff points, package titles, timestamps, compensation records, and 4-digit PIN verification receipts) are retained in MongoDB for <code>[RETENTION_PERIOD, e.g., 24 months]</code> for dispute resolution, accounting, tax, and auditing purposes.
+                <strong>Persistent Storage:</strong> Account profile information, completed delivery records (addresses, package descriptions, compensation records, and 4-digit PIN verification receipts), and historical GPS location breadcrumbs in MongoDB persist in database storage until manually reviewed and deleted.
               </li>
               <li>
-                <strong>GPS Coordinate Logs:</strong> Individual coordinate breadcrumbs in the MongoDB <code>Location</code> collection are retained as historical records alongside delivery audit trails until account deletion is requested.
+                <strong>Manual Account & Data Deletion Requests:</strong> Users can request the deletion of their account, Google profile information, delivery history, and associated location records by contacting the operator at <code>biradaradi19@gmail.com</code>.
               </li>
               <li>
-                <strong>Account & Data Deletion Requests:</strong> You may request the deletion of your account, Google profile information, delivery history, and associated location records at any time by contacting <code>[CONTACT_EMAIL]</code>. Upon receiving a verified request, we will delete or anonymize your personal records in MongoDB and Firebase within <code>[DELETION_TIMEFRAME, e.g., 30 days]</code>, except where retention is mandated by law.
+                <strong>Manual Processing & Review:</strong> All deletion requests are manually reviewed and processed by the platform operator. Because deletion requires manual administrative verification and database purging across MongoDB and Firebase Authentication, no fixed automated deletion timeframe is currently promised.
+              </li>
+              <li>
+                <strong>Exceptions & Legal Retention:</strong> While the operator endeavors to fulfill verified user deletion requests, certain transaction records, security logs, or delivery receipts may need to be retained where required by applicable law, statutory dispute resolution, or legitimate platform security purposes. We do not claim that all data is automatically deleted or that every deletion request can always be fulfilled where conflicting legal retention requirements apply.
               </li>
             </ul>
           </section>
@@ -911,7 +913,7 @@ export const PrivacyPolicyView: React.FC = () => {
             </p>
             <ul style={{ color: 'var(--text-secondary)', lineHeight: 1.7, paddingLeft: '1.25rem', margin: 0 }}>
               <li>
-                <strong>Access & Portability:</strong> You can review your profile, delivery history, and active routes in your Dashboard. You can request an export of your personal data by contacting <code>[CONTACT_EMAIL]</code>.
+                <strong>Access & Portability:</strong> You can review your profile, delivery history, and active routes in your Dashboard. You can request an export of your personal data by contacting <code>biradaradi19@gmail.com</code>.
               </li>
               <li>
                 <strong>Correction & Updates:</strong> You may edit your full name, username, bio, commute vehicle, and profile details anytime in the app settings.
@@ -920,7 +922,7 @@ export const PrivacyPolicyView: React.FC = () => {
                 <strong>Revoke Location Permissions:</strong> You can revoke device geolocation permissions at any time via your browser or mobile settings. Note that delivery partners must have location enabled to receive matched transit requests.
               </li>
               <li>
-                <strong>Account Deletion:</strong> You have the right to request deletion of your account and personal data by contacting <code>[CONTACT_EMAIL]</code>.
+                <strong>Account Deletion:</strong> You have the right to request deletion of your account and personal data by contacting <code>biradaradi19@gmail.com</code>.
               </li>
             </ul>
           </section>
@@ -945,7 +947,7 @@ export const PrivacyPolicyView: React.FC = () => {
               Route M8 is strictly designed and intended for individuals aged 18 years and older (or the legal age of majority in your jurisdiction).
               We do not knowingly solicit, collect, or process personal data from children under the age of 13 (or under 18).
               If we discover that a child has created an account or provided personal data, we will immediately delete that information and terminate the account.
-              If you believe a child has provided us with personal data, please contact us immediately at <code>[CONTACT_EMAIL]</code>.
+              If you believe a child has provided us with personal data, please contact us immediately at <code>biradaradi19@gmail.com</code>.
             </p>
           </section>
 
@@ -1004,11 +1006,13 @@ export const PrivacyPolicyView: React.FC = () => {
               If you have any questions, concerns, requests to exercise your privacy rights, or inquiries regarding our Google OAuth data practices, please contact us:
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-              <div><strong>Entity:</strong> [BUSINESS_ENTITY_NAME]</div>
-              <div><strong>Physical Address:</strong> [BUSINESS_ADDRESS]</div>
-              <div><strong>Privacy Email:</strong> [CONTACT_EMAIL]</div>
-              <div><strong>Legal Counsel:</strong> [LEGAL_EMAIL]</div>
-              <div><strong>Data Protection Officer:</strong> [DATA_PROTECTION_OFFICER_EMAIL]</div>
+              <div><strong>Platform Structure:</strong> Individually operated platform</div>
+              <div><strong>Operator:</strong> Aditya Biradar</div>
+              <div><strong>Operating Jurisdiction:</strong> India</div>
+              <div><strong>Physical Address:</strong> A public physical address is not published to protect residential privacy. All official, privacy, and support correspondence should be directed to the verified email addresses below.</div>
+              <div><strong>Privacy & Support Contact:</strong> biradaradi19@gmail.com</div>
+              <div><strong>Legal & Official Notices:</strong> biradaradi19@gmail.com (Monitored for official and legal notices)</div>
+              <div><strong>Privacy & Grievance Contact:</strong> biradaradi19@gmail.com (Designated point of contact for privacy matters and statutory grievances in India, subject to legal review)</div>
             </div>
           </section>
 

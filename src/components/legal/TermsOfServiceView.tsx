@@ -160,8 +160,8 @@ export const TermsOfServiceView: React.FC = () => {
               <FileText size={22} color="var(--color-mint-600, #059669)" /> 1. Acceptance of Terms
             </h2>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
-              By accessing, browsing, registering for, or using Route M8 (the &quot;Platform&quot;), operated by{' '}
-              <strong>[BUSINESS_ENTITY_NAME]</strong> (&quot;Route M8&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;),
+              By accessing, browsing, registering for, or using Route M8 (the &quot;Platform&quot;), an individually operated platform managed and operated by{' '}
+              <strong>Aditya Biradar</strong> (&quot;Route M8&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;),
               you (&quot;User&quot;, &quot;Customer&quot;, &quot;Transporter&quot;, or &quot;you&quot;) agree to be legally bound
               by these Terms of Service (&quot;Terms&quot;) and our{' '}
               <a
@@ -661,15 +661,13 @@ export const TermsOfServiceView: React.FC = () => {
               <Scale size={22} color="var(--color-mint-600, #059669)" /> 11. Governing Law & Dispute Resolution
             </h2>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
-              These Terms and any dispute or controversy arising out of or related to your use of Route M8 shall be governed by
-              and construed in accordance with the substantive laws of <code>[JURISDICTION]</code>, without regard to conflict of
-              law principles.
+              These Terms and any dispute, controversy, or claim arising out of or related to your use of Route M8 shall be governed by
+              and construed in accordance with the substantive laws of <strong>India</strong>, without regard to conflict of
+              law principles. The competent courts located in India shall have jurisdiction over any legal proceedings arising hereunder,
+              subject to applicable mandatory consumer protection and statutory rights that cannot be waived by contract.
             </p>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
-              Prior to initiating formal legal proceedings, the parties agree to engage in good-faith informal negotiations for at
-              least thirty (30) calendar days. If unresolved, any controversy shall be resolved exclusively through final and binding
-              arbitration administered by <code>[ARBITRATION_FORUM]</code> under its commercial arbitration rules. All claims must be
-              brought in an individual capacity and not as a plaintiff or class member in any class or collective proceeding.
+              In the event of any controversy, claim, or dispute between a user and Route M8, the parties agree to first endeavor to resolve the matter amicably through good-faith informal consultation by contacting <code>biradaradi19@gmail.com</code> for at least thirty (30) calendar days prior to initiating formal judicial proceedings. Nothing in these Terms shall preclude either party from seeking urgent interim or injunctive relief from a court of competent jurisdiction to protect intellectual property, prevent fraud, or address security breaches.
             </p>
           </section>
 
@@ -704,10 +702,12 @@ export const TermsOfServiceView: React.FC = () => {
               Formal legal notices, questions, or notices of violation regarding these Terms of Service must be directed to:
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-              <div><strong>Entity:</strong> [BUSINESS_ENTITY_NAME]</div>
-              <div><strong>Physical Address:</strong> [BUSINESS_ADDRESS]</div>
-              <div><strong>Legal Counsel Email:</strong> [LEGAL_EMAIL]</div>
-              <div><strong>Customer Support:</strong> [CONTACT_EMAIL]</div>
+              <div><strong>Platform Structure:</strong> Individually operated platform</div>
+              <div><strong>Operator:</strong> Aditya Biradar</div>
+              <div><strong>Operating Jurisdiction:</strong> India</div>
+              <div><strong>Physical Address:</strong> A public physical address is not published to protect residential privacy. All official, legal, and service-related notices should be directed to the verified email below.</div>
+              <div><strong>Legal & Formal Notices:</strong> biradaradi19@gmail.com (Monitored for legal and official notices)</div>
+              <div><strong>Customer Support & General Enquiries:</strong> biradaradi19@gmail.com</div>
             </div>
           </section>
 

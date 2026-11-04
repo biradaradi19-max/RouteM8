@@ -159,19 +159,31 @@ describe('PrivacyPolicyView Component — Google OAuth & Platform Compliance', (
     expect(screen.getAllByText(/15. Children's Privacy/i).length).toBeGreaterThan(0);
   });
 
-  it('contains clear business and legal placeholders without invented fake credentials', () => {
+  it('contains confirmed operator identity Aditya Biradar, contact email, and accurate manual deletion disclosure', () => {
     render(
       <AppProvider>
         <PrivacyPolicyView />
       </AppProvider>
     );
 
-    expect(screen.getAllByText(/\[BUSINESS_ENTITY_NAME\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[BUSINESS_ADDRESS\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[CONTACT_EMAIL\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[DATA_PROTECTION_OFFICER_EMAIL\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[RETENTION_PERIOD, e\.g\., 24 months\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[DELETION_TIMEFRAME, e\.g\., 30 days\]/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Individually operated platform/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Aditya Biradar/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/biradaradi19@gmail\.com/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/No Automated TTL Expiration:/i)).toBeTruthy();
+    expect(screen.getByText(/Manual Account & Data Deletion Requests:/i)).toBeTruthy();
+    expect(screen.getByText(/No fixed automated deletion timeframe is currently promised\./i)).toBeTruthy();
+    expect(screen.getByText(/A public physical address is not published to protect residential privacy\./i)).toBeTruthy();
+
+    // Verify all business/legal bracket placeholders have been resolved
+    expect(screen.queryByText(/\[BUSINESS_ENTITY_NAME\]/i)).toBeNull();
+    expect(screen.queryByText(/\[BUSINESS_ADDRESS\]/i)).toBeNull();
+    expect(screen.queryByText(/\[CONTACT_EMAIL\]/i)).toBeNull();
+    expect(screen.queryByText(/\[LEGAL_EMAIL\]/i)).toBeNull();
+    expect(screen.queryByText(/\[DATA_PROTECTION_OFFICER_EMAIL\]/i)).toBeNull();
+    expect(screen.queryByText(/\[RETENTION_PERIOD/i)).toBeNull();
+    expect(screen.queryByText(/\[DELETION_TIMEFRAME/i)).toBeNull();
+    expect(screen.queryByText(/\[INDIVIDUAL_OPERATOR_LEGAL_NAME/i)).toBeNull();
+    expect(screen.queryByText(/\[PHYSICAL_BUSINESS_ADDRESS/i)).toBeNull();
   });
 });
 
@@ -249,19 +261,29 @@ describe('TermsOfServiceView Component', () => {
     expect(screen.getByText(/10. Limitation of Liability & Indemnification/i)).toBeTruthy();
   });
 
-  it('contains legal placeholders for entity, jurisdiction, arbitration forum and emails', () => {
+  it('contains confirmed operator identity Aditya Biradar, jurisdiction India, contact email, and neutral dispute resolution', () => {
     render(
       <AppProvider>
         <TermsOfServiceView />
       </AppProvider>
     );
 
-    expect(screen.getAllByText(/\[BUSINESS_ENTITY_NAME\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[BUSINESS_ADDRESS\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[LEGAL_EMAIL\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[CONTACT_EMAIL\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[JURISDICTION\]/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[ARBITRATION_FORUM\]/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Individually operated platform/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Aditya Biradar/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/India/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/biradaradi19@gmail\.com/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/A public physical address is not published to protect residential privacy\./i)).toBeTruthy();
+    expect(screen.getByText(/subject to applicable mandatory consumer protection and statutory rights/i)).toBeTruthy();
+
+    // Verify all business/legal bracket placeholders have been resolved
+    expect(screen.queryByText(/\[BUSINESS_ENTITY_NAME\]/i)).toBeNull();
+    expect(screen.queryByText(/\[BUSINESS_ADDRESS\]/i)).toBeNull();
+    expect(screen.queryByText(/\[CONTACT_EMAIL\]/i)).toBeNull();
+    expect(screen.queryByText(/\[LEGAL_EMAIL\]/i)).toBeNull();
+    expect(screen.queryByText(/\[JURISDICTION\]/i)).toBeNull();
+    expect(screen.queryByText(/\[ARBITRATION_FORUM/i)).toBeNull();
+    expect(screen.queryByText(/\[INDIVIDUAL_OPERATOR_LEGAL_NAME/i)).toBeNull();
+    expect(screen.queryByText(/\[PHYSICAL_BUSINESS_ADDRESS/i)).toBeNull();
   });
 });
 
