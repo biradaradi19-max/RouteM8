@@ -555,8 +555,13 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
             <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {journeys.length}
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-              {journeys[0]?.departureTime ? `Next departure: ${journeys[0].departureTime}` : 'Ready for corridor match'}
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+              <span>{journeys[0]?.departureTime ? `Next departure: ${journeys[0].departureTime}` : 'Ready for corridor match'}</span>
+              {journeys[0]?.vehicle && (
+                <span className="vehicle-badge-pill ev" style={{ fontSize: '0.6875rem', padding: '0.1rem 0.45rem' }}>
+                  <Car size={11} /> {journeys[0].vehicle}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1169,6 +1174,9 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
 
                         {req.matchType === 'corridor' && (
                           <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
                             fontSize: '0.6875rem',
                             fontWeight: 700,
                             color: 'var(--color-forest-900)',
@@ -1177,7 +1185,8 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                             borderRadius: 'var(--radius-full)',
                             border: '1px solid var(--color-mint-300)'
                           }}>
-                            ⚡ Route Match
+                            <span className="status-dot status-dot-connected anim-radar-ping" style={{ width: '6px', height: '6px' }} />
+                            <span>⚡ Route Match</span>
                           </span>
                         )}
                         {req.matchType === 'nearby' && (
@@ -1195,9 +1204,14 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         )}
                       </div>
 
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
-                        {req.itemSize || 'standard'} item • {req.urgency || 'standard'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <span className="vehicle-badge-pill" style={{ fontSize: '0.6875rem', padding: '0.125rem 0.45rem' }}>
+                          <Package size={11} /> {req.itemSize || 'standard'}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
+                          {req.urgency || 'standard'}
+                        </span>
+                      </div>
                     </div>
 
                     <h3 style={{ fontSize: '1.0625rem', margin: '0 0 0.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
@@ -1361,8 +1375,23 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         ) : locationStatus !== 'getting_location' && locationStatus !== 'permission_denied' && (
           /* Generic Empty state when not loading or permission pending */
           <div className="empty-state-box">
-            <div className="empty-state-icon-wrap">
-              <Car size={28} />
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '20px',
+              backgroundColor: 'var(--bg-brand-subtle)',
+              border: '1px solid rgba(18, 53, 39, 0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '0.25rem'
+            }}>
+              <svg width="44" height="44" viewBox="0 0 48 48" fill="none">
+                <rect x="6" y="16" width="36" height="18" rx="5" fill="rgba(16, 185, 129, 0.12)" stroke="var(--color-forest-800)" strokeWidth="2.5" />
+                <path d="M12 16L16 8H32L36 16" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="15" cy="34" r="4" fill="var(--color-mint-500)" stroke="var(--color-forest-800)" strokeWidth="2" />
+                <circle cx="33" cy="34" r="4" fill="var(--color-mint-500)" stroke="var(--color-forest-800)" strokeWidth="2" />
+              </svg>
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700 }}>No Matching Requests Right Now</h3>

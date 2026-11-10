@@ -4,7 +4,6 @@ import { Journey } from '../models/Journey.js';
 import { User } from '../models/User.js';
 import { Activity } from '../models/Activity.js';
 import { isDbConnected } from '../config/db.js';
-import { firestorePersistence } from '../services/firestorePersistence.js';
 
 const router = Router();
 
@@ -49,64 +48,27 @@ router.get('/', async (req, res): Promise<void> => {
         res.json(docs.map(formatJourney));
         return;
       } catch (dbErr: any) {
-        console.warn('[Journeys List DB Fallback]', dbErr.message);
+        console.warn('[Journeys List DB Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    // Remote Firestore cross-container fallback sync
-    let remoteJourneys: any[] = [];
-    try {
-      remoteJourneys = await firestorePersistence.listJourneys(50);
-    } catch {
-      // Non-blocking
-    }
-    for (const rem of remoteJourneys) {
-      const rId = rem._id || rem.id;
-      if (rId && !inMemoryJourneys.some(j => j._id === rId || j.id === rId)) {
-        inMemoryJourneys.unshift(rem);
-      }
-    }
+    // In-memory fallback strictly for automated tests
+    const filtered = inMemoryJourneys.filter((j) => {
+      if (transporterId && j.transporterId !== transporterId) return false;
+      if (activeOnly !== 'false' && !j.isActive) return false;
+      return true;
+    });
 
-    let filtered = inMemoryJourneys;
-    if (transporterId) {
-      filtered = filtered.filter((j) => j.transporterId === transporterId);
-    }
-    if (activeOnly !== 'false') {
-      filtered = filtered.filter((j) => j.isActive !== false);
-    }
     res.json(filtered.map(formatJourney));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch journeys', details: err.message });
   }
 });
 
-// GET /api/journeys/:id - Get single journey
-router.get('/:id', async (req, res): Promise<void> => {
-  try {
-    if (isDbConnected()) {
-      try {
-        const doc = await Journey.findById(req.params.id);
-        if (doc) {
-          res.json(formatJourney(doc));
-          return;
-        }
-      } catch (dbErr: any) {
-        console.warn('[Journey Get DB Fallback]', dbErr.message);
-      }
-    }
-
-    const inMem = inMemoryJourneys.find((j) => j.id === req.params.id || j._id === req.params.id);
-    if (!inMem) {
-      res.status(404).json({ error: 'Journey not found' });
-      return;
-    }
-    res.json(formatJourney(inMem));
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch journey', details: err.message });
-  }
-});
-
-// POST /api/journeys - Publish new journey
+// POST /api/journeys - Publish a recurring or one-off commute route
 router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
@@ -123,127 +85,111 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       notes,
     } = req.body;
 
-    if (!vehicle || !originAddress || !originCoords || !destAddress || !destCoords || !departureTime) {
-      res.status(400).json({ error: 'Missing required journey route fields' });
+    if (!vehicle || !originAddress || !destAddress || !originCoords || !destCoords || !departureTime) {
+      res.status(400).json({ error: 'Missing required journey fields' });
       return;
     }
 
     const journeyData = {
-      id: `journey-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      _id: `journey-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id: 'jrn-' + Date.now(),
       transporterId: uid,
-      transporterName: req.user!.name || 'Commuter Partner',
-      transporterAvatar: undefined,
-      transporterTrustScore: 85,
+      transporterName: req.user!.name || 'Commuter Transporter',
+      transporterAvatar: req.user!.picture,
+      transporterTrustScore: 90,
       vehicle: String(vehicle).trim(),
       originAddress: String(originAddress).trim(),
       originCoords,
       destAddress: String(destAddress).trim(),
       destCoords,
-      departureTime: String(departureTime).trim(),
-      maxDetourMinutes: Number(maxDetourMinutes || 10),
+      departureTime,
+      maxDetourMinutes: Number(maxDetourMinutes) || 15,
       capacity: capacity || 'medium',
       recurringDays: Array.isArray(recurringDays) ? recurringDays : [],
-      notes: notes ? String(notes).trim() : undefined,
       isActive: true,
+      notes: notes ? String(notes).trim() : undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    inMemoryJourneys.unshift(journeyData);
-    await firestorePersistence.saveJourney(journeyData);
-
     if (isDbConnected()) {
       try {
-        let transporter = await User.findOne({ firebaseUid: uid });
-        if (!transporter) {
-          transporter = await User.create({
-            firebaseUid: uid,
-            email: req.user!.email || `${uid}@firebase.com`,
-            fullName: req.user!.name || 'Commuter Partner',
-            role: 'transporter',
-          });
+        const user = await User.findOne({ firebaseUid: uid });
+        if (user) {
+          journeyData.transporterName = user.fullName;
+          journeyData.transporterAvatar = user.avatarUrl;
+          journeyData.transporterTrustScore = user.trustScore;
         }
 
-        const doc = await Journey.create({
-          transporterId: uid,
-          transporterName: transporter.fullName,
-          transporterAvatar: transporter.avatarUrl,
-          transporterTrustScore: transporter.trustScore,
-          vehicle: String(vehicle).trim(),
-          originAddress: String(originAddress).trim(),
-          originCoords,
-          destAddress: String(destAddress).trim(),
-          destCoords,
-          departureTime: String(departureTime).trim(),
-          maxDetourMinutes: Number(maxDetourMinutes || 10),
-          capacity: capacity || 'medium',
-          recurringDays: Array.isArray(recurringDays) ? recurringDays : [],
-          notes: notes ? String(notes).trim() : undefined,
-          isActive: true,
-        });
+        const newDoc = await Journey.create(journeyData);
 
         await Activity.create({
           userId: uid,
           type: 'journey_published',
-          title: `Published commute: ${originAddress} -> ${destAddress}`,
-          description: `Departing ${departureTime} via ${vehicle}`,
-          relatedId: doc._id.toString(),
+          title: `Published route: ${originAddress} to ${destAddress}`,
+          description: `Vehicle: ${vehicle}, Departs: ${departureTime}`,
+          relatedId: newDoc._id.toString(),
         }).catch(() => {});
 
-        res.status(201).json(formatJourney(doc));
+        res.status(201).json(formatJourney(newDoc));
         return;
       } catch (dbErr: any) {
-        console.warn('[Journey Save DB Fallback]', dbErr.message);
+        console.warn('[Journeys Create DB Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
+    inMemoryJourneys.unshift(journeyData);
     res.status(201).json(formatJourney(journeyData));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to publish journey', details: err.message });
   }
 });
 
-// DELETE /api/journeys/:id - Delete / deactivate journey
-router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// POST /api/journeys/:id/cancel - Deactivate/cancel a journey
+router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
+    const journeyId = req.params.id;
 
     if (isDbConnected()) {
       try {
-        const doc = await Journey.findById(req.params.id);
+        const doc = await Journey.findById(journeyId);
         if (doc) {
           if (doc.transporterId !== uid) {
-            res.status(403).json({ error: 'Only the commuter can delete their published journey' });
+            res.status(403).json({ error: 'Forbidden: you can only cancel your own journeys' });
             return;
           }
-          await Journey.findByIdAndDelete(req.params.id);
-          res.json({ success: true, message: 'Journey removed' });
+          doc.isActive = false;
+          await doc.save();
+          res.json({ success: true, message: 'Journey cancelled' });
           return;
         }
       } catch (dbErr: any) {
-        console.warn('[Journey Delete DB Fallback]', dbErr.message);
+        console.warn('[Journey Cancel DB Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    const index = inMemoryJourneys.findIndex((j) => j.id === req.params.id || j._id === req.params.id);
-    if (index === -1) {
+    const memItem = inMemoryJourneys.find((j) => j.id === journeyId || j._id === journeyId);
+    if (!memItem) {
       res.status(404).json({ error: 'Journey not found' });
       return;
     }
 
-    if (inMemoryJourneys[index].transporterId !== uid) {
-      res.status(403).json({ error: 'Only the commuter can delete their published journey' });
+    if (memItem.transporterId !== uid) {
+      res.status(403).json({ error: 'Forbidden: you can only cancel your own journeys' });
       return;
     }
 
-    inMemoryJourneys.splice(index, 1);
-    await firestorePersistence.deleteJourney(String(req.params.id));
-    res.json({ success: true, message: 'Journey removed' });
+    memItem.isActive = false;
+    res.json({ success: true, message: 'Journey cancelled' });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to delete journey', details: err.message });
+    res.status(500).json({ error: 'Failed to cancel journey', details: err.message });
   }
 });
 
 export default router;
-

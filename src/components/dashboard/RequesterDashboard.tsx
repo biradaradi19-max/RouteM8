@@ -638,19 +638,31 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                   <div>
                     {/* Status & Category */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.375rem' }}>
-                      <span className={`badge ${statusBadgeClass}`}>
-                        {req.status === 'open' ? (
-                          req.dispatchStatus === 'expanding_search'
-                            ? 'Finding More Partners'
-                            : req.dispatchStatus === 'no_partner_available'
-                            ? 'No Partner Available'
-                            : 'Searching for a partner'
-                        ) : req.status === 'matched' ? (
-                          'Partner Assigned'
-                        ) : (
-                          req.status.replace('_', ' ')
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className={`badge ${statusBadgeClass}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+                          {req.status === 'in_transit' && (
+                            <span className="status-dot status-dot-connected anim-radar-ping" style={{ width: '6px', height: '6px' }} />
+                          )}
+                          <span>
+                            {req.status === 'open' ? (
+                              req.dispatchStatus === 'expanding_search'
+                                ? 'Finding More Partners'
+                                : req.dispatchStatus === 'no_partner_available'
+                                ? 'No Partner Available'
+                                : 'Searching for a partner'
+                            ) : req.status === 'matched' ? (
+                              'Partner Assigned'
+                            ) : (
+                              req.status.replace('_', ' ')
+                            )}
+                          </span>
+                        </span>
+                        {req.itemSize && (
+                          <span className="vehicle-badge-pill" style={{ fontSize: '0.6875rem', padding: '0.125rem 0.5rem' }}>
+                            <Package size={11} /> {req.itemSize}
+                          </span>
                         )}
-                      </span>
+                      </div>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
                         {req.category || 'Package'}
                       </span>
@@ -756,8 +768,23 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         ) : (
           /* Empty state for Requester */
           <div className="empty-state-box">
-            <div className="empty-state-icon-wrap">
-              <Package size={28} />
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '20px',
+              backgroundColor: 'var(--bg-brand-subtle)',
+              border: '1px solid rgba(18, 53, 39, 0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '0.25rem'
+            }}>
+              <svg width="44" height="44" viewBox="0 0 48 48" fill="none">
+                <path d="M24 5L8 14V34L24 43L40 34V14L24 5Z" fill="rgba(16, 185, 129, 0.12)" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinejoin="round" />
+                <path d="M24 43V23" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M40 14L24 23L8 14" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="24" cy="23" r="3.5" fill="var(--color-mint-500)" />
+              </svg>
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700 }}>

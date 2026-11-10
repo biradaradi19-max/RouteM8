@@ -63,8 +63,8 @@ export async function verifyFirebaseIdToken(token: string): Promise<VerifiedUser
     throw new Error('Missing or invalid token');
   }
 
-  // Support local test mock tokens (e.g. "mock-token-user-1" or test headers)
-  if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development' || process.env.ALLOW_TEST_TOKENS === 'true') {
+  // Strictly permit mock tokens in automated test runner (Vitest)
+  if (process.env.NODE_ENV === 'test') {
     if (token.startsWith('mock-token-')) {
       const uid = token.replace('mock-token-', '');
       const isUnverifiedPhone = uid.includes('unverified-phone') || uid.includes('no-phone');

@@ -15,6 +15,9 @@ import {
   Lock, 
   Compass, 
   Users,
+  Bike,
+  Zap,
+  Clock,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -73,18 +76,70 @@ export const LandingView: React.FC<LandingViewProps> = ({
         position: 'relative',
         overflow: 'hidden'
       }}>
-        {/* Soft Ambient Radial Blur */}
-        <div style={{
+        {/* Animated Background Logistics Grid */}
+        <div className="logistics-bg-pattern" />
+
+        {/* Soft Ambient Radial Blur with subtle movement */}
+        <div className="anim-ambient-glow" style={{
           position: 'absolute',
           top: '0',
           left: '50%',
           transform: 'translateX(-50%)',
-          width: '800px',
-          height: '420px',
-          background: 'radial-gradient(ellipse at top, rgba(45, 212, 191, 0.15), transparent 70%)',
+          width: '840px',
+          height: '460px',
+          background: 'radial-gradient(ellipse at top, rgba(45, 212, 191, 0.2), rgba(16, 185, 129, 0.08) 40%, transparent 70%)',
           pointerEvents: 'none',
           zIndex: 0
         }} />
+
+        {/* Floating Ambient Logistics Badges (Visible on larger viewports) */}
+        <div className="anim-float" style={{
+          position: 'absolute',
+          top: '10%',
+          left: 'max(1.5rem, calc(50% - 560px))',
+          display: 'none',
+          alignItems: 'center',
+          gap: '0.625rem',
+          padding: '0.5rem 0.875rem',
+          borderRadius: 'var(--radius-full)',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-medium)',
+          boxShadow: 'var(--shadow-md)',
+          fontSize: '0.8125rem',
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          pointerEvents: 'none',
+          zIndex: 2
+        }}>
+          <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: 'var(--color-mint-50)', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Zap size={14} />
+          </div>
+          <span>Zero Extra Miles — 82% Lower CO₂</span>
+        </div>
+
+        <div className="anim-float-delayed" style={{
+          position: 'absolute',
+          top: '18%',
+          right: 'max(1.5rem, calc(50% - 560px))',
+          display: 'none',
+          alignItems: 'center',
+          gap: '0.625rem',
+          padding: '0.5rem 0.875rem',
+          borderRadius: 'var(--radius-full)',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-medium)',
+          boxShadow: 'var(--shadow-md)',
+          fontSize: '0.8125rem',
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          pointerEvents: 'none',
+          zIndex: 2
+        }}>
+          <div style={{ width: '26px', height: '26px', borderRadius: '50%', backgroundColor: 'var(--bg-brand-subtle)', color: 'var(--color-forest-800)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Package size={14} />
+          </div>
+          <span>Verified 4-Digit Handover PIN</span>
+        </div>
 
         <div className="container" style={{ position: 'relative', zIndex: 1 }}>
           <div style={{
@@ -203,7 +258,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
           </div>
 
-          {/* Interactive Hero Route Visualizer Card */}
+          {/* Interactive Hero Route Visualizer Card with Moving Vehicle Animation */}
           <div style={{
             marginTop: '3.5rem',
             backgroundColor: 'var(--bg-surface)',
@@ -226,7 +281,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               gap: '0.75rem'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--color-mint-500)' }} />
+                <span className="status-dot status-dot-connected anim-radar-ping" />
                 <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                   Live Corridor Simulation: Palo Alto ➔ Mountain View
                 </span>
@@ -235,6 +290,139 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <span>Real-Time OSRM Calculation</span>
                 <span className="badge badge-brand">+4 min estimated detour</span>
               </div>
+            </div>
+
+            {/* Seamless Animated SVG Route Corridor with Moving Delivery Vehicle */}
+            <div style={{
+              position: 'relative',
+              width: '100%',
+              backgroundColor: 'var(--color-forest-950)',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              padding: '1rem 1.25rem 0.5rem',
+              overflow: 'hidden'
+            }}>
+              {/* Radial background glows */}
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '20%',
+                width: '320px',
+                height: '90px',
+                transform: 'translate(-50%, -50%)',
+                background: 'radial-gradient(circle, rgba(16, 185, 129, 0.22), transparent 70%)',
+                pointerEvents: 'none'
+              }} />
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                right: '15%',
+                width: '280px',
+                height: '90px',
+                transform: 'translate(50%, -50%)',
+                background: 'radial-gradient(circle, rgba(52, 211, 153, 0.18), transparent 70%)',
+                pointerEvents: 'none'
+              }} />
+
+              <svg
+                viewBox="0 0 900 120"
+                style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '130px' }}
+                aria-label="Live animated route corridor showing vehicle transit"
+              >
+                <defs>
+                  <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#10B981" />
+                    <stop offset="50%" stopColor="#34D399" />
+                    <stop offset="100%" stopColor="#2DD4BF" />
+                  </linearGradient>
+                </defs>
+
+                {/* Highway Arterial Route Base */}
+                <path
+                  d="M 60,60 C 220,10 360,110 540,50 C 680,8 760,80 840,60"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                />
+
+                {/* Animated Flowing Dashed Route Line */}
+                <path
+                  d="M 60,60 C 220,10 360,110 540,50 C 680,8 760,80 840,60"
+                  fill="none"
+                  stroke="url(#routeGradient)"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  className="anim-route-flowing"
+                />
+
+                {/* Moving Electric Delivery Vehicle / Van along the path */}
+                <g>
+                  <animateMotion
+                    dur="9s"
+                    repeatCount="indefinite"
+                    rotate="auto"
+                    path="M 60,60 C 220,10 360,110 540,50 C 680,8 760,80 840,60"
+                  />
+                  {/* Vehicle halo */}
+                  <circle cx="0" cy="0" r="14" fill="#06150F" stroke="#34D399" strokeWidth="2" />
+                  {/* Delivery Van Body */}
+                  <rect x="-8" y="-4" width="16" height="8" rx="2" fill="#FFFFFF" />
+                  <rect x="2" y="-3.5" width="4.5" height="4" rx="1" fill="#0A1E16" />
+                  <circle cx="-5" cy="4.5" r="1.8" fill="#10B981" />
+                  <circle cx="5" cy="4.5" r="1.8" fill="#10B981" />
+                  {/* Headlight beam */}
+                  <polygon points="9,-2 18,-6 18,6 9,2" fill="rgba(52, 211, 153, 0.45)" />
+                </g>
+
+                {/* Origin Waypoint: Stanford Oval */}
+                <g transform="translate(60, 60)">
+                  <circle r="7" fill="#06150F" stroke="#10B981" strokeWidth="2.5" />
+                  <circle r="3" fill="#34D399" />
+                  <text x="0" y="22" textAnchor="middle" fill="#E6EAE7" fontSize="11" fontWeight="700" fontFamily="sans-serif">
+                    Stanford Oval
+                  </text>
+                  <text x="0" y="34" textAnchor="middle" fill="#A2ACA6" fontSize="9" fontFamily="sans-serif">
+                    Origin (17:45)
+                  </text>
+                </g>
+
+                {/* Detour Waypoint: Gates CS Pickup */}
+                <g transform="translate(360, 92)">
+                  <rect x="-8" y="-8" width="16" height="16" rx="4" fill="#10B981" stroke="#FFFFFF" strokeWidth="1.5" />
+                  <line x1="-4" y1="0" x2="4" y2="0" stroke="#06150F" strokeWidth="1.5" />
+                  <line x1="0" y1="-4" x2="0" y2="4" stroke="#06150F" strokeWidth="1.5" />
+                  <text x="0" y="-14" textAnchor="middle" fill="#34D399" fontSize="11" fontWeight="700" fontFamily="sans-serif">
+                    Gates CS Bldg
+                  </text>
+                  <text x="0" y="-2" textAnchor="middle" fill="#A7F3D0" fontSize="9" fontFamily="sans-serif">
+                    Pickup (+4m detour)
+                  </text>
+                </g>
+
+                {/* Dropoff Waypoint: Castro St */}
+                <g transform="translate(580, 48)">
+                  <circle r="6" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1.5" />
+                  <circle r="2.5" fill="#FFFFFF" />
+                  <text x="0" y="-12" textAnchor="middle" fill="#FCD34D" fontSize="11" fontWeight="700" fontFamily="sans-serif">
+                    Castro St Dropoff
+                  </text>
+                  <text x="0" y="20" textAnchor="middle" fill="#A2ACA6" fontSize="9" fontFamily="sans-serif">
+                    PIN Verified
+                  </text>
+                </g>
+
+                {/* Final Destination: Googleplex */}
+                <g transform="translate(840, 60)">
+                  <circle r="7" fill="#06150F" stroke="#38BDF8" strokeWidth="2.5" />
+                  <circle r="3" fill="#38BDF8" />
+                  <text x="0" y="22" textAnchor="middle" fill="#E6EAE7" fontSize="11" fontWeight="700" fontFamily="sans-serif">
+                    Googleplex
+                  </text>
+                  <text x="0" y="34" textAnchor="middle" fill="#A2ACA6" fontSize="9" fontFamily="sans-serif">
+                    Destination
+                  </text>
+                </g>
+              </svg>
             </div>
 
             {/* Visual Route Connector Showcase */}
@@ -327,6 +515,177 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   <div><strong>Pickup:</strong> Gates CS Bldg, Room 240</div>
                   <div><strong>Dropoff:</strong> Castro St, Mountain View</div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 1.5 SUSTAINABLE PEER LOGISTICS FLEET */}
+      <section className="container" style={{ marginTop: '-1.5rem' }}>
+        <div style={{ textAlign: 'center', maxWidth: '680px', margin: '0 auto 2.5rem' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-mint-600)' }}>
+            Sustainable Urban Logistics
+          </span>
+          <h2 style={{ fontSize: 'clamp(1.75rem, 3.5vw, 2.35rem)', margin: '0.5rem 0' }}>
+            Powered by Everyday Vehicles & Real Routes
+          </h2>
+          <p style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>
+            From electric commuter vehicles to agile campus bikes, Route M8 repurposes real transit corridors for seamless, low-carbon delivery.
+          </p>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '1.75rem'
+        }}>
+          {/* Card 1: Electric Commuter Fleet */}
+          <div className="card-interactive" style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-xl)',
+            border: '1px solid var(--border-medium)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ position: 'relative', height: '180px', overflow: 'hidden' }}>
+              <img
+                src="https://images.unsplash.com/photo-1559297434-fae8a1916a79?w=600&auto=format&fit=crop&q=80"
+                alt="Modern electric delivery vehicle on road"
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div style={{
+                position: 'absolute',
+                top: '0.75rem',
+                left: '0.75rem',
+                backgroundColor: 'rgba(6, 21, 15, 0.82)',
+                color: 'var(--color-mint-300)',
+                backdropFilter: 'blur(6px)',
+                borderRadius: 'var(--radius-full)',
+                padding: '0.25rem 0.625rem',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem'
+              }}>
+                <Zap size={13} color="var(--color-mint-400)" />
+                <span>Electric Fleet</span>
+              </div>
+            </div>
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+              <h3 style={{ fontSize: '1.1875rem', margin: 0, color: 'var(--text-primary)' }}>
+                Zero-Detour Arterial Transit
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.55 }}>
+                Commuters already driving between cities utilize trunk space to carry parcels with near-zero additional detour minutes.
+              </p>
+              <div style={{ marginTop: 'auto', paddingTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span className="vehicle-badge-pill ev"><Car size={13} /> Electric Vans & Cars</span>
+                <span className="vehicle-badge-pill"><ShieldCheck size={13} /> OSRM Guaranteed</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Campus Micro-Mobility */}
+          <div className="card-interactive" style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-xl)',
+            border: '1px solid var(--border-medium)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ position: 'relative', height: '180px', overflow: 'hidden' }}>
+              <img
+                src="https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80"
+                alt="Urban courier on motorbike/scooter"
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div style={{
+                position: 'absolute',
+                top: '0.75rem',
+                left: '0.75rem',
+                backgroundColor: 'rgba(6, 21, 15, 0.82)',
+                color: 'var(--color-mint-300)',
+                backdropFilter: 'blur(6px)',
+                borderRadius: 'var(--radius-full)',
+                padding: '0.25rem 0.625rem',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem'
+              }}>
+                <Bike size={13} color="var(--color-mint-400)" />
+                <span>Micro-Mobility</span>
+              </div>
+            </div>
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+              <h3 style={{ fontSize: '1.1875rem', margin: 0, color: 'var(--text-primary)' }}>
+                Campus & Urban Micro-Fleet
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.55 }}>
+                Students and couriers on e-scooters, bikes, and motorbikes weave through campus pedestrian zones for rapid peer deliveries.
+              </p>
+              <div style={{ marginTop: 'auto', paddingTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span className="vehicle-badge-pill"><Bike size={13} /> Scooters & Bikes</span>
+                <span className="vehicle-badge-pill"><Clock size={13} /> Under 30 Min Transit</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Secure Handover & Warehouses */}
+          <div className="card-interactive" style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-xl)',
+            border: '1px solid var(--border-medium)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ position: 'relative', height: '180px', overflow: 'hidden' }}>
+              <img
+                src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80"
+                alt="Logistics packages and warehouse parcel boxes"
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div style={{
+                position: 'absolute',
+                top: '0.75rem',
+                left: '0.75rem',
+                backgroundColor: 'rgba(6, 21, 15, 0.82)',
+                color: 'var(--color-mint-300)',
+                backdropFilter: 'blur(6px)',
+                borderRadius: 'var(--radius-full)',
+                padding: '0.25rem 0.625rem',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem'
+              }}>
+                <Package size={13} color="var(--color-mint-400)" />
+                <span>Secure Parcels</span>
+              </div>
+            </div>
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+              <h3 style={{ fontSize: '1.1875rem', margin: 0, color: 'var(--text-primary)' }}>
+                Physical 4-Digit PIN Handover
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.55 }}>
+                No left-at-doorstep uncertainty. Items are exchanged directly in person, with payment released only upon recipient code confirmation.
+              </p>
+              <div style={{ marginTop: 'auto', paddingTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span className="vehicle-badge-pill"><Lock size={13} /> 4-Digit Verification</span>
+                <span className="vehicle-badge-pill"><Users size={13} /> Face-to-Face Trust</span>
               </div>
             </div>
           </div>
@@ -450,8 +809,18 @@ export const LandingView: React.FC<LandingViewProps> = ({
               boxShadow: 'var(--shadow-sm)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '1.25rem'
+              gap: '1.25rem',
+              overflow: 'hidden'
             }}>
+              <div style={{ height: '140px', margin: '-2.25rem -2.25rem 0.5rem -2.25rem', overflow: 'hidden' }}>
+                <img
+                  src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=600&auto=format&fit=crop&q=80"
+                  alt="University students collaborating on campus"
+                  loading="lazy"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: 'var(--color-mint-100)', color: 'var(--color-mint-700)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <GraduationCap size={26} />
@@ -490,8 +859,18 @@ export const LandingView: React.FC<LandingViewProps> = ({
               boxShadow: 'var(--shadow-sm)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '1.25rem'
+              gap: '1.25rem',
+              overflow: 'hidden'
             }}>
+              <div style={{ height: '140px', margin: '-2.25rem -2.25rem 0.5rem -2.25rem', overflow: 'hidden' }}>
+                <img
+                  src="https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600&auto=format&fit=crop&q=80"
+                  alt="Daily commuter highway transit"
+                  loading="lazy"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: 'var(--bg-brand-subtle)', color: 'var(--color-forest-800)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Briefcase size={26} />
@@ -728,7 +1107,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                 <span>OSRM Routing Engine</span>
-                <span>Supabase Database & Realtime</span>
+                <span>MongoDB Atlas & Mongoose ODM</span>
                 <span>Leaflet Geospatial Mapping</span>
                 <span>Zero-Config Fallback</span>
               </div>

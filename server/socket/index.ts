@@ -14,10 +14,32 @@ interface AuthenticatedSocket extends Socket {
 }
 
 export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
+  const isTest = process.env.NODE_ENV === 'test';
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5000',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5000',
+    'https://route-m8.vercel.app',
+  ];
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : defaultOrigins;
+
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*',
+      origin: isTest
+        ? true
+        : (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+              callback(null, true);
+            } else {
+              callback(new Error(`Socket.IO CORS blocked for origin: ${origin}`));
+            }
+          },
       methods: ['GET', 'POST'],
+      credentials: true,
     },
     pingInterval: 10000,
     pingTimeout: 5000,

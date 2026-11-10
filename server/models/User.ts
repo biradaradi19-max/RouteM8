@@ -1,15 +1,30 @@
 import mongoose, { Schema, type Document } from 'mongoose';
 
+export type UserRole = 'customer' | 'requester' | 'transporter' | 'both' | 'admin';
+export type VerificationStatus =
+  | 'unverified'
+  | 'email_verified'
+  | 'pending_review'
+  | 'verified'
+  | 'student_verified'
+  | 'work_verified'
+  | 'gov_id_verified';
+export type AccountStatus = 'active' | 'suspended' | 'pending_approval';
+
 export interface IUser extends Document {
   firebaseUid: string;
   email: string;
   username?: string;
   fullName: string;
-  role: 'both' | 'requester' | 'transporter';
-  verificationStatus: string;
-  accountStatus: string;
+  role: UserRole;
+  verificationStatus: VerificationStatus;
+  accountStatus: AccountStatus;
   organization?: string;
   commuteVehicle?: string;
+  phone?: string;
+  isPhoneVerified: boolean;
+  phoneVerifiedAt?: Date;
+  isAdmin: boolean;
   trustScore: number;
   completedDeliveries: number;
   completedCommutes: number;
@@ -34,6 +49,7 @@ const UserSchema = new Schema<IUser>(
       required: true,
       lowercase: true,
       trim: true,
+      index: true,
     },
     username: {
       type: String,
@@ -52,16 +68,29 @@ const UserSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ['both', 'requester', 'transporter'],
+      enum: ['customer', 'requester', 'transporter', 'both', 'admin'],
       default: 'both',
+      index: true,
     },
     verificationStatus: {
       type: String,
-      default: 'email_verified',
+      enum: [
+        'unverified',
+        'email_verified',
+        'pending_review',
+        'verified',
+        'student_verified',
+        'work_verified',
+        'gov_id_verified',
+      ],
+      default: 'unverified',
+      index: true,
     },
     accountStatus: {
       type: String,
+      enum: ['active', 'suspended', 'pending_approval'],
       default: 'active',
+      index: true,
     },
     organization: {
       type: String,
@@ -70,6 +99,22 @@ const UserSchema = new Schema<IUser>(
     commuteVehicle: {
       type: String,
       trim: true,
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneVerifiedAt: {
+      type: Date,
+    },
+    isAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     trustScore: {
       type: Number,
@@ -101,6 +146,7 @@ const UserSchema = new Schema<IUser>(
     partnerAvailable: {
       type: Boolean,
       default: true,
+      index: true,
     },
   },
   {

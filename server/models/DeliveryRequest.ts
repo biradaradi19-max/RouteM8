@@ -5,6 +5,13 @@ export type ItemSize = 'small' | 'medium' | 'large';
 export type RequestUrgency = 'standard' | 'flexible' | 'urgent';
 export type RequestCategory = 'groceries' | 'campus-supplies' | 'essentials' | 'pharmacy' | 'electronics' | 'other';
 
+export interface IDeliveryStatusHistory {
+  status: DeliveryStatus;
+  changedAt: Date;
+  changedBy: string;
+  note?: string;
+}
+
 export interface IDeliveryRequest extends Document {
   _id: any;
   title: string;
@@ -22,6 +29,7 @@ export interface IDeliveryRequest extends Document {
   urgency: RequestUrgency;
   neededBy: string;
   status: DeliveryStatus;
+  statusHistory: IDeliveryStatusHistory[];
   requesterId: string;
   requesterName: string;
   requesterTrustScore: number;
@@ -31,10 +39,17 @@ export interface IDeliveryRequest extends Document {
   transporterAvatar?: string;
   transporterVehicle?: string;
   handoverPin: string;
+  handoverPinHash?: string;
+  handoverPinSalt?: string;
   pinAttempts: number;
   pinLockedUntil?: Date;
   proofPhotoUrl?: string;
-  rejectedBy?: string[];
+  proofPhotoMetadata?: {
+    size?: number;
+    mimeType?: string;
+    uploadedAt?: Date;
+  };
+  rejectedBy: string[];
   distanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
@@ -133,6 +148,14 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
       default: 'open',
       index: true,
     },
+    statusHistory: [
+      {
+        status: { type: String, required: true },
+        changedAt: { type: Date, default: Date.now },
+        changedBy: { type: String, required: true },
+        note: { type: String },
+      },
+    ],
     requesterId: {
       type: String,
       required: true,
@@ -165,7 +188,13 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
     handoverPin: {
       type: String,
       required: true,
-      length: 4,
+    },
+    handoverPinHash: {
+      type: String,
+      index: true,
+    },
+    handoverPinSalt: {
+      type: String,
     },
     pinAttempts: {
       type: Number,
@@ -176,6 +205,11 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
     },
     proofPhotoUrl: {
       type: String,
+    },
+    proofPhotoMetadata: {
+      size: Number,
+      mimeType: String,
+      uploadedAt: Date,
     },
     rejectedBy: {
       type: [String],
@@ -200,6 +234,10 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
     timestamps: true,
   }
 );
+
+DeliveryRequestSchema.index({ status: 1, createdAt: -1 });
+DeliveryRequestSchema.index({ requesterId: 1, createdAt: -1 });
+DeliveryRequestSchema.index({ transporterId: 1, status: 1 });
 
 export const DeliveryRequest =
   mongoose.models.DeliveryRequest || mongoose.model<IDeliveryRequest>('DeliveryRequest', DeliveryRequestSchema);

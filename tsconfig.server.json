@@ -7,11 +7,11 @@
     "moduleResolution": "nodenext",
     "types": ["node"],
     "skipLibCheck": true,
-    "noEmit": false,
+    "noEmit": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["server"],
+  "include": ["server", "api"],
   "exclude": ["server/**/*.test.ts", "server/tests"]
 }

@@ -33,8 +33,7 @@ if (!globalThis.__mongooseCache) {
   globalThis.__mongooseCache = cache;
 }
 
-export const ATLAS_URI =
-  'mongodb+srv://biradaradi27_db_user:adi12345%40.com@routem8.gxbbldm.mongodb.net/routem8?retryWrites=true&w=majority';
+export const ATLAS_URI = '';
 
 /**
  * Sanitize and auto-encode password in MongoDB URI to prevent unescaped character issues
@@ -47,6 +46,7 @@ export function sanitizeMongoUri(rawUri?: string): string | null {
   if (
     trimmed.includes('YOUR_ACTUAL_PASSWORD') ||
     trimmed.includes('<password>') ||
+    trimmed.includes('<db_password>') ||
     trimmed.includes('<username>')
   ) {
     return null;
@@ -96,8 +96,13 @@ export async function connectDB(uri?: string): Promise<typeof mongoose | null> {
     return null;
   }
 
-  const raw = uri || process.env.MONGODB_URI || ATLAS_URI;
-  const mongoUri = sanitizeMongoUri(raw) || ATLAS_URI;
+  const raw = uri || process.env.MONGODB_URI;
+  const mongoUri = sanitizeMongoUri(raw);
+
+  if (!mongoUri) {
+    cache.lastError = 'MongoDB URI not configured or contains placeholder';
+    return null;
+  }
 
   mongoose.set('bufferCommands', false);
 

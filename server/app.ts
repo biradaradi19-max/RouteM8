@@ -7,13 +7,39 @@ import journeysRouter from './routes/journeys.js';
 import livekitRouter from './routes/livekit.js';
 import activitiesRouter from './routes/activities.js';
 import placesRouter from './routes/places.js';
-import { isDbConnected, connectDB, getLastDbError, ATLAS_URI } from './config/db.js';
+import { isDbConnected, connectDB, getLastDbError } from './config/db.js';
 
 export function createApp() {
   const app = express();
 
-  // Middleware
-  app.use(cors({ origin: '*' }));
+  // Secure CORS origin resolution
+  const isTest = process.env.NODE_ENV === 'test';
+  const defaultAllowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5000',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5000',
+    'https://route-m8.vercel.app',
+  ];
+  const configuredOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : defaultAllowedOrigins;
+
+  app.use(
+    cors({
+      origin: isTest
+        ? true
+        : (origin, callback) => {
+            if (!origin || configuredOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+              callback(null, true);
+            } else {
+              callback(new Error(`CORS blocked for origin: ${origin}`));
+            }
+          },
+      credentials: true,
+    })
+  );
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -36,7 +62,7 @@ export function createApp() {
       status: 'ok',
       service: 'RouteM8 Express API',
       database: connected ? 'connected' : 'disconnected',
-      hasMongoUri: Boolean(process.env.MONGODB_URI || ATLAS_URI),
+      hasMongoUri: Boolean(process.env.MONGODB_URI),
       dbError: connected ? null : getLastDbError(),
       timestamp: new Date().toISOString(),
     });

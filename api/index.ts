@@ -31,10 +31,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify({
-          error: err?.message || 'Serverless Invocation Exception',
-          name: err?.name,
-          code: err?.code,
-          stack: err?.stack,
+          error: 'An internal server error occurred',
+          code: err?.code || 'INTERNAL_ERROR',
         })
       );
     }

@@ -34,6 +34,11 @@ dist-ssr
 # Supabase CLI temp files
 supabase/.temp/
 
+# Generated server outputs
+dist-server/
+server/**/*.js
+server/**/*.js.map
+
 # Uploads & Media
 uploads/
 

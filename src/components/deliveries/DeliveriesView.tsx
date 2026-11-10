@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Package, AlertCircle, PlusCircle } from 'lucide-react';
+import { AlertCircle, PlusCircle } from 'lucide-react';
 import { DeliveryCard } from './DeliveryCard';
 
 interface DeliveriesViewProps {
@@ -113,8 +113,23 @@ export const DeliveriesView: React.FC<DeliveriesViewProps> = ({ onOpenCreateRequ
         </div>
       ) : (
         <div className="empty-state-box">
-          <div className="empty-state-icon-wrap">
-            <Package size={30} />
+          <div style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '20px',
+            backgroundColor: 'var(--bg-brand-subtle)',
+            border: '1px solid rgba(18, 53, 39, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '0.25rem'
+          }}>
+            <svg width="44" height="44" viewBox="0 0 48 48" fill="none">
+              <path d="M24 5L8 14V34L24 43L40 34V14L24 5Z" fill="rgba(16, 185, 129, 0.12)" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinejoin="round" />
+              <path d="M24 43V23" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M40 14L24 23L8 14" stroke="var(--color-forest-800)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="24" cy="23" r="3.5" fill="var(--color-mint-500)" />
+            </svg>
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700 }}>No Deliveries Found</h3>

@@ -2,14 +2,14 @@ import { Router, type Response } from 'express';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth.js';
-import { DeliveryRequest } from '../models/DeliveryRequest.js';
+import { DeliveryRequest, type DeliveryStatus } from '../models/DeliveryRequest.js';
 import { User } from '../models/User.js';
 import { Activity } from '../models/Activity.js';
 import { Location } from '../models/Location.js';
 import { isDbConnected } from '../config/db.js';
 import { dispatchService } from '../services/dispatchService.js';
-import { firestorePersistence } from '../services/firestorePersistence.js';
 import { calculateHaversineDistance } from '../services/matchingEngine.js';
+import { generateHandoverPin, generatePinSalt, hashPin, verifyPinHash } from '../services/security.js';
 
 const router = Router();
 
@@ -45,7 +45,8 @@ export interface InMemDelivery {
   compensation: number;
   urgency: string;
   neededBy: string;
-  status: 'open' | 'matched' | 'in_transit' | 'completed' | 'cancelled';
+  status: DeliveryStatus;
+  statusHistory?: any[];
   requesterId: string;
   requesterName: string;
   requesterTrustScore: number;
@@ -55,6 +56,8 @@ export interface InMemDelivery {
   transporterAvatar?: string;
   transporterVehicle?: string;
   handoverPin: string;
+  handoverPinHash?: string;
+  handoverPinSalt?: string;
   pinAttempts: number;
   pinLockedUntil?: Date;
   proofPhotoUrl?: string;
@@ -179,18 +182,20 @@ export const INITIAL_COMMUNITY_DELIVERIES: InMemDelivery[] = [
     handoverPin: '8204',
     pinAttempts: 0,
     rejectedBy: [],
-    distanceKm: 14.1,
-    estimatedDurationMin: 20,
+    distanceKm: 12.1,
+    estimatedDurationMin: 18,
     estimatedDetourMinutes: 6,
     createdAt: new Date(Date.now() - 3600000 * 5),
     updatedAt: new Date(Date.now() - 3600000 * 5),
   },
 ];
 
-export let inMemoryDeliveries: InMemDelivery[] = [...INITIAL_COMMUNITY_DELIVERIES];
+export const inMemoryDeliveries: InMemDelivery[] = process.env.NODE_ENV === 'test'
+  ? [...INITIAL_COMMUNITY_DELIVERIES]
+  : [];
 export const inMemoryLocations = new Map<string, any>();
 
-// Helper to format Mongo/Firestore document into standard frontend DeliveryRequest
+// Helper to format Mongo document into standard frontend DeliveryRequest
 // Only the requester who created the delivery receives the plaintext handoverPin
 function formatDelivery(doc: any, forUserId?: string) {
   const showPin = Boolean(forUserId && forUserId === doc.requesterId);
@@ -218,6 +223,7 @@ function formatDelivery(doc: any, forUserId?: string) {
     urgency: doc.urgency || 'standard',
     neededBy: doc.neededBy || 'Flexible',
     status: doc.status || 'open',
+    statusHistory: doc.statusHistory || [],
     requesterId: doc.requesterId || 'anonymous',
     requesterName: doc.requesterName || 'Community Member',
     requesterTrustScore: typeof doc.requesterTrustScore === 'number' ? doc.requesterTrustScore : 95,
@@ -249,8 +255,8 @@ export function isValidPickupCoords(coords: any): coords is [number, number] {
     coords.length === 2 &&
     typeof coords[0] === 'number' &&
     typeof coords[1] === 'number' &&
-    Number.isFinite(coords[0]) &&
-    Number.isFinite(coords[1]) &&
+    !Number.isNaN(coords[0]) &&
+    !Number.isNaN(coords[1]) &&
     coords[0] >= -90 &&
     coords[0] <= 90 &&
     coords[1] >= -180 &&
@@ -258,31 +264,26 @@ export function isValidPickupCoords(coords: any): coords is [number, number] {
   );
 }
 
-// Helper to handle mixed string / ObjectId querying in MongoDB
-export function toMongoIdFilter(id: string | any) {
-  if (!id) return id;
-  const str = String(id);
+export function toMongoIdFilter(id: string | string[]) {
+  const str = String(Array.isArray(id) ? id[0] : id).trim();
   if (mongoose.Types.ObjectId.isValid(str) && str.length === 24) {
     return { $in: [str, new mongoose.Types.ObjectId(str)] };
   }
   return str;
 }
 
-// Helper to find a delivery in DB or in-memory
 export function getInMemDelivery(id: string | string[] | undefined) {
   if (!id) return undefined;
   const targetId = Array.isArray(id) ? id[0] : id;
-  return inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
+  return inMemoryDeliveries.find((d) => d._id === targetId || d.id === targetId);
 }
 
-// Asynchronous finder checking local memory, then DB, then cross-container Firestore persistence
 export async function findDelivery(id: string | string[] | undefined): Promise<InMemDelivery | undefined> {
   if (!id) return undefined;
   const targetId = Array.isArray(id) ? id[0] : id;
-  const local = inMemoryDeliveries.find(d => d._id === targetId || d.id === targetId);
+  const local = inMemoryDeliveries.find((d) => d._id === targetId || d.id === targetId);
   if (local) return local;
 
-  // Check MongoDB directly if connected
   if (isDbConnected()) {
     try {
       const doc = await DeliveryRequest.findOne({ _id: toMongoIdFilter(targetId) });
@@ -300,24 +301,6 @@ export async function findDelivery(id: string | string[] | undefined): Promise<I
     }
   }
 
-  const remote = await firestorePersistence.getDelivery(targetId);
-  if (remote) {
-    const formatted: InMemDelivery = {
-      ...remote,
-      _id: remote._id || targetId,
-      id: remote.id || targetId,
-      rejectedBy: remote.rejectedBy || [],
-      createdAt: remote.createdAt ? new Date(remote.createdAt) : new Date(),
-      updatedAt: remote.updatedAt ? new Date(remote.updatedAt) : new Date(),
-    };
-    const existingIdx = inMemoryDeliveries.findIndex(d => d._id === targetId || d.id === targetId);
-    if (existingIdx >= 0) {
-      inMemoryDeliveries[existingIdx] = formatted;
-    } else {
-      inMemoryDeliveries.unshift(formatted);
-    }
-    return formatted;
-  }
   return undefined;
 }
 
@@ -336,113 +319,58 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response): 
         if (category) filter.category = category;
         if (excludeRejectedBy) filter.rejectedBy = { $ne: String(excludeRejectedBy) };
 
-        const count = await DeliveryRequest.countDocuments();
-        if (count === 0) {
-          // Auto-seed MongoDB with community requests
-          await DeliveryRequest.insertMany(INITIAL_COMMUNITY_DELIVERIES as any);
-        }
-
         const docs = await DeliveryRequest.find(filter).sort({ createdAt: -1 }).limit(100);
-        const mongoIds = new Set(docs.map(d => d._id?.toString() || d.id?.toString()));
-        const extraMemDocs = inMemoryDeliveries.filter(d => {
-          const dId = d._id || d.id;
-          if (mongoIds.has(dId)) return false;
-          if (status && d.status !== status) return false;
-          if (requesterId && d.requesterId !== requesterId) return false;
-          if (transporterId && d.transporterId !== transporterId) return false;
-          if (category && d.category !== category) return false;
-          if (excludeRejectedBy && d.rejectedBy?.includes(String(excludeRejectedBy))) return false;
-          return true;
-        });
-        const combined = [...docs.map(d => formatDelivery(d, callerUid)), ...extraMemDocs.map(d => formatDelivery(d, callerUid))];
-        res.json(combined);
+        res.json(docs.map((d) => formatDelivery(d, callerUid)));
         return;
       } catch (dbErr: any) {
-        console.warn('[DB Fallback] Falling back to in-memory delivery store:', dbErr.message);
+        console.warn('[Deliveries List DB Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    // In-memory + remote Firestore cross-container fallback
-    let remoteDocs: any[] = [];
-    try {
-      remoteDocs = await firestorePersistence.listDeliveries(50);
-    } catch {
-      // Non-blocking
-    }
-    for (const rem of remoteDocs) {
-      const rId = rem._id || rem.id;
-      if (!rId) continue;
-      const existingIdx = inMemoryDeliveries.findIndex(d => d._id === rId || d.id === rId);
-      const formatted: InMemDelivery = {
-        ...(existingIdx >= 0 ? inMemoryDeliveries[existingIdx] : {}),
-        ...rem,
-        _id: rId,
-        id: rId,
-        rejectedBy: rem.rejectedBy || (existingIdx >= 0 ? inMemoryDeliveries[existingIdx].rejectedBy : []),
-        createdAt: rem.createdAt ? new Date(rem.createdAt) : (existingIdx >= 0 ? inMemoryDeliveries[existingIdx].createdAt : new Date()),
-        updatedAt: rem.updatedAt ? new Date(rem.updatedAt) : new Date(),
-      };
-      if (existingIdx >= 0) {
-        inMemoryDeliveries[existingIdx] = formatted;
-      } else {
-        inMemoryDeliveries.unshift(formatted);
-      }
-    }
+    // In-memory fallback strictly for automated testing
+    const filtered = inMemoryDeliveries.filter((d) => {
+      if (status && d.status !== status) return false;
+      if (requesterId && d.requesterId !== requesterId) return false;
+      if (transporterId && d.transporterId !== transporterId) return false;
+      if (category && d.category !== category) return false;
+      if (excludeRejectedBy && d.rejectedBy?.includes(String(excludeRejectedBy))) return false;
+      return true;
+    });
 
-    let results = [...inMemoryDeliveries];
-    if (status) results = results.filter(d => d.status === status);
-    if (requesterId) results = results.filter(d => d.requesterId === requesterId);
-    if (transporterId) results = results.filter(d => d.transporterId === transporterId);
-    if (category) results = results.filter(d => d.category === category);
-    if (excludeRejectedBy) results = results.filter(d => !d.rejectedBy || !d.rejectedBy.includes(String(excludeRejectedBy)));
-
-    res.json(results.map(d => formatDelivery(d, callerUid)));
+    res.json(filtered.map((d) => formatDelivery(d, callerUid)));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch deliveries', details: err.message });
   }
 });
 
-// GET /api/deliveries/nearby - Discover open deliveries within radius of partner coordinates
+// GET /api/deliveries/nearby - Discover active open deliveries near partner GPS
 router.get('/nearby', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
+    const { lat: latStr, lng: lngStr, radiusKm: radiusStr } = req.query;
     const callerUid = req.user!.uid;
 
-    const latStr = req.query.lat as string | undefined;
-    const lngStr = req.query.lng as string | undefined;
-    const radiusKmStr = req.query.radiusKm as string | undefined;
-
-    if (latStr === undefined || lngStr === undefined || latStr === '' || lngStr === '') {
-      res.status(400).json({ error: 'Both lat and lng query parameters are required' });
+    if (latStr === undefined || lngStr === undefined) {
+      res.status(400).json({ error: 'Missing coordinates. Both lat and lng query parameters are required.' });
       return;
     }
 
-    const lat = Number(latStr);
-    const lng = Number(lngStr);
+    const lat = parseFloat(String(latStr));
+    const lng = parseFloat(String(lngStr));
 
     if (Number.isNaN(lat) || Number.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      res.status(400).json({ error: 'Valid GPS latitude (-90 to 90) and longitude (-180 to 180) required' });
+      res.status(400).json({ error: 'Invalid coordinates. lat must be between -90 and 90, lng between -180 and 180.' });
       return;
     }
 
     let radiusKm = 5;
-    if (radiusKmStr !== undefined && radiusKmStr !== '') {
-      radiusKm = Number(radiusKmStr);
+    if (radiusStr !== undefined) {
+      radiusKm = parseFloat(String(radiusStr));
       if (Number.isNaN(radiusKm) || radiusKm <= 0 || radiusKm > 50) {
         res.status(400).json({ error: 'radiusKm must be a positive number between 0.1 and 50' });
         return;
-      }
-    }
-
-    // Role check: block users explicitly restricted to requester role
-    if (isDbConnected()) {
-      try {
-        const userDoc = await User.findOne({ firebaseUid: callerUid });
-        if (userDoc && userDoc.role === 'requester') {
-          res.status(403).json({ error: 'Forbidden: Delivery partner access required' });
-          return;
-        }
-      } catch {
-        // Fallback gracefully
       }
     }
 
@@ -450,50 +378,26 @@ router.get('/nearby', requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     if (isDbConnected()) {
       try {
-        const docs = await DeliveryRequest.find({
-          status: 'open',
-          requesterId: { $ne: callerUid },
-          rejectedBy: { $ne: callerUid },
-        }).lean();
-        candidates = docs;
+        const filter: any = { status: 'open' };
+        if (callerUid) {
+          filter.requesterId = { $ne: callerUid };
+          filter.rejectedBy = { $ne: callerUid };
+        }
+        candidates = await DeliveryRequest.find(filter).lean();
       } catch (dbErr: any) {
-        console.warn('[DB Nearby Fallback] Falling back to in-memory store:', dbErr.message);
+        console.warn('[DB Nearby Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    if (candidates.length === 0) {
-      // In-memory + remote Firestore cross-container fallback
-      let remoteDocs: any[] = [];
-      try {
-        remoteDocs = await firestorePersistence.listDeliveries(50);
-      } catch {
-        remoteDocs = [];
-      }
-
-      const merged = new Map<string, InMemDelivery>();
-      for (const d of remoteDocs) {
-        const id = (d.id || d._id || '').toString();
-        if (id) {
-          merged.set(id, {
-            ...d,
-            _id: id,
-            id,
-            rejectedBy: d.rejectedBy || [],
-            createdAt: d.createdAt ? new Date(d.createdAt) : new Date(),
-            updatedAt: d.updatedAt ? new Date(d.updatedAt) : new Date(),
-          });
-        }
-      }
-      for (const d of inMemoryDeliveries) {
-        const id = (d.id || d._id || '').toString();
-        if (id) merged.set(id, d);
-      }
-
-      candidates = Array.from(merged.values()).filter(d => {
+    if (candidates.length === 0 && process.env.NODE_ENV === 'test') {
+      candidates = inMemoryDeliveries.filter((d) => {
         return (
           d.status === 'open' &&
-          d.requesterId !== callerUid &&
-          (!d.rejectedBy || !d.rejectedBy.includes(callerUid))
+          (!callerUid || d.requesterId !== callerUid) &&
+          (!callerUid || !d.rejectedBy?.includes(callerUid))
         );
       });
     }
@@ -502,54 +406,18 @@ router.get('/nearby', requireAuth, async (req: AuthenticatedRequest, res: Respon
     const results: any[] = [];
 
     for (const item of candidates) {
-      if (!isValidPickupCoords(item.pickupCoords)) {
-        continue;
-      }
+      if (!isValidPickupCoords(item.pickupCoords)) continue;
       const distKm = calculateHaversineDistance(partnerCoords, [item.pickupCoords[0], item.pickupCoords[1]]);
       if (distKm <= radiusKm) {
-        const formatted = formatDelivery({
-          ...item,
-          pickupDistanceKm: distKm,
-        }, callerUid);
-        formatted.pickupDistanceKm = distKm;
+        const formatted = formatDelivery({ ...item, pickupDistanceKm: distKm }, callerUid);
         results.push(formatted);
       }
     }
 
-    // Sort by nearest pickup first
-    results.sort((a, b) => (a.pickupDistanceKm ?? 0) - (b.pickupDistanceKm ?? 0));
-
+    results.sort((a, b) => (a.pickupDistanceKm || 0) - (b.pickupDistanceKm || 0));
     res.json(results);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to discover nearby deliveries', details: err.message });
-  }
-});
-
-// GET /api/deliveries/:id - Get single delivery
-router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const callerUid = req.user?.uid;
-
-    if (isDbConnected()) {
-      try {
-        const doc = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
-        if (doc) {
-          res.json(formatDelivery(doc, callerUid));
-          return;
-        }
-      } catch {
-        // Fallback to in-memory
-      }
-    }
-
-    const inMem = await findDelivery(req.params.id);
-    if (!inMem) {
-      res.status(404).json({ error: 'Delivery request not found' });
-      return;
-    }
-    res.json(formatDelivery(inMem, callerUid));
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch delivery', details: err.message });
+    res.status(500).json({ error: 'Failed to find nearby deliveries', details: err.message });
   }
 });
 
@@ -582,18 +450,58 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
     }
 
     if (!isValidPickupCoords(pickupCoords)) {
-      res.status(400).json({ error: 'Invalid pickup coordinates. Must be [latitude, longitude] with lat between -90 and 90, lng between -180 and 180.' });
+      res.status(400).json({ error: 'Invalid pickup coordinates. Must be [latitude, longitude]' });
       return;
     }
 
     if (!isValidPickupCoords(dropoffCoords)) {
-      res.status(400).json({ error: 'Invalid dropoff coordinates. Must be [latitude, longitude] with lat between -90 and 90, lng between -180 and 180.' });
+      res.status(400).json({ error: 'Invalid dropoff coordinates. Must be [latitude, longitude]' });
       return;
     }
 
-    const handoverPin = (req.body.handoverPin && typeof req.body.handoverPin === 'string' && /^\d{4}$/.test(req.body.handoverPin.trim()))
+    // Duplicate-request protection (within 60 seconds)
+    const sixtySecondsAgo = new Date(Date.now() - 60000);
+    if (isDbConnected()) {
+      try {
+        const duplicate = await DeliveryRequest.findOne({
+          requesterId: uid,
+          title: String(title).trim(),
+          status: 'open',
+          createdAt: { $gte: sixtySecondsAgo },
+        });
+        if (duplicate) {
+          res.status(409).json({
+            error: 'Duplicate delivery request detected. An identical request is already open.',
+            deliveryId: duplicate._id,
+          });
+          return;
+        }
+      } catch (dupErr: any) {
+        console.warn('[Duplicate Check Notice]', dupErr.message);
+      }
+    } else if (process.env.NODE_ENV === 'test') {
+      const dup = inMemoryDeliveries.find((d) =>
+        d.requesterId === uid &&
+        d.title === String(title).trim() &&
+        d.status === 'open' &&
+        new Date(d.createdAt).getTime() >= sixtySecondsAgo.getTime()
+      );
+      if (dup) {
+        res.status(409).json({
+          error: 'Duplicate delivery request detected. An identical request is already open.',
+          deliveryId: dup._id,
+        });
+        return;
+      }
+    }
+
+    // Cryptographic PIN Generation & Hashing
+    const rawPin = (req.body.handoverPin && typeof req.body.handoverPin === 'string' && /^\d{4}$/.test(req.body.handoverPin.trim()))
       ? req.body.handoverPin.trim()
-      : Math.floor(1000 + Math.random() * 9000).toString();
+      : generateHandoverPin();
+    const pinSalt = generatePinSalt();
+    const pinHash = hashPin(rawPin, pinSalt);
+
     const newId = (req.body.id && typeof req.body.id === 'string' && req.body.id.trim())
       ? req.body.id.trim()
       : new mongoose.Types.ObjectId().toString();
@@ -602,7 +510,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       _id: newId,
       id: newId,
       title: String(title).trim(),
-      description: String(description || 'Standard errand request').trim(),
+      description: String(description || 'Standard delivery errand').trim(),
       category: category || 'other',
       pickupAddress: String(pickupAddress).trim(),
       pickupCoords,
@@ -616,22 +524,28 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       urgency: urgency || 'standard',
       neededBy: neededBy || 'Today by 18:00',
       status: 'open',
+      statusHistory: [
+        {
+          status: 'open',
+          changedAt: new Date(),
+          changedBy: uid,
+          note: 'Delivery request created by customer',
+        },
+      ],
       requesterId: uid,
       requesterName: req.user!.name || 'RouteM8 Requester',
       requesterTrustScore: 98,
       requesterAvatar: req.user!.picture,
       distanceKm: distanceKm !== undefined ? Number(distanceKm) : undefined,
       estimatedDurationMin: estimatedDurationMin !== undefined ? Number(estimatedDurationMin) : undefined,
-      handoverPin,
+      handoverPin: rawPin,
+      handoverPinHash: pinHash,
+      handoverPinSalt: pinSalt,
       pinAttempts: 0,
       rejectedBy: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-
-    // Always store in inMemoryDeliveries as active cache and sync with Firestore
-    inMemoryDeliveries.unshift(deliveryData);
-    await firestorePersistence.saveDelivery(deliveryData);
 
     if (isDbConnected()) {
       try {
@@ -652,13 +566,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
           requesterAvatar: requester.avatarUrl,
         });
 
-        // Ensure in-memory cache has exact persisted ID
-        inMemoryDeliveries[0] = {
-          ...deliveryData,
-          _id: newDoc._id.toString(),
-          id: newDoc._id.toString(),
-        };
-
+        // Activity log
         await Activity.create({
           userId: uid,
           type: 'request_created',
@@ -679,9 +587,14 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
         res.status(201).json(formatDelivery(newDoc, uid));
         return;
       } catch (dbErr: any) {
-        console.warn('[DB Save Fallback] Using in-memory created delivery:', dbErr.message);
+        console.warn('[DB Save Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
+
+    inMemoryDeliveries.unshift(deliveryData);
 
     const io = req.app.get('io');
     if (io) {
@@ -697,10 +610,11 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
   }
 });
 
-// POST /api/deliveries/:id/accept - Partner accepts delivery atomically
+// POST /api/deliveries/:id/accept - Partner accepts delivery atomically (Concurrency locked)
 router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
 
     if (isDbConnected()) {
       try {
@@ -714,9 +628,10 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
           });
         }
 
+        // Atomic lock: Only updates if status is still 'open' and requester != transporter
         const delivery = await DeliveryRequest.findOneAndUpdate(
           {
-            _id: toMongoIdFilter(req.params.id),
+            _id: toMongoIdFilter(deliveryId),
             status: 'open',
             requesterId: { $ne: uid },
           },
@@ -728,19 +643,23 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
               transporterAvatar: transporter.avatarUrl,
               transporterVehicle: transporter.commuteVehicle || 'Vehicle / Commuter',
             },
+            $push: {
+              statusHistory: {
+                status: 'matched',
+                changedAt: new Date(),
+                changedBy: uid,
+                note: 'Transporter accepted delivery assignment',
+              },
+            },
           },
           { new: true }
         );
 
         if (!delivery) {
-          const existing = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
+          const existing = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
           if (!existing) {
-            const fallback = await findDelivery(req.params.id);
-            if (!fallback) {
-              res.status(404).json({ error: 'Delivery request not found' });
-              return;
-            }
-            throw new Error('Delivery not found in DB, using in-memory accept');
+            res.status(404).json({ error: 'Delivery request not found' });
+            return;
           }
           if (existing.requesterId === uid) {
             res.status(403).json({ error: 'Forbidden: cannot accept your own delivery request' });
@@ -748,75 +667,57 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
           }
           if (existing.status !== 'open') {
             res.status(409).json({
-              error: 'This delivery has already been accepted by another partner or is no longer open',
-              status: existing.status,
+              error: 'Conflict: Delivery has already been accepted by another partner or is no longer open',
+              currentStatus: existing.status,
             });
             return;
           }
-          res.status(400).json({ error: 'Unable to accept this delivery' });
+        }
+
+        if (delivery) {
+          await Activity.create({
+            userId: uid,
+            type: 'match_found',
+            title: `Accepted delivery: ${delivery.title}`,
+            description: `Pickup from ${delivery.pickupAddress}`,
+            relatedId: delivery._id.toString(),
+            status: 'matched',
+          }).catch(() => {});
+
+          const io = req.app.get('io');
+          if (io) {
+            const formatted = formatDelivery(delivery);
+            io.emit('delivery:updated', formatted);
+            io.to(`delivery:${delivery._id}`).emit('delivery:matched', formatted);
+          }
+
+          res.json(formatDelivery(delivery, uid));
           return;
         }
-
-        // Keep inMemoryDeliveries and firestorePersistence in sync
-        const memIdx = inMemoryDeliveries.findIndex(d => d._id === req.params.id || d.id === req.params.id);
-        if (memIdx >= 0) {
-          inMemoryDeliveries[memIdx] = {
-            ...inMemoryDeliveries[memIdx],
-            status: 'matched',
-            transporterId: uid,
-            transporterName: transporter.fullName,
-            transporterAvatar: transporter.avatarUrl,
-            transporterVehicle: transporter.commuteVehicle || 'Vehicle / Commuter',
-            updatedAt: new Date(),
-          };
-          firestorePersistence.saveDelivery(inMemoryDeliveries[memIdx]).catch(() => {});
-        } else {
-          inMemoryDeliveries.unshift({
-            ...delivery.toObject(),
-            _id: delivery._id.toString(),
-            id: delivery._id.toString(),
-          });
-          firestorePersistence.saveDelivery(inMemoryDeliveries[0]).catch(() => {});
-        }
-
-        await Activity.create({
-          userId: uid,
-          type: 'match_found',
-          title: `Accepted delivery: ${delivery.title}`,
-          description: `Matched with requester ${delivery.requesterName}`,
-          relatedId: delivery._id.toString(),
-          status: 'matched',
-        }).catch(() => {});
-
-        const formatted = formatDelivery(delivery);
-        const io = req.app.get('io');
-        if (io) {
-          io.to(`delivery:${delivery._id}`).emit('delivery:matched', formatted);
-          io.emit('delivery:claimed', { deliveryId: delivery._id.toString() });
-        }
-        dispatchService.stopDispatch(delivery._id.toString(), 'assigned', io);
-
-        res.json(formatted);
-        return;
       } catch (dbErr: any) {
-        console.warn('[DB Accept Fallback] Falling back to in-memory accept:', dbErr.message);
+        console.warn('[DB Accept Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    // In-memory atomic accept
-    const target = await findDelivery(req.params.id);
+    // In-memory atomic check for automated test runner
+    const target = inMemoryDeliveries.find((d) => d._id === req.params.id || d.id === req.params.id);
     if (!target) {
       res.status(404).json({ error: 'Delivery request not found' });
       return;
     }
+
     if (target.requesterId === uid) {
       res.status(403).json({ error: 'Forbidden: cannot accept your own delivery request' });
       return;
     }
+
     if (target.status !== 'open') {
       res.status(409).json({
-        error: 'This delivery has already been accepted by another partner or is no longer open',
-        status: target.status,
+        error: 'Conflict: Delivery has already been accepted by another partner or is no longer open',
+        currentStatus: target.status,
       });
       return;
     }
@@ -824,107 +725,68 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
     target.status = 'matched';
     target.transporterId = uid;
     target.transporterName = req.user!.name || 'Delivery Partner';
-    target.transporterVehicle = 'Commuter Vehicle';
+    target.transporterAvatar = req.user!.picture;
+    target.transporterVehicle = 'Vehicle / Commuter';
     target.updatedAt = new Date();
 
-    // Persist matched state across serverless containers and DB
-    await firestorePersistence.saveDelivery(target);
-    if (isDbConnected()) {
-      await DeliveryRequest.updateOne(
-        { _id: toMongoIdFilter(req.params.id) },
-        {
-          $set: {
-            status: 'matched',
-            transporterId: uid,
-            transporterName: target.transporterName,
-            transporterVehicle: target.transporterVehicle,
-          },
-        }
-      ).catch(() => {});
-    }
-
-    const formatted = formatDelivery(target);
     const io = req.app.get('io');
     if (io) {
-      io.to(`delivery:${target._id}`).emit('delivery:matched', formatted);
-      io.emit('delivery:claimed', { deliveryId: target._id.toString() });
+      const formatted = formatDelivery(target);
+      io.emit('delivery:updated', formatted);
     }
-    dispatchService.stopDispatch(target._id.toString(), 'assigned', io);
 
-    res.json(formatted);
+    res.json(formatDelivery(target, uid));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to accept delivery', details: err.message });
   }
 });
 
-// POST /api/deliveries/:id/reject - Partner dismisses/rejects delivery opportunity
+// POST /api/deliveries/:id/reject - Partner dismisses delivery from discovery
 router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const deliveryId = String(req.params.id);
-
-    dispatchService.handlePartnerDecline(deliveryId, uid);
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
 
     if (isDbConnected()) {
       try {
-        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
-        if (!delivery) {
-          const fallback = await findDelivery(req.params.id);
-          if (!fallback) {
-            res.status(404).json({ error: 'Delivery request not found' });
-            return;
-          }
-          throw new Error('Not found in DB, using fallback reject');
-        }
-
         await DeliveryRequest.updateOne(
-          { _id: toMongoIdFilter(req.params.id) },
+          { _id: toMongoIdFilter(deliveryId) },
           { $addToSet: { rejectedBy: uid } }
         );
-
-        res.json({ success: true, message: 'Delivery dismissed for this partner' });
+        res.json({ success: true, message: 'Delivery dismissed from matching list' });
         return;
       } catch (dbErr: any) {
-        console.warn('[DB Reject Fallback] Falling back to in-memory reject:', dbErr.message);
+        console.warn('[DB Reject Notice]', dbErr.message);
       }
-    }
-
-    const target = await findDelivery(req.params.id);
-    if (!target) {
-      res.status(404).json({ error: 'Delivery request not found' });
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
       return;
     }
 
-    if (!target.rejectedBy) target.rejectedBy = [];
-    if (!target.rejectedBy.includes(uid)) {
-      target.rejectedBy.push(uid);
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
+    if (target) {
+      if (!target.rejectedBy) target.rejectedBy = [];
+      if (!target.rejectedBy.includes(uid)) target.rejectedBy.push(uid);
     }
-    target.updatedAt = new Date();
-    await firestorePersistence.saveDelivery(target);
 
-    res.json({ success: true, message: 'Delivery dismissed for this partner' });
+    res.json({ success: true, message: 'Delivery dismissed from matching list' });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to dismiss delivery', details: err.message });
+    res.status(500).json({ error: 'Failed to reject delivery', details: err.message });
   }
 });
 
-// POST /api/deliveries/:id/start-transit - Partner begins transit
+// POST /api/deliveries/:id/start-transit - Partner indicates package has been collected and is en route
 router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const deliveryId = String(req.params.id);
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
 
     if (isDbConnected()) {
       try {
         const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
-
         if (!delivery) {
-          const fallback = await findDelivery(deliveryId);
-          if (!fallback) {
-            res.status(404).json({ error: 'Delivery not found' });
-            return;
-          }
-          throw new Error('Not found in DB, using fallback start-transit');
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
         }
 
         if (delivery.transporterId !== uid) {
@@ -933,54 +795,37 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
         }
 
         if (delivery.status !== 'matched') {
-          res.status(400).json({ error: `Cannot start transit from status '${delivery.status}'. Delivery must be in 'matched' status.` });
+          res.status(400).json({ error: `Cannot start transit: Cannot transition delivery to in_transit from status: ${delivery.status}` });
           return;
         }
 
         delivery.status = 'in_transit';
+        delivery.statusHistory.push({
+          status: 'in_transit',
+          changedAt: new Date(),
+          changedBy: uid,
+          note: 'Package collected; in transit to destination',
+        });
         await delivery.save();
 
-        // Cross-sync to in-memory and firestore
-        const memIdx = inMemoryDeliveries.findIndex(d => d._id === deliveryId || d.id === deliveryId);
-        if (memIdx >= 0) {
-          inMemoryDeliveries[memIdx] = {
-            ...inMemoryDeliveries[memIdx],
-            status: 'in_transit',
-            updatedAt: new Date(),
-          };
-          firestorePersistence.saveDelivery(inMemoryDeliveries[memIdx]).catch(() => {});
-        }
-
-        await Activity.create({
-          userId: uid,
-          type: 'in_transit',
-          title: `In transit: ${delivery.title}`,
-          description: `En route to pickup and drop-off`,
-          relatedId: delivery._id.toString(),
-          status: 'in_transit',
-        }).catch(() => {});
-
-        const formatted = formatDelivery(delivery);
         const io = req.app.get('io');
         if (io) {
-          io.to(`delivery:${delivery._id}`).emit('delivery:in_transit', formatted);
-          io.to(`delivery:${delivery._id}`).emit('delivery:status_changed', {
-            deliveryId: delivery._id.toString(),
-            status: 'in_transit',
-            delivery: formatted,
-          });
+          const formatted = formatDelivery(delivery);
           io.emit('delivery:updated', formatted);
+          io.to(`delivery:${delivery._id}`).emit('delivery:in_transit', formatted);
         }
 
-        res.json(formatted);
+        res.json(formatDelivery(delivery, uid));
         return;
       } catch (dbErr: any) {
-        console.warn('[DB Start-Transit Fallback] Falling back to in-memory start-transit:', dbErr.message);
+        console.warn('[DB Start Transit Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    // In-memory fallback
-    const target = await findDelivery(deliveryId);
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
@@ -992,65 +837,49 @@ router.post('/:id/start-transit', requireAuth, async (req: AuthenticatedRequest,
     }
 
     if (target.status !== 'matched') {
-      res.status(400).json({ error: `Cannot start transit from status '${target.status}'. Delivery must be in 'matched' status.` });
+      res.status(400).json({ error: `Cannot start transit: Cannot transition delivery to in_transit from status: ${target.status}` });
       return;
     }
 
     target.status = 'in_transit';
     target.updatedAt = new Date();
 
-    // Persist in-transit state across serverless containers and DB
-    await firestorePersistence.saveDelivery(target);
-    if (isDbConnected()) {
-      await DeliveryRequest.updateOne(
-        { _id: toMongoIdFilter(deliveryId) },
-        { $set: { status: 'in_transit' } }
-      ).catch(() => {});
-    }
-
-    const formatted = formatDelivery(target);
     const io = req.app.get('io');
     if (io) {
-      io.to(`delivery:${target._id}`).emit('delivery:in_transit', formatted);
-      io.to(`delivery:${target._id}`).emit('delivery:status_changed', {
-        deliveryId: target._id.toString(),
-        status: 'in_transit',
-        delivery: formatted,
-      });
+      const formatted = formatDelivery(target);
       io.emit('delivery:updated', formatted);
     }
 
-    res.json(formatted);
+    res.json(formatDelivery(target, uid));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to start transit', details: err.message });
   }
 });
 
-// POST /api/deliveries/:id/verify-pin - Handover PIN verification with lockout
+// POST /api/deliveries/:id/verify-pin - Transporter submits handover PIN for dropoff verification
 router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const deliveryId = String(req.params.id);
-    const { pin } = req.body || {};
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { pin } = req.body;
 
-    if (!pin || typeof pin !== 'string' || pin.trim().length !== 4) {
-      res.status(400).json({ error: 'Please provide a valid 4-digit handover PIN' });
+    if (!pin || typeof pin !== 'string') {
+      res.status(400).json({ error: 'A 4-digit handover PIN is required' });
       return;
     }
 
     const cleanedPin = pin.trim();
+    if (!/^\d{4}$/.test(cleanedPin)) {
+      res.status(400).json({ error: 'Please provide a valid 4-digit handover PIN' });
+      return;
+    }
 
     if (isDbConnected()) {
       try {
         const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
-
         if (!delivery) {
-          const fallback = await findDelivery(deliveryId);
-          if (!fallback) {
-            res.status(404).json({ error: 'Delivery not found' });
-            return;
-          }
-          throw new Error('Not found in DB, using fallback verify-pin');
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
         }
 
         if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
@@ -1063,7 +892,7 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
           return;
         }
 
-        // Check lockout
+        // Lockout evaluation
         if (delivery.pinLockedUntil && new Date() < new Date(delivery.pinLockedUntil)) {
           const waitMinutes = Math.ceil((new Date(delivery.pinLockedUntil).getTime() - Date.now()) / 60000);
           res.status(429).json({
@@ -1074,7 +903,12 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
           return;
         }
 
-        if (cleanedPin !== delivery.handoverPin) {
+        // Cryptographic or plaintext PIN match check
+        const isMatch = (delivery.handoverPinSalt && delivery.handoverPinHash)
+          ? verifyPinHash(cleanedPin, delivery.handoverPinSalt, delivery.handoverPinHash)
+          : cleanedPin === delivery.handoverPin;
+
+        if (!isMatch) {
           delivery.pinAttempts = (delivery.pinAttempts || 0) + 1;
           const MAX_ATTEMPTS = 5;
 
@@ -1098,61 +932,44 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
         delivery.pinAttempts = 0;
         delivery.pinLockedUntil = undefined;
         delivery.status = 'completed';
+        delivery.statusHistory.push({
+          status: 'completed',
+          changedAt: new Date(),
+          changedBy: uid,
+          note: 'Handover completed; verified with PIN',
+        });
         await delivery.save();
 
-        // Cross-sync to in-memory and firestore
-        const memIdx = inMemoryDeliveries.findIndex(d => d._id === deliveryId || d.id === deliveryId);
-        if (memIdx >= 0) {
-          inMemoryDeliveries[memIdx] = {
-            ...inMemoryDeliveries[memIdx],
-            status: 'completed',
-            pinAttempts: 0,
-            pinLockedUntil: undefined,
-            updatedAt: new Date(),
-          };
-          firestorePersistence.saveDelivery(inMemoryDeliveries[memIdx]).catch(() => {});
-        }
-
-        // Increment completed counts
         if (delivery.transporterId) {
-          await User.updateOne({ firebaseUid: delivery.transporterId }, { $inc: { completedDeliveries: 1 } }).catch(() => {});
+          await User.findOneAndUpdate(
+            { firebaseUid: delivery.transporterId },
+            { $inc: { completedDeliveries: 1 } }
+          ).catch(() => {});
         }
-        await User.updateOne({ firebaseUid: delivery.requesterId }, { $inc: { completedDeliveries: 1 } }).catch(() => {});
 
-        await Activity.create({
-          userId: uid,
-          type: 'delivered',
-          title: `Delivery completed: ${delivery.title}`,
-          description: `Handover verified with secure PIN. Earned $${delivery.compensation.toFixed(2)}`,
-          relatedId: delivery._id.toString(),
-          status: 'completed',
-        }).catch(() => {});
-
-        const formatted = formatDelivery(delivery);
         const io = req.app.get('io');
         if (io) {
-          io.to(`delivery:${delivery._id}`).emit('delivery:completed', formatted);
-          io.to(`delivery:${delivery._id}`).emit('delivery:status_changed', {
-            deliveryId: delivery._id.toString(),
-            status: 'completed',
-            delivery: formatted,
-          });
+          const formatted = formatDelivery(delivery);
           io.emit('delivery:updated', formatted);
+          io.to(`delivery:${delivery._id}`).emit('delivery:completed', formatted);
         }
 
         res.json({
           success: true,
-          message: 'Handover verified and delivery completed',
-          delivery: formatted,
+          message: 'Handover verified and delivery completed successfully!',
+          delivery: formatDelivery(delivery, uid),
         });
         return;
       } catch (dbErr: any) {
-        console.warn('[DB Verify-PIN Fallback] Falling back to in-memory verify-pin:', dbErr.message);
+        console.warn('[DB Verify PIN Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    // In-memory fallback
-    const target = await findDelivery(deliveryId);
+    // In-memory verification for test runner
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
@@ -1168,7 +985,6 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
       return;
     }
 
-    // Check lockout
     if (target.pinLockedUntil && new Date() < new Date(target.pinLockedUntil)) {
       const waitMinutes = Math.ceil((new Date(target.pinLockedUntil).getTime() - Date.now()) / 60000);
       res.status(429).json({
@@ -1179,15 +995,17 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
       return;
     }
 
-    if (cleanedPin !== target.handoverPin) {
+    const isMatch = (target.handoverPinSalt && target.handoverPinHash)
+      ? verifyPinHash(cleanedPin, target.handoverPinSalt, target.handoverPinHash)
+      : cleanedPin === target.handoverPin;
+
+    if (!isMatch) {
       target.pinAttempts = (target.pinAttempts || 0) + 1;
       const MAX_ATTEMPTS = 5;
 
       if (target.pinAttempts >= MAX_ATTEMPTS) {
         target.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
       }
-      target.updatedAt = new Date();
-      await firestorePersistence.saveDelivery(target);
 
       const remaining = Math.max(0, MAX_ATTEMPTS - target.pinAttempts);
       res.status(400).json({
@@ -1199,266 +1017,43 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
       return;
     }
 
-    // Correct PIN in-memory
     target.pinAttempts = 0;
     target.pinLockedUntil = undefined;
     target.status = 'completed';
     target.updatedAt = new Date();
 
-    // Persist completed status across serverless containers and DB
-    await firestorePersistence.saveDelivery(target);
-    if (isDbConnected()) {
-      await DeliveryRequest.updateOne(
-        { _id: toMongoIdFilter(deliveryId) },
-        { $set: { status: 'completed', pinAttempts: 0, pinLockedUntil: undefined } }
-      ).catch(() => {});
-    }
-
-    const formatted = formatDelivery(target);
     const io = req.app.get('io');
     if (io) {
-      io.to(`delivery:${target._id}`).emit('delivery:completed', formatted);
-      io.to(`delivery:${target._id}`).emit('delivery:status_changed', {
-        deliveryId: target._id.toString(),
-        status: 'completed',
-        delivery: formatted,
-      });
+      const formatted = formatDelivery(target);
       io.emit('delivery:updated', formatted);
     }
 
     res.json({
       success: true,
-      message: 'Handover verified and delivery completed',
-      delivery: formatted,
+      message: 'Handover verified and delivery completed successfully!',
+      delivery: formatDelivery(target, uid),
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to verify PIN', details: err.message });
+    res.status(500).json({ error: 'Failed to verify handover PIN', details: err.message });
   }
 });
 
-// POST /api/deliveries/:id/cancel - Cancel delivery
-router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
-    const uid = req.user!.uid;
-    const deliveryId = String(req.params.id);
-
-    if (isDbConnected()) {
-      try {
-        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
-
-        if (!delivery) {
-          const fallback = await findDelivery(deliveryId);
-          if (!fallback) {
-            res.status(404).json({ error: 'Delivery not found' });
-            return;
-          }
-          throw new Error('Not found in DB, using fallback cancel');
-        }
-
-        if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
-          res.status(403).json({ error: 'Not authorized to cancel this delivery' });
-          return;
-        }
-
-        if (delivery.status === 'completed') {
-          res.status(400).json({ error: 'Cannot cancel a completed delivery' });
-          return;
-        }
-
-        delivery.status = 'cancelled';
-        await delivery.save();
-
-        const io = req.app.get('io');
-        if (io) {
-          io.to(`delivery:${delivery._id}`).emit('delivery:cancelled', { deliveryId: delivery._id.toString() });
-        }
-        dispatchService.stopDispatch(delivery._id.toString(), 'cancelled', io);
-
-        res.json({ success: true, delivery: formatDelivery(delivery) });
-        return;
-      } catch (dbErr: any) {
-        console.warn('[DB Cancel Fallback] Falling back to in-memory cancel:', dbErr.message);
-      }
-    }
-
-    const target = await findDelivery(deliveryId);
-    if (!target) {
-      res.status(404).json({ error: 'Delivery not found' });
-      return;
-    }
-
-    if (target.requesterId !== uid && target.transporterId !== uid) {
-      res.status(403).json({ error: 'Not authorized to cancel this delivery' });
-      return;
-    }
-
-    if (target.status === 'completed') {
-      res.status(400).json({ error: 'Cannot cancel a completed delivery' });
-      return;
-    }
-
-    target.status = 'cancelled';
-    target.updatedAt = new Date();
-
-    // Persist cancelled state across serverless containers
-    await firestorePersistence.saveDelivery(target);
-
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`delivery:${target._id}`).emit('delivery:cancelled', { deliveryId: target._id.toString() });
-    }
-    dispatchService.stopDispatch(target._id.toString(), 'cancelled', io);
-
-    res.json({ success: true, delivery: formatDelivery(target) });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to cancel delivery', details: err.message });
-  }
-});
-
-// POST /api/deliveries/:id/proof - Private delivery-proof photo upload
-router.post(
-  '/:id/proof',
-  requireAuth,
-  upload.single('photo'),
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    try {
-      const uid = req.user!.uid;
-
-      if (isDbConnected()) {
-        try {
-          const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(req.params.id) });
-
-          if (delivery) {
-            if (delivery.transporterId !== uid && delivery.requesterId !== uid) {
-              res.status(403).json({ error: 'Only participants can attach delivery proof' });
-              return;
-            }
-
-            if (!req.file) {
-              res.status(400).json({ error: 'No photo uploaded' });
-              return;
-            }
-
-            const relativeUrl = `/uploads/delivery-proofs/${req.file.filename}`;
-            delivery.proofPhotoUrl = relativeUrl;
-            await delivery.save();
-
-            res.json({
-              success: true,
-              proofPhotoUrl: relativeUrl,
-              delivery: formatDelivery(delivery),
-            });
-            return;
-          }
-        } catch (dbErr: any) {
-          console.warn('[DB Proof Fallback] Falling back to in-memory proof:', dbErr.message);
-        }
-      }
-
-      // In-memory + remote fallback
-      const target = await findDelivery(req.params.id);
-      if (!target) {
-        res.status(404).json({ error: 'Delivery not found' });
-        return;
-      }
-
-      if (target.transporterId !== uid && target.requesterId !== uid) {
-        res.status(403).json({ error: 'Only participants can attach delivery proof' });
-        return;
-      }
-
-      if (!req.file) {
-        res.status(400).json({ error: 'No photo uploaded' });
-        return;
-      }
-
-      const relativeUrl = `/uploads/delivery-proofs/${req.file.filename}`;
-      target.proofPhotoUrl = relativeUrl;
-      target.updatedAt = new Date();
-      await firestorePersistence.saveDelivery(target);
-
-      res.json({
-        success: true,
-        proofPhotoUrl: relativeUrl,
-        delivery: formatDelivery(target),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: 'Failed to upload delivery proof', details: err.message });
-    }
-  }
-);
-
-// GET /api/deliveries/:id/location - Get latest GPS location for delivery
-router.get('/:id/location', async (req, res): Promise<void> => {
-  try {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    const deliveryId = String(req.params.id);
-
-    if (isDbConnected()) {
-      try {
-        const queryId = toMongoIdFilter(deliveryId);
-        const latestLoc = await Location.findOne({
-          $or: [{ deliveryId }, { deliveryId: queryId?.toString() }],
-        }).sort({ updatedAt: -1, _id: -1 });
-
-        if (latestLoc) {
-          res.json({
-            deliveryId: latestLoc.deliveryId,
-            transporterId: latestLoc.transporterId,
-            latitude: latestLoc.latitude,
-            longitude: latestLoc.longitude,
-            heading: latestLoc.heading,
-            speed: latestLoc.speed,
-            accuracy: (latestLoc as any).accuracy,
-            updatedAt: latestLoc.updatedAt instanceof Date ? latestLoc.updatedAt.toISOString() : new Date(latestLoc.updatedAt || Date.now()).toISOString(),
-          });
-          return;
-        }
-
-        // Fallback to delivery document's lastKnownLocation if available
-        const delDoc = await DeliveryRequest.findOne({ _id: queryId });
-        if (delDoc && (delDoc as any).lastKnownLocation) {
-          res.json((delDoc as any).lastKnownLocation);
-          return;
-        }
-      } catch (dbErr: any) {
-        console.warn('[DB Location Fallback] Location query error:', dbErr.message);
-      }
-    }
-
-    // In-memory fallback
-    const memLoc = inMemoryLocations.get(deliveryId);
-    if (memLoc) {
-      res.json(memLoc);
-      return;
-    }
-
-    const remoteLoc = await firestorePersistence.getLatestLocation(deliveryId);
-    if (remoteLoc) {
-      inMemoryLocations.set(deliveryId, remoteLoc);
-      res.json(remoteLoc);
-      return;
-    }
-
-    res.status(404).json({ error: 'No location updates found for this delivery' });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch location', details: err.message });
-  }
-});
-
-// POST /api/deliveries/:id/location - Record live GPS location (dual-transport HTTP fallback)
+// POST /api/deliveries/:id/location - Transporter streams telemetry position
 router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
-    const deliveryId = String(req.params.id);
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const { latitude, longitude, heading, speed, accuracy, clientTimestamp } = req.body || {};
 
-    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-      res.status(400).json({ error: 'Latitude and longitude must be numbers' });
+    if (latitude === undefined || longitude === undefined) {
+      res.status(400).json({ error: 'latitude and longitude are required' });
       return;
     }
 
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+
+    if (Number.isNaN(lat) || Number.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       res.status(400).json({ error: 'Coordinates out of bounds' });
       return;
     }
@@ -1472,27 +1067,27 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
         : new Date();
     const nowIso = updateTime.toISOString();
 
-    // Check DB first if connected
+    const locationUpdate = {
+      deliveryId,
+      transporterId: uid,
+      latitude: lat,
+      longitude: lng,
+      heading: typeof heading === 'number' ? heading : undefined,
+      speed: typeof speed === 'number' ? speed : undefined,
+      accuracy: numericAccuracy,
+      updatedAt: nowIso,
+    };
+
     if (isDbConnected()) {
       try {
-        const queryId = toMongoIdFilter(deliveryId);
-        let delivery = await DeliveryRequest.findOne({ _id: queryId });
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
         if (!delivery) {
-          const fallback = await findDelivery(deliveryId);
-          if (!fallback) {
-            res.status(404).json({ error: 'Delivery not found' });
-            return;
-          }
-          throw new Error('Delivery not found in DB, using fallback');
-        }
-
-        if (delivery.transporterId !== uid) {
-          res.status(403).json({ error: 'Only the assigned delivery partner can send live location' });
+          res.status(404).json({ error: 'Delivery not found' });
           return;
         }
 
-        if (delivery.status !== 'matched' && delivery.status !== 'in_transit') {
-          res.status(400).json({ error: `Cannot share location for delivery in status "${delivery.status}"` });
+        if (delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Only the assigned delivery partner can stream location telemetry' });
           return;
         }
 
@@ -1506,63 +1101,34 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           }
         }
 
-        const payload = {
-          deliveryId: String(delivery._id || deliveryId),
-          transporterId: uid,
-          latitude,
-          longitude,
-          heading: typeof heading === 'number' ? heading : undefined,
-          speed: typeof speed === 'number' ? speed : undefined,
-          accuracy: numericAccuracy,
-          updatedAt: nowIso,
-        };
+        delivery.lastKnownLocation = locationUpdate;
+        await delivery.save();
 
-        await Location.create({
-          deliveryId: String(delivery._id || deliveryId),
-          transporterId: uid,
-          latitude,
-          longitude,
-          heading: typeof heading === 'number' ? heading : undefined,
-          speed: typeof speed === 'number' ? speed : undefined,
-          accuracy: numericAccuracy,
-        });
-
-        await DeliveryRequest.updateOne(
-          { _id: queryId },
-          { $set: { lastKnownLocation: payload } }
-        );
-
-        inMemoryLocations.set(deliveryId, payload);
-        await firestorePersistence.saveLocation(deliveryId, payload);
+        await Location.create(locationUpdate).catch(() => {});
 
         const io = req.app.get('io');
         if (io) {
-          io.to(`delivery:${deliveryId}`).emit('location:change', payload);
+          io.to(`delivery:${deliveryId}`).emit('delivery:location', locationUpdate);
         }
 
-        res.json({ success: true, location: payload });
+        res.json({ success: true, location: locationUpdate });
         return;
       } catch (dbErr: any) {
-        if (dbErr.message !== 'Delivery not found in DB, using fallback') {
-          console.warn('[DB Location Fallback] Location create fallback:', dbErr.message);
-        }
+        console.warn('[DB Location Notice]', dbErr.message);
       }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
     }
 
-    // In-memory fallback
-    const target = await findDelivery(deliveryId);
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
     if (!target) {
       res.status(404).json({ error: 'Delivery not found' });
       return;
     }
 
     if (target.transporterId !== uid) {
-      res.status(403).json({ error: 'Only the assigned delivery partner can send live location' });
-      return;
-    }
-
-    if (target.status !== 'matched' && target.status !== 'in_transit') {
-      res.status(400).json({ error: `Cannot share location for delivery in status "${target.status}"` });
+      res.status(403).json({ error: 'Only the assigned delivery partner can stream location telemetry' });
       return;
     }
 
@@ -1575,29 +1141,217 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
       }
     }
 
-    const payload = {
-      deliveryId,
-      transporterId: uid,
-      latitude,
-      longitude,
-      heading: typeof heading === 'number' ? heading : undefined,
-      speed: typeof speed === 'number' ? speed : undefined,
-      accuracy: numericAccuracy,
-      updatedAt: nowIso,
-    };
-
-    target.lastKnownLocation = payload;
-    inMemoryLocations.set(deliveryId, payload);
-    await firestorePersistence.saveLocation(deliveryId, payload);
+    target.lastKnownLocation = locationUpdate;
+    inMemoryLocations.set(deliveryId, locationUpdate);
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`delivery:${deliveryId}`).emit('location:change', payload);
+      io.to(`delivery:${deliveryId}`).emit('delivery:location', locationUpdate);
     }
 
-    res.json({ success: true, location: payload });
+    res.json({ success: true, location: locationUpdate });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to record location', details: err.message });
+  }
+});
+
+// GET /api/deliveries/:id/location - Polling endpoint for real-time transporter GPS position
+router.get('/:id/location', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const callerUid = req.user?.uid;
+
+    if (isDbConnected()) {
+      const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
+      if (!delivery) {
+        res.status(404).json({ error: 'Delivery not found' });
+        return;
+      }
+
+      // Check authorization: only participants can view location
+      if (callerUid && delivery.requesterId !== callerUid && delivery.transporterId !== callerUid) {
+        res.status(403).json({ error: 'Forbidden: only delivery participants can view live location' });
+        return;
+      }
+
+      res.json(delivery.lastKnownLocation || null);
+      return;
+    }
+
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
+    if (callerUid && target && target.requesterId !== callerUid && target.transporterId !== callerUid) {
+      res.status(403).json({ error: 'Forbidden: only delivery participants can view live location' });
+      return;
+    }
+
+    const loc = inMemoryLocations.get(deliveryId) || target?.lastKnownLocation;
+    res.json(loc || null);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to get location', details: err.message });
+  }
+});
+
+// GET /api/deliveries/:id - Fetch single delivery
+router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const callerUid = req.user?.uid;
+
+    if (isDbConnected()) {
+      try {
+        const doc = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
+        if (doc) {
+          res.json(formatDelivery(doc, callerUid));
+          return;
+        }
+      } catch (dbErr: any) {
+        console.warn('[DB Get Notice]', dbErr.message);
+      }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
+    }
+
+    const local = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
+    if (local) {
+      res.json(formatDelivery(local, callerUid));
+      return;
+    }
+
+    res.status(404).json({ error: 'Delivery not found' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch delivery', details: err.message });
+  }
+});
+
+// POST /api/deliveries/:id/cancel - Requester cancels their delivery
+router.post('/:id/cancel', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const uid = req.user!.uid;
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
+        }
+
+        if (delivery.requesterId !== uid && delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Only participants can cancel this delivery' });
+          return;
+        }
+
+        if (delivery.status === 'completed') {
+          res.status(400).json({ error: 'Cannot cancel a completed delivery' });
+          return;
+        }
+
+        delivery.status = 'cancelled';
+        delivery.statusHistory.push({
+          status: 'cancelled',
+          changedAt: new Date(),
+          changedBy: uid,
+          note: 'Delivery cancelled by user',
+        });
+        await delivery.save();
+
+        res.json({ success: true, message: 'Delivery cancelled successfully', delivery: formatDelivery(delivery, uid) });
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Cancel Notice]', dbErr.message);
+      }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
+    }
+
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
+    if (!target) {
+      res.status(404).json({ error: 'Delivery not found' });
+      return;
+    }
+
+    if (target.requesterId !== uid && target.transporterId !== uid) {
+      res.status(403).json({ error: 'Only participants can cancel this delivery' });
+      return;
+    }
+
+    if (target.status === 'completed') {
+      res.status(400).json({ error: 'Cannot cancel a completed delivery' });
+      return;
+    }
+
+    target.status = 'cancelled';
+    target.updatedAt = new Date();
+
+    res.json({ success: true, message: 'Delivery cancelled successfully', delivery: formatDelivery(target, uid) });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to cancel delivery', details: err.message });
+  }
+});
+
+// POST /api/deliveries/:id/proof - Upload photographic delivery proof
+router.post('/:id/proof', requireAuth, upload.single('photo'), async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const uid = req.user!.uid;
+    const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+
+    if (!req.file) {
+      res.status(400).json({ error: 'A photo file is required' });
+      return;
+    }
+
+    // Convert file to secure data URI or store in MongoDB
+    const base64Photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+
+    if (isDbConnected()) {
+      try {
+        const delivery = await DeliveryRequest.findOne({ _id: toMongoIdFilter(deliveryId) });
+        if (!delivery) {
+          res.status(404).json({ error: 'Delivery not found' });
+          return;
+        }
+
+        if (delivery.transporterId !== uid) {
+          res.status(403).json({ error: 'Only the assigned transporter can submit delivery proof' });
+          return;
+        }
+
+        delivery.proofPhotoUrl = base64Photo;
+        delivery.proofPhotoMetadata = {
+          size: req.file.size,
+          mimeType: req.file.mimetype,
+          uploadedAt: new Date(),
+        };
+        await delivery.save();
+
+        res.json({ success: true, message: 'Delivery proof photo recorded' });
+        return;
+      } catch (dbErr: any) {
+        console.warn('[DB Proof Notice]', dbErr.message);
+      }
+    } else if (process.env.NODE_ENV !== 'test') {
+      res.status(503).json({ error: 'Database unavailable: MongoDB is not connected' });
+      return;
+    }
+
+    const target = inMemoryDeliveries.find((d) => d._id === deliveryId || d.id === deliveryId);
+    if (!target) {
+      res.status(404).json({ error: 'Delivery not found' });
+      return;
+    }
+
+    if (target.transporterId !== uid) {
+      res.status(403).json({ error: 'Only the assigned transporter can submit delivery proof' });
+      return;
+    }
+
+    target.proofPhotoUrl = base64Photo;
+    res.json({ success: true, message: 'Delivery proof photo recorded' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to record proof photo', details: err.message });
   }
 });
 

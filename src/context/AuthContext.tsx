@@ -17,6 +17,7 @@ import {
   isFirebaseConfigured,
   onAuthStateChanged as onFirebaseAuthStateChanged,
 } from '../services/firebase';
+import { authApi } from '../services/api';
 
 export interface SignUpResult {
   success: boolean;
@@ -133,6 +134,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (fbUser) {
           const profile = buildUserProfile(fbUser);
           setUser(profile);
+
+          // Asynchronously synchronize authoritative profile from MongoDB Atlas
+          authApi.getMe().then((res) => {
+            if (isMounted && res?.user) {
+              setUser(res.user);
+              saveStoredProfile(fbUser.uid, res.user);
+            }
+          }).catch(() => {
+            // Keep local profile if offline
+          });
         } else {
           setUser(null);
         }
@@ -373,6 +384,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       saveStoredProfile(user.id, updatedProfile);
       setUser(updatedProfile);
+
+      // Persist to authoritative MongoDB backend
+      await authApi.updateProfile(updates as SafeProfileUpdates).catch((e) => {
+        console.warn('[MongoDB Profile Sync Notice]', e);
+      });
+
       return true;
     } catch (err: any) {
       setError(err?.message || 'Failed to update profile settings.');

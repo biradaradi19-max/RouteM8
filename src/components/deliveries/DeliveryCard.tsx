@@ -19,6 +19,7 @@ import {
   X,
   Truck,
   Clock,
+  Package,
 } from 'lucide-react';
 
 interface DeliveryCardProps {
@@ -207,6 +208,11 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
             >
               {req.status.replace('_', ' ')}
             </span>
+            {req.itemSize && (
+              <span className="vehicle-badge-pill" style={{ fontSize: '0.6875rem' }}>
+                <Package size={11} /> {req.itemSize}
+              </span>
+            )}
             <span className="tabular-nums" style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
               Created {new Date(req.createdAt).toLocaleDateString()}
             </span>
@@ -226,12 +232,10 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
                 }}
               >
                 <span
+                  className="status-dot status-dot-connected anim-radar-ping"
                   style={{
                     width: '6px',
                     height: '6px',
-                    borderRadius: '50%',
-                    backgroundColor: '#10B981',
-                    animation: 'pulse 1.8s infinite',
                   }}
                 />
                 {isStale ? 'GPS Active (Stale)' : 'Live GPS Active'}
