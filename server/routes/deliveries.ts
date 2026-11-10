@@ -1038,6 +1038,26 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
+// In-memory throttle tracker to avoid excessive MongoDB writes on Atlas M0
+const lastTelemetryLogTimes = new Map<string, { time: number; lat: number; lng: number }>();
+
+export function shouldPersistTelemetryLog(deliveryId: string, lat: number, lng: number): boolean {
+  const last = lastTelemetryLogTimes.get(deliveryId);
+  const now = Date.now();
+  if (!last) {
+    lastTelemetryLogTimes.set(deliveryId, { time: now, lat, lng });
+    return true;
+  }
+  const timeElapsedMs = now - last.time;
+  const distMeters = calculateHaversineDistance([last.lat, last.lng], [lat, lng]) * 1000;
+  // Save historical telemetry breadcrumb every 30s or when moved >= 50m
+  if (timeElapsedMs >= 30000 || distMeters >= 50) {
+    lastTelemetryLogTimes.set(deliveryId, { time: now, lat, lng });
+    return true;
+  }
+  return false;
+}
+
 // POST /api/deliveries/:id/location - Transporter streams telemetry position
 router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -1104,11 +1124,15 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
         delivery.lastKnownLocation = locationUpdate;
         await delivery.save();
 
-        await Location.create(locationUpdate).catch(() => {});
+        // Optimize MongoDB writes for Atlas M0: throttle breadcrumb insertions
+        if (shouldPersistTelemetryLog(deliveryId, lat, lng)) {
+          await Location.create(locationUpdate).catch(() => {});
+        }
 
         const io = req.app.get('io');
         if (io) {
           io.to(`delivery:${deliveryId}`).emit('delivery:location', locationUpdate);
+          io.to(`delivery:${deliveryId}`).emit('location:change', locationUpdate);
         }
 
         res.json({ success: true, location: locationUpdate });
@@ -1147,6 +1171,7 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
     const io = req.app.get('io');
     if (io) {
       io.to(`delivery:${deliveryId}`).emit('delivery:location', locationUpdate);
+      io.to(`delivery:${deliveryId}`).emit('location:change', locationUpdate);
     }
 
     res.json({ success: true, location: locationUpdate });

@@ -339,10 +339,27 @@ export const MapView: React.FC<MapViewProps> = ({
         iconAnchor: [20, 20],
       });
 
+      // Draw high-precision GPS accuracy radius circle when available
+      if (typeof transporterLocation.accuracy === 'number' && transporterLocation.accuracy > 0) {
+        const accuracyRadius = Math.min(Math.max(transporterLocation.accuracy, 5), 1000);
+        L.circle([transporterLocation.latitude, transporterLocation.longitude], {
+          radius: accuracyRadius,
+          color: isStale ? '#F59E0B' : '#10B981',
+          weight: 1.5,
+          opacity: isStale ? 0.4 : 0.65,
+          fillColor: isStale ? '#F59E0B' : '#10B981',
+          fillOpacity: isStale ? 0.08 : 0.12,
+          dashArray: isStale ? '4, 6' : undefined,
+        }).addTo(layerGroup);
+      }
+
       const transMarker = L.marker([transporterLocation.latitude, transporterLocation.longitude], {
         icon: transporterIcon,
       }).addTo(layerGroup);
-      transMarker.bindPopup(`<b>${statusTitle}</b><br/>${isStale ? 'Last recorded' : 'Live stream'}: ${new Date(transporterLocation.updatedAt).toLocaleTimeString()}`);
+      const accText = transporterLocation.accuracy != null
+        ? `<br/>GPS Accuracy: <b>±${Math.round(transporterLocation.accuracy)}m</b>`
+        : '';
+      transMarker.bindPopup(`<b>${statusTitle}</b>${accText}<br/>${isStale ? 'Last recorded' : 'Live stream'}: ${new Date(transporterLocation.updatedAt).toLocaleTimeString()}`);
       allPoints.push([transporterLocation.latitude, transporterLocation.longitude]);
     }
 

@@ -34,6 +34,14 @@ export function getGpsConfidenceTier(accuracyMeters?: number | null): GpsConfide
   return 'unusable';
 }
 
+export function formatAccuracyDistance(meters?: number | null): string {
+  if (meters == null || Number.isNaN(meters)) return 'unknown';
+  if (meters >= 1000) {
+    return `±${(meters / 1000).toFixed(1)} km`;
+  }
+  return `±${Math.round(meters)}m`;
+}
+
 export interface GpsDiagnosticEvent {
   source: 'partner_watch' | 'partner_discovery' | 'customer_poll' | 'socket_rx' | 'api_tx';
   latitude: number;
@@ -144,56 +152,218 @@ export function shouldBroadcastLocation(
   return distanceMoved >= minDistance;
 }
 
+export interface GpsAcquisitionProgress {
+  status: 'requesting' | 'refining' | 'locked' | 'coarse';
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  message: string;
+}
+
+export interface GpsLocationResult {
+  coords: [number, number];
+  accuracy: number;
+  isRefined: boolean;
+}
+
 export interface ExtendedPositionOptions extends PositionOptions {
   maxAccuracyMeters?: number;
+  desiredAccuracyMeters?: number;
+  maxRefineMs?: number;
+  onProgress?: (progress: GpsAcquisitionProgress) => void;
+}
+
+/**
+ * Acquire GPS location using an adaptive satellite-refinement strategy.
+ * Does not immediately reject initial coarse network readings; instead provides
+ * device GNSS hardware an adaptive period to lock satellites and achieve high accuracy.
+ */
+export async function acquireAccuratePosition(options?: ExtendedPositionOptions): Promise<GpsLocationResult> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    throw new Error('Geolocation is not supported by your browser.');
+  }
+
+  // Enforce secure context (HTTPS) check in production
+  if (
+    typeof window !== 'undefined' &&
+    window.isSecureContext === false &&
+    window.location.protocol !== 'https:' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1'
+  ) {
+    throw new Error('Browser geolocation requires a secure HTTPS connection. Please access RouteM8 over HTTPS.');
+  }
+
+  const timeoutMs = options?.timeout ?? 15000;
+  const maxAccuracy = options?.maxAccuracyMeters ?? GPS_MAX_ACCEPTABLE_ACCURACY_METERS;
+  const desiredAccuracy = options?.desiredAccuracyMeters ?? 100;
+  const maxRefineMs = options?.maxRefineMs ?? 6000;
+
+  options?.onProgress?.({
+    status: 'requesting',
+    message: 'Requesting GPS position from device...',
+  });
+
+  return new Promise((resolve, reject) => {
+    let bestPosition: GeolocationPosition | null = null;
+    let refineTimer: any = null;
+    let hasResolved = false;
+    let watchId: number | null = null;
+
+    const cleanup = () => {
+      hasResolved = true;
+      if (refineTimer) {
+        clearTimeout(refineTimer);
+        refineTimer = null;
+      }
+      if (watchId !== null && typeof navigator.geolocation.clearWatch === 'function') {
+        try {
+          navigator.geolocation.clearWatch(watchId);
+        } catch {
+          // ignore
+        }
+        watchId = null;
+      }
+    };
+
+    const handleSuccessPosition = (pos: GeolocationPosition) => {
+      if (hasResolved) return;
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      if (!isValidCoordinate(latitude, longitude)) {
+        return;
+      }
+
+      logGpsDiagnostics({
+        source: 'partner_discovery',
+        latitude,
+        longitude,
+        accuracyMeters: accuracy,
+        timestamp: pos.timestamp || Date.now(),
+      });
+
+      const currentAccuracy = typeof accuracy === 'number' && !Number.isNaN(accuracy) ? accuracy : 999999;
+
+      // Track the best accuracy seen so far
+      if (!bestPosition || currentAccuracy < (bestPosition.coords.accuracy || Infinity)) {
+        bestPosition = pos;
+      }
+
+      // 1. If accuracy is within desired high-accuracy threshold (e.g. <= 100m), resolve immediately
+      if (currentAccuracy <= desiredAccuracy) {
+        cleanup();
+        options?.onProgress?.({
+          status: 'locked',
+          latitude,
+          longitude,
+          accuracyMeters: currentAccuracy,
+          message: `GPS lock acquired (${formatAccuracyDistance(currentAccuracy)})`,
+        });
+        resolve({
+          coords: [latitude, longitude],
+          accuracy: currentAccuracy,
+          isRefined: true,
+        });
+        return;
+      }
+
+      // 2. Coarse initial reading (e.g. Wi-Fi or cell tower ±200 km)
+      // Do not reject immediately! Give satellite GNSS hardware time to refine
+      options?.onProgress?.({
+        status: 'refining',
+        latitude,
+        longitude,
+        accuracyMeters: currentAccuracy,
+        message: `Acquiring satellites... (${formatAccuracyDistance(currentAccuracy)}). Refining GPS...`,
+      });
+
+      // Start refinement timer if not already running
+      if (!refineTimer) {
+        refineTimer = setTimeout(() => {
+          if (hasResolved) return;
+          cleanup();
+
+          if (bestPosition) {
+            const bestAcc = bestPosition.coords.accuracy;
+            if (typeof bestAcc === 'number' && bestAcc <= maxAccuracy) {
+              resolve({
+                coords: [bestPosition.coords.latitude, bestPosition.coords.longitude],
+                accuracy: bestAcc,
+                isRefined: false,
+              });
+              return;
+            }
+
+            reject(
+              new Error(
+                `GPS accuracy (${formatAccuracyDistance(bestAcc)}) is too coarse. High-precision GPS is unavailable. Android devices: please enable "Use precise location" in browser permissions or move outdoors for satellite lock. You can also search your pickup address below or pick a pin on the map.`
+              )
+            );
+            return;
+          }
+
+          reject(new Error('GPS location request timed out. Please retry or enter your address manually.'));
+        }, maxRefineMs);
+      }
+    };
+
+    const handleError = (err: GeolocationPositionError) => {
+      if (hasResolved) return;
+
+      // If we already have an acceptable reading, resolve with it rather than erroring out
+      if (bestPosition && bestPosition.coords.accuracy <= maxAccuracy) {
+        cleanup();
+        resolve({
+          coords: [bestPosition.coords.latitude, bestPosition.coords.longitude],
+          accuracy: bestPosition.coords.accuracy,
+          isRefined: false,
+        });
+        return;
+      }
+
+      cleanup();
+      reject(new Error(formatGeolocationError(err)));
+    };
+
+    // If watchPosition is available (real browsers), use it for satellite refinement
+    if (typeof navigator.geolocation.watchPosition === 'function') {
+      try {
+        watchId = navigator.geolocation.watchPosition(
+          handleSuccessPosition,
+          handleError,
+          {
+            enableHighAccuracy: true,
+            timeout: timeoutMs,
+            maximumAge: 0,
+            ...options,
+          }
+        );
+      } catch (err: any) {
+        cleanup();
+        reject(new Error(err.message || 'Failed to start GPS location watch.'));
+      }
+    } else {
+      // Fallback to getCurrentPosition (e.g. test mocks)
+      navigator.geolocation.getCurrentPosition(
+        handleSuccessPosition,
+        handleError,
+        {
+          enableHighAccuracy: true,
+          timeout: timeoutMs,
+          maximumAge: 0,
+          ...options,
+        }
+      );
+    }
+  });
 }
 
 /**
  * Promise-based current position retrieval with browser geolocation.
  */
 export async function getCurrentPositionAsync(options?: ExtendedPositionOptions): Promise<[number, number]> {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    throw new Error('Geolocation is not supported by your browser.');
-  }
-
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        logGpsDiagnostics({
-          source: 'partner_discovery',
-          latitude,
-          longitude,
-          accuracyMeters: accuracy,
-          timestamp: pos.timestamp || Date.now(),
-        });
-
-        if (
-          options?.maxAccuracyMeters &&
-          typeof accuracy === 'number' &&
-          accuracy > options.maxAccuracyMeters
-        ) {
-          reject(
-            new Error(
-              `GPS accuracy (±${(accuracy / 1000).toFixed(1)} km) is too coarse. Please ensure GPS is enabled for precise location.`
-            )
-          );
-          return;
-        }
-
-        resolve([latitude, longitude]);
-      },
-      (err) => {
-        reject(new Error(formatGeolocationError(err)));
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-        ...options,
-      }
-    );
-  });
+  const result = await acquireAccuratePosition(options);
+  return result.coords;
 }
 
 /**

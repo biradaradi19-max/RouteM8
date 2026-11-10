@@ -42,7 +42,7 @@ describe('LocationPickerInput Component', () => {
       expect(getCurrentPositionSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           enableHighAccuracy: true,
-          timeout: 15000,
+          timeout: 20000,
           maximumAge: 0,
         })
       );

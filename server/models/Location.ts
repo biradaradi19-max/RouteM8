@@ -58,4 +58,7 @@ const LocationSchema = new Schema<ILocation>(
 // Optimize for fetching the latest location for a delivery
 LocationSchema.index({ deliveryId: 1, updatedAt: -1 });
 
+// Free-tier safety: Auto-expire telemetry breadcrumbs after 7 days to preserve Atlas M0 storage
+LocationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 604800 });
+
 export const Location = mongoose.models.Location || mongoose.model<ILocation>('Location', LocationSchema);

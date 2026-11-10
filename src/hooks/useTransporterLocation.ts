@@ -248,7 +248,7 @@ export function useTransporterLocation({
       // Filter out low-confidence coarse IP/Wi-Fi estimates (> 1000m, e.g. Pune IP while in Tondar)
       if (typeof accuracy === 'number' && accuracy > GPS_MAX_ACCEPTABLE_ACCURACY_METERS) {
         setError(
-          `Acquiring GPS satellite fix (current accuracy ±${(accuracy / 1000).toFixed(1)} km is too coarse). Waiting for satellites...`
+          `Acquiring GPS satellite fix (current accuracy ±${(accuracy / 1000).toFixed(1)} km is too coarse). Android users: please enable "Use precise location" in browser settings.`
         );
         return;
       }

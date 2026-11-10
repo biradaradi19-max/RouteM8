@@ -170,6 +170,33 @@ const MapController: React.FC<{
     };
   }, [map, match, pickupCoords, dropoffCoords, directRoutePath, liveNavPath]);
 
+  // High-precision GPS accuracy radius circle for transporter
+  useEffect(() => {
+    if (
+      !map ||
+      !transporterLocation ||
+      typeof transporterLocation.accuracy !== 'number' ||
+      transporterLocation.accuracy <= 0
+    ) {
+      return;
+    }
+    const isStale = isCoordinateStale(transporterLocation.updatedAt, 60000);
+    const radius = Math.min(Math.max(transporterLocation.accuracy, 5), 1000);
+    const circle = new google.maps.Circle({
+      center: { lat: transporterLocation.latitude, lng: transporterLocation.longitude },
+      radius,
+      strokeColor: isStale ? '#F59E0B' : '#10B981',
+      strokeOpacity: isStale ? 0.4 : 0.65,
+      strokeWeight: 1.5,
+      fillColor: isStale ? '#F59E0B' : '#10B981',
+      fillOpacity: isStale ? 0.08 : 0.12,
+      map,
+    });
+    return () => {
+      circle.setMap(null);
+    };
+  }, [map, transporterLocation]);
+
   // Adjust camera bounds smoothly to frame all active locations on initial load
   useEffect(() => {
     if (!map) return;

@@ -19,9 +19,19 @@ export async function getSocket(): Promise<Socket> {
       auth: { token },
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 20,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        if (socket && !socket.connected) {
+          console.log('[Socket.IO Client] Network restored, reconnecting socket...');
+          socket.connect();
+        }
+      });
+    }
 
     socket.on('connect', () => {
       console.log('[Socket.IO Client] Connected:', socket?.id);
@@ -74,11 +84,16 @@ export async function joinDeliveryRoom(
 ): Promise<() => void> {
   const s = await getSocket();
 
-  s.emit('delivery:join', { deliveryId }, (res: any) => {
-    if (res?.error) {
-      console.warn('[Socket.IO] delivery:join error:', res.error);
-    }
-  });
+  const joinRoom = () => {
+    s.emit('delivery:join', { deliveryId }, (res: any) => {
+      if (res?.error) {
+        console.warn('[Socket.IO] delivery:join error:', res.error);
+      }
+    });
+  };
+
+  joinRoom();
+  s.on('connect', joinRoom);
 
   const handleLocation = (data: TransporterLocation) => {
     if (data.deliveryId === deliveryId && handlers.onLocation) {
@@ -111,6 +126,7 @@ export async function joinDeliveryRoom(
   };
 
   s.on('location:change', handleLocation);
+  s.on('delivery:location', handleLocation);
   s.on('call:incoming', handleCallIncoming);
   s.on('call:accepted', handleCallAccepted);
   s.on('call:rejected', handleCallRejected);
@@ -118,7 +134,9 @@ export async function joinDeliveryRoom(
 
   return () => {
     s.emit('delivery:leave', { deliveryId });
+    s.off('connect', joinRoom);
     s.off('location:change', handleLocation);
+    s.off('delivery:location', handleLocation);
     s.off('call:incoming', handleCallIncoming);
     s.off('call:accepted', handleCallAccepted);
     s.off('call:rejected', handleCallRejected);

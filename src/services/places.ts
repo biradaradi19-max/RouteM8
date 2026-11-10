@@ -209,6 +209,51 @@ export async function resolvePlaceCoordinates(
 }
 
 /**
+ * Geocode a manually entered address string into verified coordinates.
+ */
+export async function geocodeAddress(address: string): Promise<ResolvedPlace | null> {
+  const trimmed = address.trim();
+  if (!trimmed) return null;
+
+  // 1. Check if first autocomplete prediction matches
+  try {
+    const list = await searchGlobalPlaces(trimmed);
+    if (list.length > 0) {
+      const resolved = await resolvePlaceCoordinates(list[0].placeId, list[0].description);
+      if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
+        return resolved;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // 2. Fallback direct Nominatim geocoding
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(trimmed)}&limit=1`;
+    const resp = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (resp.ok) {
+      const list = await safeJson<any[]>(resp);
+      if (Array.isArray(list) && list.length > 0) {
+        const lat = parseFloat(list[0].lat);
+        const lng = parseFloat(list[0].lon);
+        if (isValidCoordinate(lat, lng)) {
+          return {
+            placeId: `osm-${list[0].osm_type || 'node'}-${list[0].osm_id || '0'}`,
+            formattedAddress: list[0].display_name,
+            coords: [lat, lng],
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Places Service] geocodeAddress fallback notice:', err);
+  }
+
+  return null;
+}
+
+/**
  * Reverse geocode [lat, lng] into a clean human-readable address.
  */
 export async function reverseGeocodeCoords(coords: [number, number]): Promise<string> {

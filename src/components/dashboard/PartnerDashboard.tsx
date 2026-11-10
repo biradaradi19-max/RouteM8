@@ -264,7 +264,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
             // Never report approximate/default coordinates as verified live GPS
             console.warn('[PartnerDashboard] Geolocation unavailable or denied:', err.message);
           },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
         );
       }
     }).catch(() => {});

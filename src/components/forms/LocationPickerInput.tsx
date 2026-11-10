@@ -7,7 +7,12 @@ import {
   X,
   Globe,
 } from 'lucide-react';
-import { getCurrentPositionAsync, isValidCoordinate, GPS_MAX_ACCEPTABLE_ACCURACY_METERS } from '../../services/geolocation';
+import {
+  getCurrentPositionAsync,
+  isValidCoordinate,
+  GPS_MAX_ACCEPTABLE_ACCURACY_METERS,
+  formatAccuracyDistance,
+} from '../../services/geolocation';
 import {
   searchGlobalPlaces,
   resolvePlaceCoordinates,
@@ -49,6 +54,8 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [locatingStatus, setLocatingStatus] = useState<string | null>(null);
+  const [lastReportedAccuracy, setLastReportedAccuracy] = useState<number | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [userBiasCoords, setUserBiasCoords] = useState<[number, number] | null>(null);
 
@@ -135,18 +142,27 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
     }
   };
 
-  // Handle "Use My Current Location" with fresh device GPS
+  // Handle "Use My Current Location" with fresh device GPS and satellite refinement
   const handleUseCurrentLocation = async () => {
     setGeoError(null);
     setIsLocating(true);
+    setLocatingStatus('Acquiring GPS from device...');
     setIsOpen(false);
 
     try {
       const pos = await getCurrentPositionAsync({
         enableHighAccuracy: true,
-        timeout: 15000,
+        timeout: 20000,
         maximumAge: 0,
         maxAccuracyMeters: GPS_MAX_ACCEPTABLE_ACCURACY_METERS,
+        desiredAccuracyMeters: 100,
+        maxRefineMs: 6000,
+        onProgress: (p) => {
+          setLocatingStatus(p.message);
+          if (p.accuracyMeters != null) {
+            setLastReportedAccuracy(p.accuracyMeters);
+          }
+        },
       });
       const [lat, lng] = pos;
 
@@ -172,6 +188,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
       setGeoError(err.message || 'Unable to retrieve your current location. Please check browser permissions.');
     } finally {
       setIsLocating(false);
+      setLocatingStatus(null);
     }
   };
 
@@ -181,6 +198,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
     setPredictions([]);
     setIsOpen(false);
     setGeoError(null);
+    setLastReportedAccuracy(null);
     onChange('', null, undefined);
     if (inputRef.current) inputRef.current.focus();
   };
@@ -403,7 +421,7 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
       )}
 
       {/* Coordinate Verification Status Pill */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', flexWrap: 'wrap', gap: '0.25rem' }}>
         {hasValidCoords && coords ? (
           <span
             style={{
@@ -417,7 +435,17 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
             <CheckCircle2 size={13} />
             <span>
               Verified Coordinates: {coords[0].toFixed(4)}, {coords[1].toFixed(4)}
+              {lastReportedAccuracy != null && (
+                <span style={{ opacity: 0.85, marginLeft: '0.35rem' }}>
+                  ({formatAccuracyDistance(lastReportedAccuracy)})
+                </span>
+              )}
             </span>
+          </span>
+        ) : isLocating ? (
+          <span style={{ color: 'var(--color-mint-600)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+            <span className="spinner" style={{ width: 11, height: 11 }} />
+            <span>{locatingStatus || 'Detecting GPS...'}</span>
           </span>
         ) : isResolving ? (
           <span style={{ color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -426,11 +454,11 @@ export const LocationPickerInput: React.FC<LocationPickerInputProps> = ({
           </span>
         ) : inputValue ? (
           <span style={{ color: 'var(--text-tertiary)' }}>
-            Select a location from suggestions to verify coordinates
+            Select a location from suggestions or set pin on map
           </span>
         ) : (
           <span style={{ color: 'var(--text-tertiary)' }}>
-            Worldwide location search enabled
+            Worldwide location search enabled • GPS or Map Pin
           </span>
         )}
       </div>

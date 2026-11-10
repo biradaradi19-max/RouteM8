@@ -4,7 +4,7 @@ import { verifyFirebaseIdToken, type VerifiedUser } from '../config/firebaseAdmi
 import { DeliveryRequest } from '../models/DeliveryRequest.js';
 import { Location } from '../models/Location.js';
 import { partnerPresenceService } from '../services/partnerPresence.js';
-import { toMongoIdFilter, inMemoryLocations } from '../routes/deliveries.js';
+import { toMongoIdFilter, inMemoryLocations, shouldPersistTelemetryLog } from '../routes/deliveries.js';
 
 interface AuthenticatedSocket extends Socket {
   data: {
@@ -271,8 +271,7 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
             }
           }
 
-          // Persist latest location to MongoDB
-          const locDoc = await Location.create({
+          const locationPayload = {
             deliveryId,
             transporterId: userId,
             latitude,
@@ -280,18 +279,13 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
             heading: typeof heading === 'number' ? heading : undefined,
             speed: typeof speed === 'number' ? speed : undefined,
             accuracy: numericAccuracy,
-          });
-
-          const locationPayload = {
-            deliveryId,
-            transporterId: userId,
-            latitude,
-            longitude,
-            heading: locDoc.heading,
-            speed: locDoc.speed,
-            accuracy: numericAccuracy,
             updatedAt: nowIso,
           };
+
+          // Optimize MongoDB writes for Atlas M0: throttle breadcrumb insertions
+          if (shouldPersistTelemetryLog(deliveryId, latitude, longitude)) {
+            await Location.create(locationPayload).catch(() => {});
+          }
 
           // Update DeliveryRequest document's cached lastKnownLocation
           await DeliveryRequest.updateOne(
@@ -302,8 +296,9 @@ export function setupSocketServer(httpServer: HttpServer): SocketIOServer {
           // Update in-memory cache for fast retrieval
           inMemoryLocations.set(deliveryId, locationPayload);
 
-          // Broadcast to delivery room
+          // Broadcast to delivery room on both standard event channels
           io.to(`delivery:${deliveryId}`).emit('location:change', locationPayload);
+          io.to(`delivery:${deliveryId}`).emit('delivery:location', locationPayload);
 
           if (callback) callback({ success: true, location: locationPayload });
         } catch (err: any) {

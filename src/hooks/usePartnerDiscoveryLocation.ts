@@ -85,7 +85,7 @@ export function usePartnerDiscoveryLocation(): UsePartnerDiscoveryLocationReturn
             setCoords(null);
             setAccuracy(acc);
             setLocationStatus('getting_location');
-            setErrorMessage(`Waiting for accurate GPS lock (current accuracy ±${(acc / 1000).toFixed(1)} km is too coarse)...`);
+            setErrorMessage(`Waiting for accurate GPS lock (current accuracy ±${(acc / 1000).toFixed(1)} km is too coarse). Android users: ensure "Use precise location" is enabled in browser site permissions.`);
             return;
           }
 
@@ -126,7 +126,7 @@ export function usePartnerDiscoveryLocation(): UsePartnerDiscoveryLocationReturn
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 20000,
         maximumAge: 0,
       }
     );

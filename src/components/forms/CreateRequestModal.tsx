@@ -4,6 +4,8 @@ import type { ItemSize, RequestCategory, RequestUrgency } from '../../types';
 import { X, Package, DollarSign, Clock, AlertCircle } from 'lucide-react';
 import { LocationPickerInput } from './LocationPickerInput';
 import { CreateRequestRouteMap } from './CreateRequestRouteMap';
+import { geocodeAddress } from '../../services/places';
+import { isValidCoordinate } from '../../services/geolocation';
 
 interface CreateRequestModalProps {
   isOpen: boolean;
@@ -38,28 +40,93 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
     setIsSubmitting(true);
     setErrorMsg(null);
 
-    // Coordinate validation requirement
-    if (!pickupCoords || !dropoffCoords) {
-      setErrorMsg('Please select a verified pickup location and destination with valid coordinates.');
+    // 1. Mandatory title and details check
+    if (!title.trim()) {
+      setErrorMsg('Item or errand title is required.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (!description.trim()) {
+      setErrorMsg('Handover instructions and details are required.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 2. Validate pickup address
+    if (!pickupAddress.trim()) {
+      setErrorMsg('Pickup location is required. Please search an address, pick on map, or click "Use My Current Location".');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 3. Resolve pickup coordinates if not yet verified
+    let effectivePickupCoords = pickupCoords;
+    let effectivePickupAddress = pickupAddress;
+    if (!effectivePickupCoords) {
+      try {
+        const resolved = await geocodeAddress(pickupAddress.trim());
+        if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
+          effectivePickupCoords = resolved.coords;
+          effectivePickupAddress = resolved.formattedAddress;
+          setPickupCoords(resolved.coords);
+          setPickupAddress(resolved.formattedAddress);
+        }
+      } catch {
+        // Fall through to validation check
+      }
+    }
+
+    if (!effectivePickupCoords || !isValidCoordinate(effectivePickupCoords[0], effectivePickupCoords[1])) {
+      setErrorMsg('Please verify pickup coordinates by selecting an address from the suggestions or placing a pin on the map.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 4. Validate dropoff destination
+    if (!dropoffAddress.trim()) {
+      setErrorMsg('Dropoff destination is required. Please search an address or place a pin on the map.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 5. Resolve dropoff coordinates if not yet verified
+    let effectiveDropoffCoords = dropoffCoords;
+    let effectiveDropoffAddress = dropoffAddress;
+    if (!effectiveDropoffCoords) {
+      try {
+        const resolved = await geocodeAddress(dropoffAddress.trim());
+        if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
+          effectiveDropoffCoords = resolved.coords;
+          effectiveDropoffAddress = resolved.formattedAddress;
+          setDropoffCoords(resolved.coords);
+          setDropoffAddress(resolved.formattedAddress);
+        }
+      } catch {
+        // Fall through to validation check
+      }
+    }
+
+    if (!effectiveDropoffCoords || !isValidCoordinate(effectiveDropoffCoords[0], effectiveDropoffCoords[1])) {
+      setErrorMsg('Please verify dropoff destination coordinates by selecting an address from suggestions or placing a pin on the map.');
       setIsSubmitting(false);
       return;
     }
 
     try {
       await createRequest({
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         category,
-        pickupAddress,
-        pickupCoords,
+        pickupAddress: effectivePickupAddress,
+        pickupCoords: effectivePickupCoords,
         pickupPlaceId,
-        dropoffAddress,
-        dropoffCoords,
+        dropoffAddress: effectiveDropoffAddress,
+        dropoffCoords: effectiveDropoffCoords,
         dropoffPlaceId,
         itemSize,
         compensation: Number(compensation),
         urgency,
-        neededBy,
+        neededBy: neededBy.trim() || 'Today, 19:00',
         distanceKm: routeStats?.distanceKm,
         estimatedDurationMin: routeStats?.durationMin,
       } as any);
@@ -125,7 +192,7 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
             <label className="form-label" htmlFor="req-title">Item or Errand Title</label>
             <input
@@ -247,6 +314,16 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
               dropoffCoords={dropoffCoords}
               pickupAddress={pickupAddress}
               dropoffAddress={dropoffAddress}
+              onPickupCoordsChanged={(coords, address) => {
+                setPickupCoords(coords);
+                if (address) setPickupAddress(address);
+                setErrorMsg(null);
+              }}
+              onDropoffCoordsChanged={(coords, address) => {
+                setDropoffCoords(coords);
+                if (address) setDropoffAddress(address);
+                setErrorMsg(null);
+              }}
               onRouteComputed={(stats) => setRouteStats(stats)}
             />
           </div>

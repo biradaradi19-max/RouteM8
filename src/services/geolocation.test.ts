@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   formatGeolocationError,
   getCurrentPositionAsync,
+  acquireAccuratePosition,
+  formatAccuracyDistance,
   isCoordinateStale,
   calculateDistanceMeters,
   shouldBroadcastLocation,
@@ -167,6 +169,162 @@ describe('Route M8 Geolocation Service', () => {
       });
 
       await expect(getCurrentPositionAsync()).rejects.toThrow(/timed out/i);
+    });
+  });
+
+  describe('formatAccuracyDistance', () => {
+    it('formats meters when under 1000m', () => {
+      expect(formatAccuracyDistance(15)).toBe('±15m');
+      expect(formatAccuracyDistance(150)).toBe('±150m');
+    });
+
+    it('formats kilometers when 1000m or above', () => {
+      expect(formatAccuracyDistance(198000)).toBe('±198.0 km');
+      expect(formatAccuracyDistance(2500)).toBe('±2.5 km');
+    });
+
+    it('handles null and undefined gracefully', () => {
+      expect(formatAccuracyDistance(null)).toBe('unknown');
+      expect(formatAccuracyDistance(undefined)).toBe('unknown');
+    });
+  });
+
+  describe('acquireAccuratePosition (Satellite Refinement & Coarse Filtering)', () => {
+    it('resolves immediately when initial reading has high accuracy (<= 100m)', async () => {
+      const mockWatchPosition = (
+        success: (pos: GeolocationPosition) => void,
+        _error?: any,
+        _opts?: any
+      ) => {
+        success({
+          coords: {
+            latitude: 18.5204,
+            longitude: 73.8567,
+            accuracy: 12,
+          },
+          timestamp: Date.now(),
+        } as unknown as GeolocationPosition);
+        return 1;
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          watchPosition: mockWatchPosition,
+          clearWatch: vi.fn(),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      const res = await acquireAccuratePosition({ timeout: 20000 });
+      expect(res.coords).toEqual([18.5204, 73.8567]);
+      expect(res.accuracy).toBe(12);
+      expect(res.isRefined).toBe(true);
+    });
+
+    it('refines when first reading is coarse (±180 km) and second reading locks high accuracy', async () => {
+      const progressUpdates: string[] = [];
+
+      const mockWatchPosition = (
+        success: (pos: GeolocationPosition) => void,
+        _error?: any,
+        _opts?: any
+      ) => {
+        // 1. Initial coarse Wi-Fi/cell reading
+        success({
+          coords: { latitude: 18.5000, longitude: 73.8000, accuracy: 180000 },
+          timestamp: Date.now(),
+        } as unknown as GeolocationPosition);
+
+        // 2. Refined GNSS lock shortly after
+        setTimeout(() => {
+          success({
+            coords: { latitude: 18.5204, longitude: 73.8567, accuracy: 8 },
+            timestamp: Date.now(),
+          } as unknown as GeolocationPosition);
+        }, 50);
+
+        return 2;
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          watchPosition: mockWatchPosition,
+          clearWatch: vi.fn(),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      const res = await acquireAccuratePosition({
+        timeout: 20000,
+        maxRefineMs: 500,
+        onProgress: (p) => progressUpdates.push(p.message),
+      });
+
+      expect(res.coords).toEqual([18.5204, 73.8567]);
+      expect(res.accuracy).toBe(8);
+      expect(res.isRefined).toBe(true);
+      expect(progressUpdates.some((m) => m.includes('180.0 km'))).toBe(true);
+    });
+
+    it('rejects with clear user guidance if reading remains coarse (> 1000m) after refinement period', async () => {
+      const mockWatchPosition = (
+        success: (pos: GeolocationPosition) => void,
+        _error?: any,
+        _opts?: any
+      ) => {
+        // Coarse reading only
+        success({
+          coords: { latitude: 18.5000, longitude: 73.8000, accuracy: 198000 },
+          timestamp: Date.now(),
+        } as unknown as GeolocationPosition);
+        return 3;
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          watchPosition: mockWatchPosition,
+          clearWatch: vi.fn(),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      await expect(
+        acquireAccuratePosition({
+          timeout: 20000,
+          maxAccuracyMeters: 1000,
+          maxRefineMs: 50,
+        })
+      ).rejects.toThrow(/GPS accuracy \(±198\.0 km\) is too coarse/);
+    });
+
+    it('rejects with permission denied message when user denies access', async () => {
+      const mockWatchPosition = (
+        _success: any,
+        error: (err: GeolocationPositionError) => void
+      ) => {
+        error({
+          code: 1,
+          message: 'Permission Denied',
+          PERMISSION_DENIED: 1,
+          POSITION_UNAVAILABLE: 2,
+          TIMEOUT: 3,
+        } as GeolocationPositionError);
+        return 4;
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          watchPosition: mockWatchPosition,
+          clearWatch: vi.fn(),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      await expect(acquireAccuratePosition()).rejects.toThrow(/Location access was denied/i);
     });
   });
 });
