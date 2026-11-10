@@ -191,11 +191,12 @@ describe('LiveKit Cloud Integration & Server Token Minting Flows', () => {
     expect(completedData.error).toContain('Calling is not available for deliveries in \'completed\' status');
   });
 
-  it('8. rejects token request with 403 when user lacks a verified phone number', async () => {
+  it('8. permits call token without requiring phone verification for matched delivery participant', async () => {
     const target = inMemoryDeliveries.find((d) => d.id === testDeliveryId);
     if (target) {
       target.status = 'matched';
       target.transporterId = 'unverified-phone-partner';
+      target.transporterName = 'Express Transporter';
     }
 
     const res = await fetch(`${baseUrl}/api/livekit/token`, {
@@ -207,10 +208,11 @@ describe('LiveKit Cloud Integration & Server Token Minting Flows', () => {
       body: JSON.stringify({ deliveryId: testDeliveryId }),
     });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
     const data: any = await res.json();
-    expect(data.error).toContain('Phone verification required');
-    expect(data.requiresPhoneVerification).toBe(true);
+    expect(data.token).toBeDefined();
+    expect(data.room).toBe(`delivery-${testDeliveryId}`);
+    expect(data.participantIdentity).toBe('unverified-phone-partner');
   });
 });
 

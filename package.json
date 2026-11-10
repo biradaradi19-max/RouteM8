@@ -8,7 +8,7 @@
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run --max-concurrency 3",
+    "test": "vitest run --pool=threads",
     "server": "tsx server/index.ts",
     "admin": "tsx scripts/admin.ts",
     "admin:confirm": "tsx scripts/admin.ts confirm"

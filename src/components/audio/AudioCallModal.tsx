@@ -13,13 +13,11 @@
 // ============================================================================
 
 import React, { useEffect, useRef } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import {
   Mic,
   MicOff,
   Video,
   VideoOff,
-  Phone,
   PhoneOff,
   PhoneCall,
   ShieldCheck,
@@ -56,7 +54,6 @@ export const AudioCallModal: React.FC<AudioCallModalProps> = ({
   call,
   hasP2pGpsSync = false,
 }) => {
-  const { openPhoneVerificationModal } = useAuth();
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -501,33 +498,6 @@ export const AudioCallModal: React.FC<AudioCallModalProps> = ({
                   <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', opacity: 0.9 }}>
                     Provide <code>LIVEKIT_API_KEY</code>, <code>LIVEKIT_API_SECRET</code>, and <code>LIVEKIT_URL</code> in your environment.
                   </p>
-                )}
-                {call.requiresPhoneVerification && (
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        openPhoneVerificationModal();
-                      }}
-                      style={{
-                        padding: '0.45rem 0.875rem',
-                        backgroundColor: '#10B981',
-                        color: '#FFFFFF',
-                        borderRadius: 'var(--radius-md, 0.375rem)',
-                        border: 'none',
-                        fontSize: '0.8125rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.375rem',
-                      }}
-                    >
-                      <Phone size={14} />
-                      <span>Verify Phone with Spark Test Number</span>
-                    </button>
-                  </div>
                 )}
               </div>
             </div>

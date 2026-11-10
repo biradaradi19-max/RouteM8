@@ -308,10 +308,7 @@ export function useLiveKitCall({
     const tokenRes = await requestLiveKitToken(deliveryId, selectedMode);
 
     if (!tokenRes.success || !tokenRes.data) {
-      const isPhoneReq =
-        Boolean((tokenRes as any).requiresPhoneVerification) ||
-        Boolean(tokenRes.error?.toLowerCase().includes('phone verification'));
-      setRequiresPhoneVerification(isPhoneReq);
+      setRequiresPhoneVerification(false);
       setError(tokenRes.error || 'Failed to authenticate call with server.');
       setMissingConfig(Boolean(tokenRes.missingConfig));
       setCallState('error');

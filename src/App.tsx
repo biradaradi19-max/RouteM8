@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/dashboard/Sidebar';
@@ -12,14 +12,12 @@ import { TermsOfServiceView } from './components/legal/TermsOfServiceView';
 import { CreateRequestModal } from './components/forms/CreateRequestModal';
 import { PublishJourneyModal } from './components/forms/PublishJourneyModal';
 import { AuthModal } from './components/auth/AuthModal';
-import { PhoneVerificationModal } from './components/auth/PhoneVerificationModal';
 import { SupabaseConfigModal } from './components/forms/SupabaseConfigModal';
 import type { DeliveryRequest, PublishedJourney } from './types';
 
 
 const MainAppContent: React.FC = () => {
   const { currentView, setCurrentView, selectRequestAndJourney } = useApp();
-  const { isPhoneVerificationModalOpen, closePhoneVerificationModal } = useAuth();
 
   // Modal Visibility States
   const [isCreateReqOpen, setIsCreateReqOpen] = useState(false);
@@ -126,11 +124,6 @@ const MainAppContent: React.FC = () => {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-      />
-
-      <PhoneVerificationModal
-        isOpen={isPhoneVerificationModalOpen}
-        onClose={closePhoneVerificationModal}
       />
 
       <SupabaseConfigModal

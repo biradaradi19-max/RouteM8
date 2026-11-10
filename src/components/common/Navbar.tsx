@@ -10,8 +10,6 @@ import {
   Package,
   User, 
   Settings,
-  Phone,
-  CheckCircle2,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -30,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleMobileMenu
 }) => {
   const { currentView, setCurrentView, theme, toggleTheme, activeRoleMode, setActiveRoleMode } = useApp();
-  const { user, isAuthenticated, openPhoneVerificationModal } = useAuth();
+  const { user, isAuthenticated } = useAuth();
 
   // Allow all users and testers to freely toggle between Requester and Delivery Partner roles
   const isBothRole = true;
@@ -219,53 +217,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
-
-          {/* Phone Verification Pill / Action Button */}
-          {isAuthenticated && user && !user.isPhoneVerified && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openPhoneVerificationModal();
-              }}
-              className="btn btn-sm desktop-only"
-              style={{
-                backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                color: '#D97706',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                padding: '0.25rem 0.5rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-              }}
-              title="Verify phone with Firebase Spark test numbers"
-            >
-              <Phone size={12} />
-              <span>Verify Phone</span>
-            </button>
-          )}
-
-          {isAuthenticated && user && user.isPhoneVerified && (
-            <span
-              className="desktop-only"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                fontSize: '0.6875rem',
-                padding: '0.1875rem 0.5rem',
-                borderRadius: 'var(--radius-full, 9999px)',
-                backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                color: '#059669',
-                fontWeight: 600,
-              }}
-              title={`Firebase Verified Phone: ${user.phone || 'Linked'}`}
-            >
-              <CheckCircle2 size={11} />
-              <span>Phone Verified</span>
-            </span>
-          )}
 
           {/* Auth Button or User Profile Badge */}
           {isAuthenticated && user ? (
