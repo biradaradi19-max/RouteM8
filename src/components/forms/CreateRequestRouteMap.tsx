@@ -38,6 +38,8 @@ const LeafletRouteMapPreview: React.FC<{
 
   const onMapClickRef = useRef(onMapClick);
   const onMarkerDragRef = useRef(onMarkerDrag);
+  const initialCenterRef = useRef<[number, number]>(pickupCoords || dropoffCoords || [20.0, 77.0]);
+  const initialZoomRef = useRef<number>(pickupCoords ? 13 : 5);
 
   useEffect(() => {
     onMapClickRef.current = onMapClick;
@@ -47,8 +49,8 @@ const LeafletRouteMapPreview: React.FC<{
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const initialCenter = pickupCoords || dropoffCoords || [20.0, 77.0];
-    const initialZoom = pickupCoords ? 13 : 5;
+    const initialCenter = initialCenterRef.current;
+    const initialZoom = initialZoomRef.current;
 
     const map = L.map(containerRef.current, {
       center: [initialCenter[0], initialCenter[1]],

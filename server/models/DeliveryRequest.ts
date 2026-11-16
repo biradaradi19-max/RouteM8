@@ -1,4 +1,4 @@
-import mongoose, { Schema, type Document } from 'mongoose';
+import mongoose, { Schema, type Document, type Model } from 'mongoose';
 
 export type DeliveryStatus = 'open' | 'matched' | 'in_transit' | 'completed' | 'cancelled';
 export type ItemSize = 'small' | 'medium' | 'large';
@@ -26,6 +26,8 @@ export interface IDeliveryRequest extends Document {
   itemSize: ItemSize;
   weightEstimateKg?: number;
   compensation: number;
+  currency?: string;
+  currencyCode?: string;
   urgency: RequestUrgency;
   neededBy: string;
   status: DeliveryStatus;
@@ -39,6 +41,7 @@ export interface IDeliveryRequest extends Document {
   transporterAvatar?: string;
   transporterVehicle?: string;
   handoverPin: string;
+  handoverPinVerified?: boolean;
   handoverPinHash?: string;
   handoverPinSalt?: string;
   pinAttempts: number;
@@ -133,6 +136,18 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
       required: true,
       min: 0,
     },
+    currency: {
+      type: String,
+      default: 'INR',
+      uppercase: true,
+      trim: true,
+    },
+    currencyCode: {
+      type: String,
+      default: 'INR',
+      uppercase: true,
+      trim: true,
+    },
     urgency: {
       type: String,
       enum: ['standard', 'flexible', 'urgent'],
@@ -189,6 +204,10 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
       type: String,
       required: true,
     },
+    handoverPinVerified: {
+      type: Boolean,
+      default: false,
+    },
     handoverPinHash: {
       type: String,
       index: true,
@@ -239,5 +258,5 @@ DeliveryRequestSchema.index({ status: 1, createdAt: -1 });
 DeliveryRequestSchema.index({ requesterId: 1, createdAt: -1 });
 DeliveryRequestSchema.index({ transporterId: 1, status: 1 });
 
-export const DeliveryRequest =
-  mongoose.models.DeliveryRequest || mongoose.model<IDeliveryRequest>('DeliveryRequest', DeliveryRequestSchema);
+export const DeliveryRequest: Model<IDeliveryRequest> =
+  (mongoose.models.DeliveryRequest as Model<IDeliveryRequest>) || mongoose.model<IDeliveryRequest>('DeliveryRequest', DeliveryRequestSchema);

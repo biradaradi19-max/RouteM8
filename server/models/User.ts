@@ -1,4 +1,4 @@
-import mongoose, { Schema, type Document } from 'mongoose';
+import mongoose, { Schema, type Document, type Model } from 'mongoose';
 
 export type UserRole = 'customer' | 'requester' | 'transporter' | 'both' | 'admin';
 export type VerificationStatus =
@@ -69,7 +69,7 @@ const UserSchema = new Schema<IUser>(
     role: {
       type: String,
       enum: ['customer', 'requester', 'transporter', 'both', 'admin'],
-      default: 'both',
+      default: 'requester',
       index: true,
     },
     verificationStatus: {
@@ -154,4 +154,5 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
-export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
+export const User: Model<IUser> =
+  (mongoose.models.User as Model<IUser>) || mongoose.model<IUser>('User', UserSchema);

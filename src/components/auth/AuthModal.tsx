@@ -93,7 +93,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } else if (mode === 'onboarding') {
       await updateProfile({
-        role,
         organization: organization.trim() || undefined,
         commuteVehicle: vehicle.trim() || undefined,
         bio: bio.trim() || undefined,

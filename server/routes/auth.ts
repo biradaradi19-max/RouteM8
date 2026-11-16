@@ -1,6 +1,6 @@
 import { Router, type Response } from 'express';
-import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
-import { User, type UserRole } from '../models/User.js';
+import { requireAuth, requireAdmin, type AuthenticatedRequest } from '../middleware/auth.js';
+import { User } from '../models/User.js';
 import { VerificationRequest } from '../models/VerificationRequest.js';
 import { isDbConnected } from '../config/db.js';
 
@@ -48,11 +48,11 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response):
             firebaseUid: verifiedUser.uid,
             email: verifiedUser.email || `${verifiedUser.uid}@unknown.firebase`,
             fullName: verifiedUser.name || 'RouteM8 User',
-            role: 'both',
+            role: 'requester',
             verificationStatus: verifiedUser.emailVerified ? 'email_verified' : 'unverified',
             trustScore: 85,
             rating: 5.0,
-            partnerAvailable: true,
+            partnerAvailable: false,
             phone: verifiedUser.phoneNumber,
             isPhoneVerified: Boolean(verifiedUser.phoneNumber),
           });
@@ -75,7 +75,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response):
           email: verifiedUser.email || `${verifiedUser.uid}@unknown.firebase`,
           username: undefined,
           fullName: verifiedUser.name || 'RouteM8 User',
-          role: 'both',
+          role: 'requester',
           verificationStatus: verifiedUser.emailVerified ? 'email_verified' : 'unverified',
           accountStatus: 'active',
           organization: undefined,
@@ -86,7 +86,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response):
           rating: 5.0,
           avatarUrl: undefined,
           bio: undefined,
-          partnerAvailable: true,
+          partnerAvailable: false,
           phone: verifiedUser.phoneNumber,
           isPhoneVerified: Boolean(verifiedUser.phoneNumber),
         };
@@ -106,12 +106,22 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response):
 router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const verifiedUser = req.user!;
-    const { fullName, username, role, organization, commuteVehicle, bio, avatarUrl, partnerAvailable, phone } = req.body;
+    const { fullName, username, organization, commuteVehicle, bio, avatarUrl, partnerAvailable, phone } = req.body;
 
-    // Disallow regular users from granting themselves admin privileges via profile update
-    const safeRole: UserRole | undefined = role && ['customer', 'requester', 'transporter', 'both'].includes(role)
-      ? (role as UserRole)
-      : undefined;
+    // Privilege escalation protection: prevent users from modifying role, admin status, or verification attributes
+    if (
+      req.body.role !== undefined ||
+      req.body.isAdmin !== undefined ||
+      req.body.verificationStatus !== undefined ||
+      req.body.accountStatus !== undefined ||
+      req.body.trustScore !== undefined ||
+      req.body.rating !== undefined
+    ) {
+      res.status(403).json({
+        error: 'Forbidden: Modifying role, admin privileges, or verification status directly is prohibited',
+      });
+      return;
+    }
 
     if (isDbConnected()) {
       try {
@@ -134,7 +144,6 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
         }
 
         if (fullName !== undefined) user.fullName = String(fullName).trim();
-        if (safeRole) user.role = safeRole;
         if (organization !== undefined) user.organization = String(organization).trim();
         if (commuteVehicle !== undefined) user.commuteVehicle = String(commuteVehicle).trim();
         if (bio !== undefined) user.bio = String(bio).trim();
@@ -163,14 +172,14 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
       firebaseUid: verifiedUser.uid,
       email: verifiedUser.email || `${verifiedUser.uid}@unknown.firebase`,
       fullName: verifiedUser.name || 'RouteM8 User',
-      role: 'both',
+      role: 'requester',
       verificationStatus: verifiedUser.emailVerified ? 'email_verified' : 'unverified',
       accountStatus: 'active',
       trustScore: 85,
       completedDeliveries: 0,
       completedCommutes: 0,
       rating: 5.0,
-      partnerAvailable: true,
+      partnerAvailable: false,
     };
 
     if (username && username !== user.username) {
@@ -185,7 +194,6 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     }
 
     if (fullName !== undefined) user.fullName = String(fullName).trim();
-    if (safeRole) user.role = safeRole;
     if (organization !== undefined) user.organization = String(organization).trim();
     if (commuteVehicle !== undefined) user.commuteVehicle = String(commuteVehicle).trim();
     if (bio !== undefined) user.bio = String(bio).trim();
@@ -356,7 +364,7 @@ router.post('/partner-verification/selfie', requireAuth, async (req: Authenticat
 });
 
 // GET /api/auth/admin/users - Admin user management
-router.get('/admin/users', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.get('/admin/users', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const verifiedUser = req.user!;
     if (isDbConnected()) {
@@ -398,7 +406,7 @@ router.get('/admin/users', requireAuth, async (req: AuthenticatedRequest, res: R
 });
 
 // POST /api/auth/admin/verify - Admin review and update of verification status
-router.post('/admin/verify', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/admin/verify', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const verifiedUser = req.user!;
     const { targetUserId, newStatus, notes } = req.body;

@@ -20,6 +20,7 @@ import {
   Check,
   Radio,
   RefreshCw,
+  CreditCard,
 } from 'lucide-react';
 import type { DeliveryRequest, DeliveryStatus } from '../../types';
 import { MapView } from '../map/MapView';
@@ -27,6 +28,8 @@ import { CallButton } from '../audio/CallButton';
 import { AudioCallModal } from '../audio/AudioCallModal';
 import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { useTransporterLocation } from '../../hooks/useTransporterLocation';
+import { PartnerOnboardingCard } from '../partner/PartnerOnboardingCard';
+import { CheckoutModal } from '../payment/CheckoutModal';
 
 interface RequesterDashboardProps {
   onOpenCreateRequest: () => void;
@@ -61,6 +64,9 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
   // Audio & video call modal state for active delivery
   const [activeCallDelivery, setActiveCallDelivery] = useState<DeliveryRequest | null>(null);
   const [activeCallMode, setActiveCallMode] = useState<'audio' | 'video'>('audio');
+
+  // Checkout modal state
+  const [checkoutDelivery, setCheckoutDelivery] = useState<DeliveryRequest | null>(null);
 
   // Time-aware greeting
   const [greeting] = useState(computeGreeting);
@@ -165,29 +171,26 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         </div>
       )}
 
-      {/* 1. Requester Welcome Banner */}
-      <div style={{
-        backgroundColor: 'var(--bg-surface)',
-        borderRadius: 'var(--radius-xl)',
-        border: '1px solid var(--border-medium)',
+      {/* 1. Requester Welcome Banner - Modern Mobility OS */}
+      <div className="mobility-card" style={{
         padding: 'clamp(1.5rem, 3vw, 2.25rem)',
-        boxShadow: 'var(--shadow-xs)',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '1.5rem',
-        position: 'relative'
+        position: 'relative',
+        background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(22, 168, 120, 0.04) 100%)',
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.625rem', flexWrap: 'wrap' }}>
             <span className="badge badge-brand">
               <Package size={13} /> Requester Portal
             </span>
             <span className="badge badge-verified">
               <ShieldCheck size={13} /> {user?.organization || 'Verified Requester'}
             </span>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--color-mint-600)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+            <span style={{ fontSize: '0.8125rem', color: 'var(--color-mint-600)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
               ★ {user?.trustScore || 98}% Trust Score
             </span>
           </div>
@@ -196,7 +199,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
             {greeting}, {user?.fullName ? user.fullName.split(' ')[0] : 'Requester'}
           </h1>
           <p style={{ maxWidth: '640px', margin: 0, fontSize: '0.9375rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            Need groceries, parcels, or university campus items transported? Route M8 matches your delivery needs with verified commuters already traveling that way.
+            Post your parcels, campus supplies, or local deliveries and get matched with trusted community transporters already heading along your route corridor.
           </p>
         </div>
 
@@ -205,7 +208,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           <button
             onClick={onOpenCreateRequest}
             className="btn btn-primary"
-            style={{ padding: '0.875rem 1.625rem', fontSize: '0.9375rem', boxShadow: 'var(--shadow-sm)' }}
+            style={{ padding: '0.875rem 1.625rem', fontSize: '0.9375rem', boxShadow: '0 4px 14px rgba(22, 168, 120, 0.35)' }}
           >
             <PlusCircle size={20} />
             <span>Request a Delivery</span>
@@ -213,22 +216,22 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. Requester KPIs */}
+      {/* 2. Requester KPIs - Modern Mobility OS Stat Cards */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
         gap: '1.25rem'
       }}>
         {/* KPI 1: Active Requests */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Active Requests</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-50)', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-50)', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Package size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {activeRequests.length}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -238,15 +241,15 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         </div>
 
         {/* KPI 2: Completed Deliveries */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Completed Deliveries</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-brand-subtle)', color: 'var(--color-forest-800)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(16, 28, 44, 0.06)', color: 'var(--color-forest-850)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <CheckCircle2 size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {completedRequests.length}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
@@ -256,15 +259,15 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         </div>
 
         {/* KPI 3: Compensation Summary */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Compensation Spent</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <DollarSign size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               ${(Number(totalSpent) || 0).toFixed(2)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
@@ -274,15 +277,15 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
         </div>
 
         {/* KPI 4: Carbon Prevented */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Carbon Prevented</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-100)', color: 'var(--color-mint-700)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-100)', color: 'var(--color-mint-700)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Leaf size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {co2PreventedKg} kg
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
@@ -291,6 +294,9 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 2. Partner Onboarding & Status Banner */}
+      <PartnerOnboardingCard />
 
       {/* 3. In-Transit Deliveries: Live Tracking & Transporter Contact */}
       {inTransitRequests.length > 0 && (
@@ -754,6 +760,22 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                         </span>
                       )}
                       <button
+                        onClick={() => setCheckoutDelivery(req)}
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          color: 'var(--color-mint-600)',
+                          borderColor: 'rgba(22, 168, 120, 0.3)',
+                          backgroundColor: 'rgba(22, 168, 120, 0.05)',
+                        }}
+                        title="Simulate Sandbox Payment"
+                      >
+                        <CreditCard size={13} />
+                        <span>Pay (Sandbox)</span>
+                      </button>
+                      <button
                         onClick={() => onInspectMatch(req)}
                         className="btn btn-secondary btn-sm"
                       >
@@ -814,6 +836,20 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           delivery={activeCallDelivery}
           initialMode={activeCallMode}
           onClose={() => setActiveCallDelivery(null)}
+        />
+      )}
+
+      {/* Sandbox Checkout Modal for Online Payment */}
+      {checkoutDelivery && (
+        <CheckoutModal
+          isOpen={true}
+          onClose={() => setCheckoutDelivery(null)}
+          deliveryId={checkoutDelivery.id}
+          deliveryTitle={checkoutDelivery.title}
+          compensationInr={Number(checkoutDelivery.compensation) || 0}
+          onPaymentSuccess={() => {
+            refreshData();
+          }}
         />
       )}
 

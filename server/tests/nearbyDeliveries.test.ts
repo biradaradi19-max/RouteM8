@@ -295,7 +295,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
         headers: { Authorization: partnerToken },
       });
       expect(res.status).toBe(200);
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
 
       // Only del-nearby-1 (~0.38km) and del-nearby-2 (~3.98km) should be returned
       const ids = data.map((d) => d.id);
@@ -310,7 +310,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
         headers: { Authorization: partnerToken },
       });
       expect(res.status).toBe(200);
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
 
       expect(data.length).toBeGreaterThanOrEqual(2);
       // del-nearby-1 is closer than del-nearby-2
@@ -324,7 +324,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
         headers: { Authorization: partnerToken },
       });
       expect(res.status).toBe(200);
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
 
       const ids = data.map((d) => d.id);
       expect(ids).toContain('del-nearby-1');
@@ -338,7 +338,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
         headers: { Authorization: partnerToken },
       });
       expect(res.status).toBe(200);
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
 
       const ids = data.map((d) => d.id);
       expect(ids).toContain('del-nearby-1');
@@ -354,7 +354,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
       const res = await fetch(`${baseUrl}/api/deliveries/nearby?lat=${partnerLat}&lng=${partnerLng}&radiusKm=15`, {
         headers: { Authorization: partnerToken },
       });
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
       const ids = data.map((d) => d.id);
       expect(ids).not.toContain('del-own-request');
     });
@@ -363,7 +363,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
       const res = await fetch(`${baseUrl}/api/deliveries/nearby?lat=${partnerLat}&lng=${partnerLng}&radiusKm=15`, {
         headers: { Authorization: partnerToken },
       });
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
       const ids = data.map((d) => d.id);
       expect(ids).not.toContain('del-rejected-request');
     });
@@ -372,7 +372,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
       const res = await fetch(`${baseUrl}/api/deliveries/nearby?lat=${partnerLat}&lng=${partnerLng}&radiusKm=15`, {
         headers: { Authorization: partnerToken },
       });
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
       const ids = data.map((d) => d.id);
       expect(ids).not.toContain('del-matched-request');
     });
@@ -381,7 +381,7 @@ describe('Location-Based Nearby Delivery Discovery API (GET /api/deliveries/near
       const res = await fetch(`${baseUrl}/api/deliveries/nearby?lat=${partnerLat}&lng=${partnerLng}&radiusKm=15`, {
         headers: { Authorization: partnerToken },
       });
-      const data: any[] = await res.json();
+      const data = (await res.json()) as any[];
       const ids = data.map((d) => d.id);
       expect(ids).not.toContain('del-invalid-coords');
     });

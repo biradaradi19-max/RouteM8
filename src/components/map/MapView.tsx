@@ -209,10 +209,10 @@ export const MapView: React.FC<MapViewProps> = ({
       });
     };
 
-    // 1. Direct Commute Baseline Route
+    // 1. Direct Commute Baseline Route - Modern Mobility OS Deep Navy
     if (match && match.directPolyline.length > 0) {
       const directLine = L.polyline(match.directPolyline, {
-        color: '#123527',
+        color: '#101C2C',
         weight: 3.5,
         opacity: 0.45,
         dashArray: '6, 8',
@@ -220,10 +220,10 @@ export const MapView: React.FC<MapViewProps> = ({
       directLine.bindTooltip('Direct Commute Path (No Detour)', { sticky: true });
     }
 
-    // 2. Detour Route
+    // 2. Detour Route - Modern Mobility OS Emerald
     if (match && match.detourPolyline.length > 0) {
       const detourLine = L.polyline(match.detourPolyline, {
-        color: '#059669',
+        color: '#16A878',
         weight: 5,
         opacity: 0.9,
         lineCap: 'round',
@@ -236,7 +236,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!match && directRoutePolyline && directRoutePolyline.length > 0) {
       const isNavActive = Boolean(liveNavPolyline && liveNavPolyline.length > 0);
       const deliveryLine = L.polyline(directRoutePolyline, {
-        color: isNavActive ? '#10B981' : '#059669',
+        color: isNavActive ? '#16A878' : '#101C2C',
         weight: isNavActive ? 3.5 : 4.5,
         opacity: isNavActive ? 0.45 : 0.9,
         dashArray: isNavActive ? '5, 8' : undefined,
@@ -250,10 +250,10 @@ export const MapView: React.FC<MapViewProps> = ({
       directRoutePolyline.forEach((pt) => allPoints.push(pt));
     }
 
-    // 2.6 Active Turn-by-Turn Road Navigation from Live Transporter GPS
+    // 2.6 Active Turn-by-Turn Road Navigation from Live Transporter GPS - Emerald
     if (liveNavPolyline && liveNavPolyline.length > 0) {
       const navLine = L.polyline(liveNavPolyline, {
-        color: '#059669',
+        color: '#16A878',
         weight: 5.5,
         opacity: 0.95,
         lineCap: 'round',
@@ -270,33 +270,33 @@ export const MapView: React.FC<MapViewProps> = ({
 
     if (match) {
       const originMarker = L.marker(match.originCoords, {
-        icon: createMarkerIcon('A', '#0E291E', '#FFFFFF', '#34D399'),
+        icon: createMarkerIcon('A', '#101C2C', '#FFFFFF', '#16A878'),
       }).addTo(layerGroup);
       originMarker.bindPopup('<b>Commute Origin</b><br/>Journey Start');
       allPoints.push(match.originCoords);
 
       const destMarker = L.marker(match.destCoords, {
-        icon: createMarkerIcon('B', '#1B211E', '#FFFFFF', '#A7F3D0'),
+        icon: createMarkerIcon('B', '#101C2C', '#FFFFFF', '#64748B'),
       }).addTo(layerGroup);
       destMarker.bindPopup('<b>Commute Destination</b><br/>Final Journey Endpoint');
       allPoints.push(match.destCoords);
     }
 
-    // 4. Pickup Location Marker
+    // 4. Pickup Location Marker - Emerald
     const pickup = propPickup || (match ? match.pickupCoords : undefined);
     if (pickup) {
       const pickupMarker = L.marker(pickup, {
-        icon: createMarkerIcon('P', '#10B981', '#06150F', '#FFFFFF'),
+        icon: createMarkerIcon('P', '#16A878', '#FFFFFF', '#FFFFFF'),
       }).addTo(layerGroup);
       pickupMarker.bindPopup(`<b>Pickup Location</b><br/>${pickupAddress || 'Item Retrieval Point'}`);
       allPoints.push(pickup);
     }
 
-    // 5. Dropoff Location Marker
+    // 5. Dropoff Location Marker - Deep Navy
     const dropoff = propDropoff || (match ? match.dropoffCoords : undefined);
     if (dropoff) {
       const dropoffMarker = L.marker(dropoff, {
-        icon: createMarkerIcon('D', '#2DD4BF', '#06150F', '#FFFFFF'),
+        icon: createMarkerIcon('D', '#101C2C', '#FFFFFF', '#16A878'),
       }).addTo(layerGroup);
       dropoffMarker.bindPopup(`<b>Dropoff Location</b><br/>${dropoffAddress || 'Recipient Handover Point'}`);
       allPoints.push(dropoff);
@@ -305,10 +305,10 @@ export const MapView: React.FC<MapViewProps> = ({
     // 6. Transporter Live GPS Location Marker (with animated pulsing ring & staleness detection)
     if (transporterLocation) {
       const isStale = isCoordinateStale(transporterLocation.updatedAt, 60000);
-      const ringBg = isStale ? 'rgba(245, 158, 11, 0.22)' : 'rgba(16, 185, 129, 0.35)';
+      const ringBg = isStale ? 'rgba(245, 158, 11, 0.22)' : 'rgba(22, 168, 120, 0.35)';
       const ringAnim = isStale ? 'none' : 'pulse 1.8s infinite';
-      const borderColor = isStale ? '#F59E0B' : '#34D399';
-      const iconColor = isStale ? '#F59E0B' : '#34D399';
+      const borderColor = isStale ? '#F59E0B' : '#16A878';
+      const iconColor = isStale ? '#F59E0B' : '#16A878';
       const statusTitle = isStale ? 'Transporter Location (Signal Stale)' : 'Transporter Live GPS';
 
       const transporterIcon = L.divIcon({
@@ -320,13 +320,13 @@ export const MapView: React.FC<MapViewProps> = ({
               width: 32px;
               height: 32px;
               border-radius: 50%;
-              background: #06150F;
+              background: #101C2C;
               border: 2.5px solid ${borderColor};
               color: ${iconColor};
               display: flex;
               align-items: center;
               justify-content: center;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+              box-shadow: 0 4px 12px rgba(16, 28, 44, 0.35);
               transform: ${transporterLocation.heading ? `rotate(${transporterLocation.heading}deg)` : 'none'};
             ">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
@@ -344,10 +344,10 @@ export const MapView: React.FC<MapViewProps> = ({
         const accuracyRadius = Math.min(Math.max(transporterLocation.accuracy, 5), 1000);
         L.circle([transporterLocation.latitude, transporterLocation.longitude], {
           radius: accuracyRadius,
-          color: isStale ? '#F59E0B' : '#10B981',
+          color: isStale ? '#F59E0B' : '#16A878',
           weight: 1.5,
           opacity: isStale ? 0.4 : 0.65,
-          fillColor: isStale ? '#F59E0B' : '#10B981',
+          fillColor: isStale ? '#F59E0B' : '#16A878',
           fillOpacity: isStale ? 0.08 : 0.12,
           dashArray: isStale ? '4, 6' : undefined,
         }).addTo(layerGroup);

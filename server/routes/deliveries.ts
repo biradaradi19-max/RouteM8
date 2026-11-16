@@ -1,14 +1,17 @@
 import { Router, type Response } from 'express';
 import mongoose from 'mongoose';
 import multer from 'multer';
-import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth.js';
-import { DeliveryRequest, type DeliveryStatus } from '../models/DeliveryRequest.js';
+import { requireAuth, optionalAuth, requireApprovedPartner, type AuthenticatedRequest } from '../middleware/auth.js';
+import { DeliveryRequest, type DeliveryStatus, type ItemSize, type RequestUrgency, type RequestCategory } from '../models/DeliveryRequest.js';
 import { User } from '../models/User.js';
+import { PaymentOrder } from '../models/PaymentOrder.js';
+import { inMemoryPaymentOrders } from '../services/inMemoryStore.js';
 import { Activity } from '../models/Activity.js';
 import { Location } from '../models/Location.js';
 import { isDbConnected } from '../config/db.js';
 import { dispatchService } from '../services/dispatchService.js';
 import { calculateHaversineDistance } from '../services/matchingEngine.js';
+import { calculateAuthoritativeDeliveryPrice } from '../services/pricingEngine.js';
 import { generateHandoverPin, generatePinSalt, hashPin, verifyPinHash } from '../services/security.js';
 
 const router = Router();
@@ -30,45 +33,46 @@ export const upload = multer({
 
 export interface InMemDelivery {
   _id: string;
-  id: string;
+  id?: string;
   title: string;
-  description: string;
-  category: string;
-  pickupAddress: string;
-  pickupCoords: [number, number];
+  description?: string;
+  category?: RequestCategory | (string & {});
+  pickupAddress?: string;
+  pickupCoords?: [number, number];
   pickupPlaceId?: string;
-  dropoffAddress: string;
-  dropoffCoords: [number, number];
+  dropoffAddress?: string;
+  dropoffCoords?: [number, number];
   dropoffPlaceId?: string;
-  itemSize: string;
+  itemSize?: ItemSize | (string & {});
   weightEstimateKg?: number;
-  compensation: number;
-  urgency: string;
-  neededBy: string;
+  compensation?: number;
+  urgency?: RequestUrgency | (string & {});
+  neededBy?: string;
   status: DeliveryStatus;
   statusHistory?: any[];
-  requesterId: string;
-  requesterName: string;
-  requesterTrustScore: number;
+  requesterId?: string;
+  requesterName?: string;
+  requesterTrustScore?: number;
   requesterAvatar?: string;
   transporterId?: string;
   transporterName?: string;
   transporterAvatar?: string;
   transporterVehicle?: string;
-  handoverPin: string;
+  handoverPin?: string;
+  handoverPinVerified?: boolean;
   handoverPinHash?: string;
   handoverPinSalt?: string;
-  pinAttempts: number;
+  pinAttempts?: number;
   pinLockedUntil?: Date;
   proofPhotoUrl?: string;
-  rejectedBy: string[];
+  rejectedBy?: string[];
   distanceKm?: number;
   pickupDistanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
   lastKnownLocation?: any;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const INITIAL_COMMUNITY_DELIVERIES: InMemDelivery[] = [
@@ -437,14 +441,12 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       dropoffPlaceId,
       itemSize,
       weightEstimateKg,
-      compensation,
       urgency,
       neededBy,
-      distanceKm,
       estimatedDurationMin,
     } = req.body;
 
-    if (!title || !pickupAddress || !dropoffAddress || !pickupCoords || !dropoffCoords || compensation === undefined) {
+    if (!title || !pickupAddress || !dropoffAddress || !pickupCoords || !dropoffCoords) {
       res.status(400).json({ error: 'Missing required delivery fields' });
       return;
     }
@@ -484,7 +486,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
         d.requesterId === uid &&
         d.title === String(title).trim() &&
         d.status === 'open' &&
-        new Date(d.createdAt).getTime() >= sixtySecondsAgo.getTime()
+        new Date(d.createdAt || 0).getTime() >= sixtySecondsAgo.getTime()
       );
       if (dup) {
         res.status(409).json({
@@ -506,22 +508,41 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       ? req.body.id.trim()
       : new mongoose.Types.ObjectId().toString();
 
+    const validCategories: RequestCategory[] = ['groceries', 'campus-supplies', 'essentials', 'pharmacy', 'electronics', 'other'];
+    const sanitizedCategory: RequestCategory = (category && validCategories.includes(category as RequestCategory))
+      ? (category as RequestCategory)
+      : 'other';
+
+    const validItemSizes: ItemSize[] = ['small', 'medium', 'large'];
+    const sanitizedItemSize: ItemSize = (itemSize && validItemSizes.includes(itemSize as ItemSize))
+      ? (itemSize as ItemSize)
+      : 'medium';
+
+    const validUrgencies: RequestUrgency[] = ['standard', 'flexible', 'urgent'];
+    const sanitizedUrgency: RequestUrgency = (urgency && validUrgencies.includes(urgency as RequestUrgency))
+      ? (urgency as RequestUrgency)
+      : 'standard';
+
+    // Authoritative backend pricing & distance calculation (₹7.00/km; client cannot override distance or compensation)
+    const authoritativeDistanceKm = calculateHaversineDistance(pickupCoords, dropoffCoords);
+    const authoritativePricing = calculateAuthoritativeDeliveryPrice(authoritativeDistanceKm);
+
     const deliveryData: InMemDelivery = {
       _id: newId,
       id: newId,
       title: String(title).trim(),
       description: String(description || 'Standard delivery errand').trim(),
-      category: category || 'other',
+      category: sanitizedCategory,
       pickupAddress: String(pickupAddress).trim(),
       pickupCoords,
       pickupPlaceId: pickupPlaceId ? String(pickupPlaceId).trim() : undefined,
       dropoffAddress: String(dropoffAddress).trim(),
       dropoffCoords,
       dropoffPlaceId: dropoffPlaceId ? String(dropoffPlaceId).trim() : undefined,
-      itemSize: itemSize || 'medium',
+      itemSize: sanitizedItemSize,
       weightEstimateKg: weightEstimateKg ? Number(weightEstimateKg) : undefined,
-      compensation: Number(compensation),
-      urgency: urgency || 'standard',
+      compensation: authoritativePricing.amountRupees,
+      urgency: sanitizedUrgency,
       neededBy: neededBy || 'Today by 18:00',
       status: 'open',
       statusHistory: [
@@ -536,7 +557,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       requesterName: req.user!.name || 'RouteM8 Requester',
       requesterTrustScore: 98,
       requesterAvatar: req.user!.picture,
-      distanceKm: distanceKm !== undefined ? Number(distanceKm) : undefined,
+      distanceKm: authoritativePricing.distanceKm,
       estimatedDurationMin: estimatedDurationMin !== undefined ? Number(estimatedDurationMin) : undefined,
       handoverPin: rawPin,
       handoverPinHash: pinHash,
@@ -546,6 +567,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+    const generatedDeliveryId = new mongoose.Types.ObjectId().toString();
+    deliveryData._id = generatedDeliveryId;
+    deliveryData.id = generatedDeliveryId;
 
     if (isDbConnected()) {
       try {
@@ -555,12 +579,15 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
             firebaseUid: uid,
             email: req.user!.email || `${uid}@firebase.com`,
             fullName: req.user!.name || 'RouteM8 Requester',
-            role: 'both',
+            role: 'requester',
           });
         }
 
         const newDoc = await DeliveryRequest.create({
           ...deliveryData,
+          category: sanitizedCategory,
+          itemSize: sanitizedItemSize,
+          urgency: sanitizedUrgency,
           requesterName: requester.fullName,
           requesterTrustScore: requester.trustScore,
           requesterAvatar: requester.avatarUrl,
@@ -611,7 +638,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
 });
 
 // POST /api/deliveries/:id/accept - Partner accepts delivery atomically (Concurrency locked)
-router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/:id/accept', requireAuth, requireApprovedPartner, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
     const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
@@ -675,6 +702,22 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
         }
 
         if (delivery) {
+          // Link pre-match payment order if one exists (with ownership, state, and transporter atomicity guards)
+          await PaymentOrder.findOneAndUpdate(
+            {
+              deliveryId: delivery._id.toString(),
+              requesterId: delivery.requesterId,
+              status: { $in: ['created', 'pending', 'paid', 'split_pending'] },
+              $or: [
+                { transporterId: { $exists: false } },
+                { transporterId: null },
+                { transporterId: '' },
+                { transporterId: uid },
+              ],
+            },
+            { $set: { transporterId: uid } }
+          ).catch(() => {});
+
           await Activity.create({
             userId: uid,
             type: 'match_found',
@@ -729,6 +772,17 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
     target.transporterVehicle = 'Vehicle / Commuter';
     target.updatedAt = new Date();
 
+    const inMemOrder = inMemoryPaymentOrders.get(target._id) || (target.id ? inMemoryPaymentOrders.get(target.id) : undefined);
+    if (
+      inMemOrder &&
+      inMemOrder.requesterId === target.requesterId &&
+      ['created', 'pending', 'paid', 'split_pending'].includes(inMemOrder.status)
+    ) {
+      if (!inMemOrder.transporterId || inMemOrder.transporterId === uid) {
+        inMemOrder.transporterId = uid;
+      }
+    }
+
     const io = req.app.get('io');
     if (io) {
       const formatted = formatDelivery(target);
@@ -742,7 +796,7 @@ router.post('/:id/accept', requireAuth, async (req: AuthenticatedRequest, res: R
 });
 
 // POST /api/deliveries/:id/reject - Partner dismisses delivery from discovery
-router.post('/:id/reject', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/:id/reject', requireAuth, requireApprovedPartner, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const uid = req.user!.uid;
     const deliveryId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
@@ -932,6 +986,7 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
         delivery.pinAttempts = 0;
         delivery.pinLockedUntil = undefined;
         delivery.status = 'completed';
+        delivery.handoverPinVerified = true;
         delivery.statusHistory.push({
           status: 'completed',
           changedAt: new Date(),
@@ -1020,6 +1075,7 @@ router.post('/:id/verify-pin', requireAuth, async (req: AuthenticatedRequest, re
     target.pinAttempts = 0;
     target.pinLockedUntil = undefined;
     target.status = 'completed';
+    target.handoverPinVerified = true;
     target.updatedAt = new Date();
 
     const io = req.app.get('io');
@@ -1111,6 +1167,11 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
           return;
         }
 
+        if (delivery.status === 'completed' || delivery.status === 'cancelled') {
+          res.status(400).json({ error: `Location sharing stopped: delivery is ${delivery.status}` });
+          return;
+        }
+
         // Out-of-order stale update guard
         const existingLastKnown = (delivery as any).lastKnownLocation;
         if (existingLastKnown && existingLastKnown.updatedAt) {
@@ -1153,6 +1214,11 @@ router.post('/:id/location', requireAuth, async (req: AuthenticatedRequest, res:
 
     if (target.transporterId !== uid) {
       res.status(403).json({ error: 'Only the assigned delivery partner can stream location telemetry' });
+      return;
+    }
+
+    if (target.status === 'completed' || target.status === 'cancelled') {
+      res.status(400).json({ error: `Location sharing stopped: delivery is ${target.status}` });
       return;
     }
 

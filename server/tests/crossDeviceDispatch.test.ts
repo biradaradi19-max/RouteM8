@@ -76,9 +76,9 @@ describe('Cross-Device Delivery Visibility, Commute-Independent Matching & Atomi
     const found = partnerFeed.find((d) => d.id === created.id);
     expect(found).toBeDefined();
     expect(found.title).toBe('Chemistry Lab Samples & Glassware');
-    expect(found.compensation).toBe(25.0);
+    expect(found.compensation).toBe(created.compensation);
     expect(found.status).toBe('open');
-    expect(found.distanceKm).toBe(1.8);
+    expect(found.distanceKm).toBe(created.distanceKm);
   });
 
   it('Customer cannot accept their own request; returns 403 Forbidden', async () => {

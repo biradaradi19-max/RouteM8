@@ -1,68 +1,100 @@
 /* ==========================================================================
-   ROUTE M8 — DESIGN SYSTEM & TOKENS
-   Brand: "Your route. Someone's need. One connected community."
-   Aesthetic: Premium minimalism, deep forest green, charcoal, warm off-white, restrained mint
+   ROUTE M8 — MODERN MOBILITY OS DESIGN SYSTEM
+   Visual Identity: Deep Navy (#101C2C), Emerald Green (#16A878), Soft Background (#F5F7F8)
+   Typography: Plus Jakarta Sans / Outfit, Slate Secondary (#64748B), Amber Warnings, Red Errors
    ========================================================================== */
 
 :root {
-  /* Color Palette - Forest Greens */
-  --color-forest-950: #06150F;
-  --color-forest-900: #0A1E16;
-  --color-forest-850: #0E291E;
-  --color-forest-800: #123527;
-  --color-forest-700: #194634;
-  --color-forest-600: #235F47;
-  --color-forest-500: #2F7C5D;
-  --color-forest-400: #3EA079;
+  /* Modern Mobility OS - Deep Navy Palette */
+  --color-navy-950: #080E16;
+  --color-navy-900: #101C2C; /* Master Deep Navy */
+  --color-navy-850: #142337;
+  --color-navy-800: #1A2D46;
+  --color-navy-700: #233B5C;
+  --color-navy-600: #2E4B72;
+  --color-navy-500: #3D6191;
 
-  /* Mint Accents */
-  --color-mint-600: #059669;
-  --color-mint-500: #10B981;
-  --color-mint-400: #34D399;
-  --color-mint-300: #6EE7B7;
-  --color-mint-200: #A7F3D0;
-  --color-mint-100: #D1FAE5;
-  --color-mint-50:  #ECFDF5;
+  /* Forest Green Aliases (Backward-compatible mapping to Modern Navy) */
+  --color-forest-950: #080E16;
+  --color-forest-900: #101C2C;
+  --color-forest-850: #142337;
+  --color-forest-800: #1A2D46;
+  --color-forest-700: #233B5C;
+  --color-forest-600: #2E4B72;
+  --color-forest-500: #16A878;
+  --color-forest-400: #2AC491;
 
-  /* Charcoals & Neutrals */
-  --color-charcoal-950: #0D100F;
-  --color-charcoal-900: #131715;
-  --color-charcoal-800: #1B211E;
-  --color-charcoal-700: #262E2A;
-  --color-charcoal-600: #3B443F;
-  --color-charcoal-500: #57635C;
-  --color-charcoal-400: #76837C;
-  --color-charcoal-300: #A2ACA6;
-  --color-charcoal-200: #D0D6D2;
-  --color-charcoal-100: #E6EAE7;
+  /* Modern Mobility OS - Emerald Green Palette */
+  --color-emerald-600: #128861;
+  --color-emerald-500: #16A878; /* Master Emerald */
+  --color-emerald-400: #2AC491;
+  --color-emerald-300: #54D5AB;
+  --color-emerald-200: #A4EBD3;
+  --color-emerald-100: #D3F6EB;
+  --color-emerald-50:  #EDFAF5;
 
-  /* Warm Off-White Surfaces (Light Mode Base) */
-  --color-cream-base: #FBFBF8;
-  --color-cream-surface: #F5F5ED;
-  --color-cream-muted: #ECECE2;
-  --color-cream-border: #E2E2D6;
+  /* Mint Accents (Aliases mapping to Emerald) */
+  --color-mint-600: #128861;
+  --color-mint-500: #16A878;
+  --color-mint-400: #2AC491;
+  --color-mint-300: #54D5AB;
+  --color-mint-200: #A4EBD3;
+  --color-mint-100: #D3F6EB;
+  --color-mint-50:  #EDFAF5;
 
-  /* Semantic Variables (Light Theme Default) */
-  --bg-app: var(--color-cream-base);
-  --bg-surface: #FFFFFF;
+  /* Modern Slate Neutrals */
+  --color-slate-950: #0B131E;
+  --color-slate-900: #101C2C;
+  --color-slate-800: #1E293B;
+  --color-slate-700: #334155;
+  --color-slate-600: #475569;
+  --color-slate-500: #64748B; /* Master Slate Secondary */
+  --color-slate-400: #94A3B8;
+  --color-slate-300: #CBD5E1;
+  --color-slate-200: #E2E8F0;
+  --color-slate-100: #F1F5F9;
+  --color-slate-50:  #F8FAFC;
+
+  /* Charcoal Aliases (Backward-compatible mapping to Slate) */
+  --color-charcoal-950: #101C2C;
+  --color-charcoal-900: #1E293B;
+  --color-charcoal-800: #334155;
+  --color-charcoal-700: #475569;
+  --color-charcoal-600: #64748B;
+  --color-charcoal-500: #64748B;
+  --color-charcoal-400: #94A3B8;
+  --color-charcoal-300: #CBD5E1;
+  --color-charcoal-200: #E2E8F0;
+  --color-charcoal-100: #F1F5F9;
+
+  /* Soft Background Surfaces (Light Mode Default) */
+  --color-cream-base: #F5F7F8;
+  --color-cream-surface: #F8FAFC;
+  --color-cream-muted: #EFF2F5;
+  --color-cream-border: #E2E8F0;
+
+  /* Semantic Variables (Light Theme Default: Soft Background + White Cards) */
+  --bg-app: #F5F7F8; /* Master Soft Background */
+  --bg-surface: #FFFFFF; /* Pure White Cards */
   --bg-surface-elevated: #FFFFFF;
-  --bg-surface-subtle: var(--color-cream-surface);
-  --bg-surface-muted: var(--color-cream-muted);
-  --bg-brand: var(--color-forest-850);
-  --bg-brand-hover: var(--color-forest-800);
-  --bg-brand-subtle: #EBF4F0;
+  --bg-surface-subtle: #F8FAFC;
+  --bg-surface-muted: #EFF2F5;
+  --bg-brand: #101C2C; /* Deep Navy Brand Headers/Accent */
+  --bg-brand-hover: #1A2D46;
+  --bg-brand-subtle: #EDFAF5; /* Emerald Tint */
 
-  --text-primary: var(--color-charcoal-950);
-  --text-secondary: var(--color-charcoal-600);
-  --text-tertiary: var(--color-charcoal-400);
-  --text-brand: var(--color-forest-800);
+  --text-primary: #101C2C; /* Master Deep Navy Text */
+  --text-secondary: #64748B; /* Master Slate Secondary Text */
+  --text-tertiary: #94A3B8;
+  --text-brand: #101C2C;
   --text-inverse: #FFFFFF;
-  --text-mint: var(--color-mint-600);
+  --text-mint: #16A878;
+  --text-emerald: #16A878;
 
-  --border-subtle: rgba(19, 23, 21, 0.08);
-  --border-medium: rgba(19, 23, 21, 0.14);
-  --border-strong: rgba(19, 23, 21, 0.24);
-  --border-focus: var(--color-mint-500);
+  --border-subtle: rgba(16, 28, 44, 0.07);
+  --border-medium: rgba(16, 28, 44, 0.12);
+  --border-strong: rgba(16, 28, 44, 0.22);
+  --border-focus: #16A878;
 
   /* Status Colors */
   --status-pending-bg: #FEF3C7;
@@ -70,16 +102,16 @@
   --status-pending-border: #FCD34D;
 
   --status-matched-bg: #E0F2FE;
-  --status-matched-text: #075985;
+  --status-matched-text: #0369A1;
   --status-matched-border: #7DD3FC;
 
-  --status-active-bg: #ECFDF5;
-  --status-active-text: #065F46;
-  --status-active-border: #6EE7B7;
+  --status-active-bg: #EDFAF5;
+  --status-active-text: #128861;
+  --status-active-border: #A4EBD3;
 
-  --status-completed-bg: #F3F4F6;
-  --status-completed-text: #374151;
-  --status-completed-border: #D1D5DB;
+  --status-completed-bg: #F1F5F9;
+  --status-completed-text: #475569;
+  --status-completed-border: #CBD5E1;
 
   --status-danger-bg: #FEF2F2;
   --status-danger-text: #991B1B;
@@ -90,21 +122,21 @@
   --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Elevation & Shadows */
-  --shadow-xs: 0 1px 2px rgba(19, 23, 21, 0.04);
-  --shadow-sm: 0 2px 4px rgba(19, 23, 21, 0.04), 0 1px 2px rgba(19, 23, 21, 0.06);
-  --shadow-md: 0 4px 12px rgba(19, 23, 21, 0.06), 0 2px 4px rgba(19, 23, 21, 0.04);
-  --shadow-lg: 0 12px 32px rgba(19, 23, 21, 0.08), 0 4px 8px rgba(19, 23, 21, 0.04);
-  --shadow-xl: 0 20px 48px rgba(19, 23, 21, 0.12), 0 8px 16px rgba(19, 23, 21, 0.04);
+  /* Elevation & Shadows - Modern Precision */
+  --shadow-xs: 0 1px 2px rgba(16, 28, 44, 0.04);
+  --shadow-sm: 0 2px 6px rgba(16, 28, 44, 0.05), 0 1px 2px rgba(16, 28, 44, 0.03);
+  --shadow-md: 0 6px 18px rgba(16, 28, 44, 0.06), 0 2px 4px rgba(16, 28, 44, 0.02);
+  --shadow-lg: 0 14px 36px rgba(16, 28, 44, 0.08), 0 4px 10px rgba(16, 28, 44, 0.03);
+  --shadow-xl: 0 22px 52px rgba(16, 28, 44, 0.12), 0 8px 18px rgba(16, 28, 44, 0.04);
   --shadow-inner: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 
   /* Radii */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
-  --radius-2xl: 28px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 30px;
   --radius-full: 9999px;
 
   /* Transitions */
@@ -118,23 +150,24 @@
   --content-max-width: 1360px;
 }
 
-/* Dark Theme Overrides */
+/* Dark Theme Overrides - Modern Mobility OS Dark */
 [data-theme="dark"] {
-  --bg-app: var(--color-charcoal-950);
-  --bg-surface: var(--color-charcoal-900);
-  --bg-surface-elevated: var(--color-charcoal-800);
-  --bg-surface-subtle: #171D1A;
-  --bg-surface-muted: #212925;
-  --bg-brand: #13392A;
-  --bg-brand-hover: #194835;
-  --bg-brand-subtle: #0B251B;
+  --bg-app: #0B131E; /* Deep Obsidian Navy */
+  --bg-surface: #101C2C; /* Pure Navy Cards */
+  --bg-surface-elevated: #16253A;
+  --bg-surface-subtle: #142337;
+  --bg-surface-muted: #1A2D46;
+  --bg-brand: #16A878;
+  --bg-brand-hover: #128861;
+  --bg-brand-subtle: rgba(22, 168, 120, 0.12);
 
-  --text-primary: #F7FAF8;
-  --text-secondary: var(--color-charcoal-300);
-  --text-tertiary: var(--color-charcoal-400);
-  --text-brand: var(--color-mint-300);
-  --text-inverse: var(--color-charcoal-950);
-  --text-mint: var(--color-mint-400);
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-tertiary: #64748B;
+  --text-brand: #2AC491;
+  --text-inverse: #101C2C;
+  --text-mint: #2AC491;
+  --text-emerald: #2AC491;
 
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-medium: rgba(255, 255, 255, 0.14);
@@ -1047,6 +1080,139 @@ img, svg {
   .status-dot-connecting {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ==========================================================================
+   ROUTEM8 — MODERN MOBILITY OS UTILITY SUITE
+   ========================================================================== */
+
+.mobility-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
+}
+
+.mobility-card:hover {
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-md);
+}
+
+.mobility-stat-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.mobility-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-medium);
+}
+
+.btn-emerald {
+  background-color: #16A878;
+  color: #FFFFFF;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(22, 168, 120, 0.28);
+  transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.btn-emerald:hover:not(:disabled) {
+  background-color: #128861;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(22, 168, 120, 0.36);
+  color: #FFFFFF;
+}
+
+.btn-emerald:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-navy {
+  background-color: #101C2C;
+  color: #FFFFFF;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(16, 28, 44, 0.2);
+  transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.btn-navy:hover:not(:disabled) {
+  background-color: #1A2D46;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 28, 44, 0.28);
+  color: #FFFFFF;
+}
+
+.btn-navy:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.step-indicator-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--radius-full);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+}
+
+.step-indicator-pill.active {
+  background-color: rgba(22, 168, 120, 0.12);
+  color: #16A878;
+  border: 1px solid rgba(22, 168, 120, 0.35);
+}
+
+.step-indicator-pill.completed {
+  background-color: #EDFAF5;
+  color: #128861;
+}
+
+.step-indicator-pill.inactive {
+  background-color: transparent;
+  color: var(--text-tertiary);
+}
+
+.radar-ping-ring {
+  position: absolute;
+  border-radius: 50%;
+  animation: radar-pulse 2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+@keyframes radar-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
   }
 }
 

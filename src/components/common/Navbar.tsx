@@ -11,6 +11,7 @@ import {
   User, 
   Settings,
 } from 'lucide-react';
+import { CurrencySelector } from './CurrencySelector';
 
 interface NavbarProps {
   onOpenCreateRequest: () => void;
@@ -68,26 +69,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Route M8 Home"
           >
             <div style={{
-              width: '34px',
-              height: '34px',
-              borderRadius: '9px',
-              backgroundColor: 'var(--color-forest-850)',
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              backgroundColor: '#101C2C',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
-              boxShadow: 'var(--shadow-xs)'
+              boxShadow: '0 2px 8px rgba(16, 28, 44, 0.18)'
             }}>
-              <svg width="20" height="20" viewBox="0 0 64 64" fill="none">
-                <path d="M18 46C18 36 28 34 32 32C36 30 46 28 46 18" stroke="#2DD4BF" strokeWidth="5.5" strokeLinecap="round" />
-                <circle cx="18" cy="46" r="6" fill="#0E291E" stroke="#2DD4BF" strokeWidth="4" />
-                <circle cx="32" cy="32" r="5" fill="#34D399" />
-                <circle cx="46" cy="18" r="6" fill="#0E291E" stroke="#A7F3D0" strokeWidth="4" />
+              <svg width="22" height="22" viewBox="0 0 64 64" fill="none">
+                <path d="M18 46C18 36 28 34 32 32C36 30 46 28 46 18" stroke="#16A878" strokeWidth="5.5" strokeLinecap="round" />
+                <circle cx="18" cy="46" r="6" fill="#101C2C" stroke="#16A878" strokeWidth="4" />
+                <circle cx="32" cy="32" r="5" fill="#2AC491" />
+                <circle cx="46" cy="18" r="6" fill="#101C2C" stroke="#A4EBD3" strokeWidth="4" />
               </svg>
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.375rem' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1875rem', letterSpacing: '-0.025em', color: 'var(--text-primary)' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.025em', color: 'var(--text-primary)' }}>
                 Route M8
+              </span>
+              <span style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-emerald)', backgroundColor: 'var(--color-emerald-50)', padding: '0.125rem 0.375rem', borderRadius: '4px', border: '1px solid var(--color-emerald-200)' }}>
+                Mobility OS
               </span>
             </div>
           </div>
@@ -197,6 +201,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Publish Commute</span>
             </button>
           )}
+
+          {/* Location & Marketplace Currency Selector */}
+          <CurrencySelector compact />
 
           {/* Infrastructure & Settings Control */}
           <button

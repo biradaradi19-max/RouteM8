@@ -12,7 +12,7 @@ import {
   isLiveKitConfigured,
   setRuntimeLiveKitUrl,
 } from '../../services/livekitConfig';
-import { X, Server, CheckCircle2, Copy, AlertCircle, Map, Save, PhoneCall, ShieldCheck, Database } from 'lucide-react';
+import { X, Server, CheckCircle2, AlertCircle, Map, Save, PhoneCall, ShieldCheck, Database } from 'lucide-react';
 
 interface BackendStatusModalProps {
   isOpen: boolean;
@@ -22,7 +22,6 @@ interface BackendStatusModalProps {
 export const BackendStatusModal: React.FC<BackendStatusModalProps> = ({ isOpen, onClose }) => {
   const { backendStatus, backendError } = useApp();
   const { isFirebaseConnected } = useAuth();
-  const [copiedEnv, setCopiedEnv] = useState(false);
 
   const [mapsKeyInput, setMapsKeyInput] = useState<string>(() => getGoogleMapsApiKey());
   const [mapsMapIdInput, setMapsMapIdInput] = useState<string>(() => getGoogleMapsMapId());
@@ -32,30 +31,6 @@ export const BackendStatusModal: React.FC<BackendStatusModalProps> = ({ isOpen, 
   const [livekitSavedMsg, setLivekitSavedMsg] = useState(false);
 
   if (!isOpen) return null;
-
-  const envSnippet = `# Route M8 — Express, MongoDB, Firebase & LiveKit Configuration
-PORT=5000
-MONGODB_URI=mongodb+srv://<user>:<password>@cluster0.mongodb.net/routem8?retryWrites=true&w=majority
-FIREBASE_PROJECT_ID=routem8-36895
-# Optional: path to serviceAccountKey.json or inline JSON string
-FIREBASE_SERVICE_ACCOUNT_KEY=
-
-# LiveKit Audio Calling (Minted exclusively on Express backend)
-LIVEKIT_URL=wss://your-livekit-server.livekit.cloud
-LIVEKIT_API_KEY=devkey
-LIVEKIT_API_SECRET=secret
-
-# Client Variables (VITE_)
-VITE_FIREBASE_PROJECT_ID=routem8-36895
-VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
-VITE_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
-VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
-
-  const copyEnvSnippet = () => {
-    navigator.clipboard.writeText(envSnippet);
-    setCopiedEnv(true);
-    setTimeout(() => setCopiedEnv(false), 2000);
-  };
 
   const handleSaveMapsConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,34 +284,8 @@ VITE_LIVEKIT_URL=wss://your-livekit-server.livekit.cloud`;
           </form>
         </div>
 
-        {/* Configuration Instructions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div>
-            <label className="form-label">Production Environment Template (.env)</label>
-            <pre
-              style={{
-                backgroundColor: 'var(--bg-surface-subtle)',
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                fontSize: '0.75rem',
-                overflowX: 'auto',
-                fontFamily: 'monospace',
-                margin: 0,
-              }}
-            >
-              {envSnippet}
-            </pre>
-            <button
-              type="button"
-              onClick={copyEnvSnippet}
-              className="btn btn-secondary btn-sm"
-              style={{ marginTop: '0.5rem', width: '100%' }}
-            >
-              <Copy size={14} /> {copiedEnv ? 'Copied .env Template!' : 'Copy .env Template'}
-            </button>
-          </div>
-
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <button
             type="button"
             onClick={onClose}

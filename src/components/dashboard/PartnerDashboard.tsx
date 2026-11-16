@@ -29,8 +29,9 @@ import { AudioCallModal } from '../audio/AudioCallModal';
 import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { useTransporterLocation } from '../../hooks/useTransporterLocation';
 import { usePartnerDiscoveryLocation } from '../../hooks/usePartnerDiscoveryLocation';
-import { deliveriesApi } from '../../services/api';
+import { deliveriesApi, partnerApi, type PartnerApplicationInfo } from '../../services/api';
 import { PartnerIdentityVerificationModal } from '../verification/PartnerIdentityVerificationModal';
+import { PartnerOnboardingModal } from '../partner/PartnerOnboardingModal';
 
 function formatLastUpdated(date: Date | null): string {
   if (!date) return '';
@@ -65,7 +66,31 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     backendError,
     isLoadingData,
     refreshData,
+    setCurrentView,
   } = useApp();
+
+  // Partner application state & access barrier for unapproved users
+  const [partnerApp, setPartnerApp] = useState<PartnerApplicationInfo | null>(null);
+  const [isPartnerOnboardingOpen, setIsPartnerOnboardingOpen] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      partnerApi
+        .getApplication()
+        .then((res) => {
+          setPartnerApp(res.application);
+        })
+        .catch(() => {});
+    }
+  }, [user]);
+
+  const isApprovedPartner = Boolean(
+    !user ||
+      user.role === 'both' ||
+      user.role === 'transporter' ||
+      user.verificationStatus === 'gov_id_verified' ||
+      partnerApp?.status === 'approved'
+  );
 
   // Search & Filter state for Matching Opportunities
   const [searchQuery, setSearchQuery] = useState('');
@@ -340,6 +365,123 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
     }
   };
 
+  // Transporter Dashboard Access Barrier for unapproved requester accounts
+  if (!isApprovedPartner) {
+    return (
+      <div style={{ padding: 'clamp(1.5rem, 4vw, 3rem)', maxWidth: '850px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div
+          className="mobility-card"
+          style={{
+            padding: '3rem 2rem',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.25rem',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-subtle)',
+          }}
+        >
+          <div
+            style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: 'var(--radius-lg)',
+              backgroundColor: 'rgba(22, 168, 120, 0.12)',
+              color: 'var(--color-mint-600)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <ShieldCheck size={36} />
+          </div>
+
+          <div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
+              Delivery Partner Approval Required
+            </h2>
+            <p style={{ maxWidth: '580px', margin: '0 auto', fontSize: '0.9375rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              To view open parcel requests, match with sender corridors, and accept delivery jobs, you must have an approved RouteM8 Delivery Partner profile.
+            </p>
+          </div>
+
+          {partnerApp && (
+            <div
+              style={{
+                padding: '1.25rem',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: partnerApp.status === 'rejected' ? '#FEF2F2' : 'var(--bg-surface-subtle)',
+                border: `1px solid ${partnerApp.status === 'rejected' ? '#FECACA' : 'var(--border-subtle)'}`,
+                maxWidth: '540px',
+                width: '100%',
+                textAlign: 'left',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+                  Current Application Status:
+                </span>
+                <span
+                  className={`badge ${partnerApp.status === 'rejected' ? 'badge-warning' : 'badge-brand'}`}
+                  style={{
+                    textTransform: 'capitalize',
+                    backgroundColor: partnerApp.status === 'rejected' ? '#FEE2E2' : undefined,
+                    color: partnerApp.status === 'rejected' ? '#991B1B' : undefined,
+                  }}
+                >
+                  {partnerApp.status.replace('_', ' ')}
+                </span>
+              </div>
+
+              {partnerApp.status === 'rejected' && partnerApp.rejectionReason && (
+                <p style={{ margin: 0, fontSize: '0.8125rem', color: '#991B1B' }}>
+                  <strong>Review Feedback:</strong> {partnerApp.rejectionReason}
+                </p>
+              )}
+
+              {partnerApp.status === 'under_review' && (
+                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  Your application is currently being reviewed by administrators. You retain all requester abilities in the meantime.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center', marginTop: '0.5rem' }}>
+            <button
+              onClick={() => setIsPartnerOnboardingOpen(true)}
+              className="btn btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem' }}
+            >
+              <ShieldCheck size={16} />
+              <span>{partnerApp ? 'Check / Edit Application' : 'Apply to Become a Partner'}</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('dashboard')}
+              className="btn btn-secondary"
+              style={{ padding: '0.75rem 1.5rem' }}
+            >
+              Back to Requester Dashboard
+            </button>
+          </div>
+        </div>
+
+        <PartnerOnboardingModal
+          isOpen={isPartnerOnboardingOpen}
+          onClose={() => setIsPartnerOnboardingOpen(false)}
+          onApplicationUpdated={() => {
+            partnerApi
+              .getApplication()
+              .then((res) => setPartnerApp(res.application))
+              .catch(() => {});
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 'clamp(1.25rem, 3vw, 2.5rem)', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       
@@ -423,22 +565,19 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         </div>
       )}
 
-      {/* 1. Delivery Partner Header Banner & Availability Switcher */}
-      <div style={{
-        backgroundColor: 'var(--bg-surface)',
-        borderRadius: 'var(--radius-xl)',
-        border: '1px solid var(--border-medium)',
+      {/* 1. Delivery Partner Header Banner & Availability Switcher - Modern Mobility OS */}
+      <div className="mobility-card" style={{
         padding: 'clamp(1.5rem, 3vw, 2.25rem)',
-        boxShadow: 'var(--shadow-xs)',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '1.5rem',
-        position: 'relative'
+        position: 'relative',
+        background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(22, 168, 120, 0.04) 100%)',
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.625rem', flexWrap: 'wrap' }}>
             <span className="badge badge-brand">
               <Car size={13} /> Delivery Partner Portal
             </span>
@@ -511,7 +650,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           <button
             onClick={onOpenPublishJourney}
             className="btn btn-primary"
-            style={{ padding: '0.875rem 1.625rem', fontSize: '0.9375rem', boxShadow: 'var(--shadow-sm)' }}
+            style={{ padding: '0.875rem 1.625rem', fontSize: '0.9375rem', boxShadow: '0 4px 14px rgba(22, 168, 120, 0.35)' }}
           >
             <Car size={18} />
             <span>Publish My Journey</span>
@@ -519,22 +658,22 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. Partner Impact & Earnings KPIs */}
+      {/* 2. Partner KPIs - Modern Mobility OS Stat Cards */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
         gap: '1.25rem'
       }}>
         {/* KPI 1: Active In-Flight Deliveries */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Active Deliveries</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-50)', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active Deliveries</span>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-50)', color: 'var(--color-mint-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Package size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {activeDeliveries.length}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -544,15 +683,15 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         </div>
 
         {/* KPI 2: Published Corridors */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Published Corridors</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-brand-subtle)', color: 'var(--color-forest-800)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Published Corridors</span>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(16, 28, 44, 0.06)', color: 'var(--color-forest-850)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Car size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {journeys.length}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
@@ -567,15 +706,15 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         </div>
 
         {/* KPI 3: Total Earnings */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Total Earnings</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Earnings</span>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <DollarSign size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               ${(Number(totalEarned) || 0).toFixed(2)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
@@ -585,15 +724,15 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
         </div>
 
         {/* KPI 4: Detour Efficiency */}
-        <div className="kpi-card">
+        <div className="kpi-card mobility-stat-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Detour Efficiency</span>
-            <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-100)', color: 'var(--color-mint-700)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Detour Efficiency</span>
+            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-mint-100)', color: 'var(--color-mint-700)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Leaf size={18} />
             </div>
           </div>
           <div>
-            <div className="tabular-nums" style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+            <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               &lt; 7.5 min
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>

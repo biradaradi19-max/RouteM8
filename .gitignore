@@ -17,6 +17,21 @@ dist-ssr
 .env.production
 .env.development.local
 
+# Credentials & Service Account Keys
+*serviceAccountKey*.json
+service-account*.json
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+
+# Test coverage & build caches
+coverage/
+.nyc_output/
+.vite/
+.vitest-cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

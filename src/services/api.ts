@@ -474,4 +474,620 @@ export const placesApi = {
   },
 };
 
+export interface PartnerApplicationInfo {
+  _id?: string;
+  applicantId: string;
+  applicantEmail: string;
+  applicantName: string;
+  phone?: string;
+  status: 'draft' | 'submitted' | 'verification_pending' | 'under_review' | 'approved' | 'rejected' | 'suspended';
+  vehicleCategory: 'bicycle' | 'motorcycle' | 'scooter' | 'car' | 'ev' | 'van' | 'none';
+  identityVerificationId?: string;
+  vehicleVerificationId?: string;
+  rejectionReason?: string;
+  suspensionReason?: string;
+  notes?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  submittedAt?: string;
+  approvedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  identityVerification?: {
+    status: string;
+    maskedId: string;
+    idType: string;
+    verifiedAt?: string;
+  } | null;
+  vehicleVerification?: {
+    status: string;
+    isExempt: boolean;
+    drivingLicenceMasked?: string;
+    registrationNumberMasked?: string;
+    verifiedAt?: string;
+  } | null;
+}
+
+export interface AdminAuditLogEntry {
+  _id: string;
+  adminUserId: string;
+  adminEmail: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  previousState?: Record<string, any>;
+  newState?: Record<string, any>;
+  reason?: string;
+  createdAt: string;
+}
+
+export const partnerApi = {
+  async apply(payload: {
+    vehicleCategory: string;
+    phone?: string;
+    notes?: string;
+  }): Promise<{ success: boolean; application?: PartnerApplicationInfo; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to submit application' };
+      return { success: true, application: parsed.data?.application };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getApplication(): Promise<{
+    application: PartnerApplicationInfo | null;
+    identityVerification: any;
+    vehicleVerification: any;
+  }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/application`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok || !parsed.data) {
+        return { application: null, identityVerification: null, vehicleVerification: null };
+      }
+      return {
+        application: parsed.data.application || null,
+        identityVerification: parsed.data.identityVerification || null,
+        vehicleVerification: parsed.data.vehicleVerification || null,
+      };
+    } catch {
+      return { application: null, identityVerification: null, vehicleVerification: null };
+    }
+  },
+
+  async verifyIdentity(payload: {
+    idType: string;
+    consentObtained: boolean;
+    consentVersion?: string;
+  }): Promise<{ success: boolean; referenceId?: string; maskedId?: string; status?: string; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/verify-identity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Identity verification failed' };
+      return {
+        success: true,
+        referenceId: parsed.data?.referenceId,
+        maskedId: parsed.data?.maskedId,
+        status: parsed.data?.status,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async verifyVehicle(payload: {
+    vehicleCategory: string;
+    drivingLicenceNumber?: string;
+    registrationNumber?: string;
+  }): Promise<{ success: boolean; verification?: any; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/verify-vehicle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Vehicle verification failed' };
+      return { success: true, verification: parsed.data?.verification };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async submitForReview(): Promise<{ success: boolean; application?: PartnerApplicationInfo; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/submit-for-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to submit for review' };
+      return { success: true, application: parsed.data?.application };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getAdminApplications(params?: {
+    status?: string;
+    search?: string;
+  }): Promise<{ applications: PartnerApplicationInfo[] }> {
+    try {
+      let url = `${API_BASE}/partner/admin/applications`;
+      const queryParts: string[] = [];
+      if (params?.status) queryParts.push(`status=${encodeURIComponent(params.status)}`);
+      if (params?.search) queryParts.push(`search=${encodeURIComponent(params.search)}`);
+      if (queryParts.length > 0) url += `?${queryParts.join('&')}`;
+
+      const res = await fetchWithAuth(url);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok || !parsed.data) return { applications: [] };
+      return { applications: parsed.data.applications || [] };
+    } catch {
+      return { applications: [] };
+    }
+  },
+
+  async getAdminAuditLogs(): Promise<{ logs: AdminAuditLogEntry[] }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/admin/audit-logs`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok || !parsed.data) return { logs: [] };
+      return { logs: parsed.data.logs || [] };
+    } catch {
+      return { logs: [] };
+    }
+  },
+
+  async adminReview(payload: {
+    applicationId: string;
+    decision: 'approve' | 'reject' | 'suspend';
+    reason: string;
+  }): Promise<{ success: boolean; status?: string; application?: PartnerApplicationInfo; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/partner/admin/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Admin review failed' };
+      return {
+        success: true,
+        status: parsed.data?.status,
+        application: parsed.data?.application,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+};
+
+export interface CommissionSnapshotInfo {
+  ratePercent: number;
+  platformSharePaise: number;
+  partnerSharePaise: number;
+  calculatedAt: string;
+}
+
+export interface PaymentOrderInfo {
+  _id: string;
+  deliveryId: string;
+  requesterId: string;
+  transporterId?: string;
+  currency: string;
+  amountPaise: number;
+  commissionSnapshot: CommissionSnapshotInfo;
+  provider: 'mock' | 'cashfree' | 'razorpay';
+  providerOrderId?: string;
+  providerPaymentId?: string;
+  idempotencyKey: string;
+  status: 'created' | 'pending' | 'paid' | 'partially_refunded' | 'split_pending' | 'settled' | 'refunded' | 'failed' | 'cancelled';
+  paidAt?: string;
+  splitAt?: string;
+  createdAt: string;
+}
+
+export interface AdminFinancialOverview {
+  totalVolumePaise: number;
+  platformCommissionPaise: number;
+  transporterPayablePaise: number;
+  totalSettledPaise?: number;
+  totalNegativeExposurePaise?: number;
+  unresolvedDiscrepancyCount?: number;
+  pendingSettlementsCount: number;
+  failedSettlementsCount: number;
+  refundsCount: number;
+  totalRefundedPaise: number;
+  totalOrdersCount: number;
+  recentOrders: PaymentOrderInfo[];
+  recentSettlements: any[];
+  recentRefunds: any[];
+}
+
+export interface FinancialDiscrepancy {
+  id: string;
+  type: string;
+  severity: 'high' | 'medium' | 'low';
+  paymentOrderId?: string;
+  deliveryId?: string;
+  settlementId?: string;
+  transporterId?: string;
+  amountPaise: number;
+  description: string;
+  detectedAt: string;
+  resolved: boolean;
+  resolutionNote?: string;
+  resolvedBy?: { uid: string; email?: string };
+  resolvedAt?: string;
+  resolutionResult?: string;
+}
+
+export interface FinancialReconciliationReport {
+  timestamp: string;
+  summary: {
+    totalGrossVolumePaise: number;
+    totalPlatformCommissionPaise: number;
+    totalTransporterPayablePaise: number;
+    totalSettledPaise: number;
+    totalPendingSettlementPaise: number;
+    totalRefundedPaise: number;
+    totalFailedSettlementPaise: number;
+    totalNegativeExposurePaise: number;
+    discrepancyCount: number;
+    isClean: boolean;
+  };
+  discrepancies: FinancialDiscrepancy[];
+}
+
+export interface MockVendorAccountInfo {
+  vendorId: string;
+  transporterId: string;
+  transporterName: string;
+  verificationStatus: string;
+  bankAccountRef: string;
+  ifscCode: string;
+  isEligibleForSettlement: boolean;
+  unresolvedNegativeBalancePaise: number;
+  totalNegativeExposureRecoveredPaise?: number;
+  lastRecoveryAt?: string;
+  isMock: boolean;
+  createdAt: string;
+}
+
+export const paymentApi = {
+  async getCurrencies(): Promise<{
+    success: boolean;
+    currencies?: Record<string, any>;
+    defaultCurrency?: string;
+    defaultCountry?: string;
+    error?: string;
+  }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/currencies`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to fetch currencies' };
+      return {
+        success: true,
+        currencies: parsed.data?.currencies,
+        defaultCurrency: parsed.data?.defaultCurrency,
+        defaultCountry: parsed.data?.defaultCountry,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async detectCountry(): Promise<{
+    success: boolean;
+    countryCode?: string;
+    currencyCode?: string;
+    source?: string;
+    error?: string;
+  }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/detect-country`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Country detection failed' };
+      return {
+        success: true,
+        countryCode: parsed.data?.countryCode,
+        currencyCode: parsed.data?.currencyCode,
+        source: parsed.data?.source,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getExchangeQuote(payload: {
+    sourceAmountMinorUnits: number;
+    sourceCurrency: string;
+    targetCurrency: string;
+  }): Promise<{
+    success: boolean;
+    quote?: any;
+    error?: string;
+  }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/exchange-quote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to get exchange quote' };
+      return { success: true, quote: parsed.data?.quote };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async createOrder(payload: {
+    deliveryId: string;
+    idempotencyKey?: string;
+    currencyCode?: string;
+    conversionQuoteId?: string;
+  }): Promise<{
+    success: boolean;
+    order?: PaymentOrderInfo;
+    providerOrderId?: string;
+    paymentSessionId?: string;
+    isDuplicate?: boolean;
+    isInternationalSimulation?: boolean;
+    error?: string;
+  }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/create-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to create payment order' };
+      return {
+        success: true,
+        order: parsed.data?.order,
+        providerOrderId: parsed.data?.providerOrderId,
+        paymentSessionId: parsed.data?.paymentSessionId,
+        isDuplicate: parsed.data?.isDuplicate,
+        isInternationalSimulation: parsed.data?.isInternationalSimulation,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async verifyPayment(payload: {
+    providerOrderId: string;
+    providerPaymentId?: string;
+    paymentSignature?: string;
+  }): Promise<{ success: boolean; order?: PaymentOrderInfo; alreadyPaid?: boolean; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Payment verification failed' };
+      return {
+        success: true,
+        order: parsed.data?.order,
+        alreadyPaid: parsed.data?.alreadyPaid,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getOrder(deliveryId: string): Promise<{ success: boolean; order?: PaymentOrderInfo; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/order/${encodeURIComponent(deliveryId)}`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok || !parsed.data?.order) return { success: false, error: parsed.error || 'Order not found' };
+      return { success: true, order: parsed.data.order };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getCommissionRate(): Promise<{ ratePercent: number; minCommissionPaise: number; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/commission`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok || !parsed.data) return { ratePercent: 12.0, minCommissionPaise: 0 };
+      return {
+        ratePercent: parsed.data.ratePercent ?? 12.0,
+        minCommissionPaise: parsed.data.minCommissionPaise ?? 0,
+      };
+    } catch {
+      return { ratePercent: 12.0, minCommissionPaise: 0 };
+    }
+  },
+
+  async updateCommissionRate(ratePercent: number, reason: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/commission`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ratePercent, reason }),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to update commission rate' };
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async settle(payload: {
+    paymentOrderId?: string;
+    deliveryId?: string;
+    idempotencyKey?: string;
+    currencyCode?: string;
+  }): Promise<{ success: boolean; settlement?: any; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/settle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Settlement failed' };
+      return { success: true, settlement: parsed.data?.settlement };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async refund(payload: {
+    paymentOrderId: string;
+    reason: string;
+    amountPaise?: number;
+    amountMinorUnits?: number;
+    currencyCode?: string;
+    idempotencyKey?: string;
+  }): Promise<{ success: boolean; refund?: any; remainingBalance?: number; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Refund failed' };
+      return { success: true, refund: parsed.data?.refund, remainingBalance: parsed.data?.remainingBalance };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async reconcileRefund(refundId: string): Promise<{ success: boolean; refund?: any; status?: string; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/refund/${encodeURIComponent(refundId)}/reconcile`, {
+        method: 'POST',
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Reconciliation failed' };
+      return { success: true, refund: parsed.data?.refund, status: parsed.data?.status };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getAdminOverview(): Promise<{ success: boolean; overview?: AdminFinancialOverview; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/admin/overview`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok || !parsed.data) return { success: false, error: parsed.error || 'Failed to fetch financial overview' };
+      return { success: true, overview: parsed.data };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getReconciliation(): Promise<{ success: boolean; report?: FinancialReconciliationReport; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/reconciliation`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to fetch reconciliation report' };
+      return { success: true, report: parsed.data?.report };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async resolveDiscrepancy(discrepancyId: string, resolutionNote?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/reconciliation/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discrepancyId, resolutionNote }),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to resolve discrepancy' };
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getVendors(): Promise<{ success: boolean; vendors?: MockVendorAccountInfo[]; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/vendors`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to fetch vendors' };
+      return { success: true, vendors: parsed.data?.vendors || [] };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async reverseSettlement(settlementId: string, reason?: string): Promise<{ success: boolean; settlement?: any; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/settle/${encodeURIComponent(settlementId)}/reverse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to reverse settlement' };
+      return { success: true, settlement: parsed.data?.settlement };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async getRecoveryStatus(): Promise<{
+    success: boolean;
+    stuckSplitPendingCount?: number;
+    stuckProcessingRefundsCount?: number;
+    unprocessedWebhooksCount?: number;
+    needsRecovery?: boolean;
+    error?: string;
+  }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/recover/status`);
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Failed to fetch recovery status' };
+      return {
+        success: true,
+        stuckSplitPendingCount: parsed.data?.stuckSplitPendingCount,
+        stuckProcessingRefundsCount: parsed.data?.stuckProcessingRefundsCount,
+        unprocessedWebhooksCount: parsed.data?.unprocessedWebhooksCount,
+        needsRecovery: parsed.data?.needsRecovery,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async runRecovery(targetOrderId?: string): Promise<{ success: boolean; report?: any; error?: string }> {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/payments/recover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetOrderId }),
+      });
+      const parsed = await safeReadJson<any>(res);
+      if (!parsed.ok) return { success: false, error: parsed.error || 'Recovery sweep failed' };
+      return { success: true, report: parsed.data?.report };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+};
+
 

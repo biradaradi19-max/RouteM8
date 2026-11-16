@@ -17,7 +17,7 @@ import { calculateRouteMatch } from '../services/routing';
 import { getSocket } from '../services/socket';
 import { useAuth } from './AuthContext';
 
-export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile' | 'privacy' | 'terms';
+export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile' | 'privacy' | 'terms' | 'admin';
 export type RoleMode = 'requester' | 'transporter';
 export type BackendConnectionStatus = 'connected' | 'connecting' | 'offline';
 

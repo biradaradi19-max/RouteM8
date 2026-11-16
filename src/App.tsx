@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/common/Navbar';
@@ -13,6 +13,8 @@ import { CreateRequestModal } from './components/forms/CreateRequestModal';
 import { PublishJourneyModal } from './components/forms/PublishJourneyModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { SupabaseConfigModal } from './components/forms/SupabaseConfigModal';
+import { AdminDashboard } from './components/admin/AdminDashboard';
+import { initializeCurrency } from './services/currency';
 import type { DeliveryRequest, PublishedJourney } from './types';
 
 
@@ -25,6 +27,11 @@ const MainAppContent: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Initialize privacy-conscious currency & location detection
+  useEffect(() => {
+    initializeCurrency();
+  }, []);
 
   // Inspector callback: user clicks "Inspect Route" from Dashboard
   const handleInspectMatch = (req: DeliveryRequest, journey?: PublishedJourney) => {
@@ -106,6 +113,8 @@ const MainAppContent: React.FC = () => {
                 onOpenCreateRequest={() => setIsCreateReqOpen(true)}
               />
             )}
+
+            {currentView === 'admin' && <AdminDashboard />}
           </main>
         </div>
       )}

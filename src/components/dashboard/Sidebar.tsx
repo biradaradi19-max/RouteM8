@@ -59,6 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Requester Overview', icon: LayoutDashboard },
     { id: 'deliveries', label: 'Track Deliveries', icon: Compass },
     { id: 'matching', label: 'Explore Corridors', icon: Map },
+    { id: 'admin', label: 'Operations Command', icon: ShieldCheck },
     { id: 'landing', label: 'Product Landing', icon: Compass },
   ];
 
@@ -66,6 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Partner Overview', icon: LayoutDashboard },
     { id: 'matching', label: 'Find Requests', icon: Map, badge: 'Live' },
     { id: 'deliveries', label: 'My Active Deliveries', icon: Package },
+    { id: 'admin', label: 'Operations Command', icon: ShieldCheck },
     { id: 'landing', label: 'Product Landing', icon: Compass },
   ];
 
