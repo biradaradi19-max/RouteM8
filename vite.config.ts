@@ -31,6 +31,7 @@ export default defineConfig({
       VITE_SUPABASE_ANON_KEY: '',
       VITE_GOOGLE_MAPS_API_KEY: '',
       VITE_GOOGLE_MAPS_MAP_ID: '',
+      VITE_LIVEKIT_URL: '',
     },
   },
 })

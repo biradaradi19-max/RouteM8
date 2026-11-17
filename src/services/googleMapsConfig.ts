@@ -1,15 +1,14 @@
 /**
  * ============================================================================
- * ROUTE M8 — GOOGLE MAPS PLATFORM CONFIGURATION & DEMO KEY UTILITIES
+ * ROUTE M8 — GOOGLE MAPS PLATFORM CONFIGURATION
  * Manages Google Maps API key resolution from environment variables & localStorage,
- * Cloud mapId configuration, and fallback detection.
+ * Cloud mapId configuration, and Leaflet/OSM fallback detection.
  * ============================================================================
  */
 
 const LOCAL_STORAGE_KEY = 'routem8_google_maps_key_v1';
 const LOCAL_STORAGE_MAP_ID_KEY = 'routem8_google_maps_map_id_v1';
 
-export const DEFAULT_GOOGLE_MAPS_API_KEY = 'AIzaSyBGd5npLdnbQRZSWyO6lhbo7FoiI02OmsY';
 export const DEFAULT_GOOGLE_MAPS_MAP_ID = 'DEMO_MAP_ID';
 
 export function getGoogleMapsApiKey(): string {
@@ -17,11 +16,15 @@ export function getGoogleMapsApiKey(): string {
   if (envKey) return envKey;
 
   if (typeof window !== 'undefined' && window.localStorage) {
-    const saved = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (saved !== null && saved !== undefined && saved.trim()) return saved.trim();
+    try {
+      const saved = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved !== null && saved !== undefined && saved.trim()) return saved.trim();
+    } catch {
+      // Ignore localStorage access restrictions
+    }
   }
 
-  return DEFAULT_GOOGLE_MAPS_API_KEY;
+  return '';
 }
 
 export function getGoogleMapsMapId(): string {
@@ -29,8 +32,12 @@ export function getGoogleMapsMapId(): string {
   if (envMapId) return envMapId;
 
   if (typeof window !== 'undefined' && window.localStorage) {
-    const saved = (window.localStorage.getItem(LOCAL_STORAGE_MAP_ID_KEY) || '').trim();
-    if (saved) return saved;
+    try {
+      const saved = (window.localStorage.getItem(LOCAL_STORAGE_MAP_ID_KEY) || '').trim();
+      if (saved) return saved;
+    } catch {
+      // Ignore localStorage access restrictions
+    }
   }
 
   // Required DEMO_MAP_ID for AdvancedMarkerElement prototyping
@@ -43,15 +50,19 @@ export function isGoogleMapsConfigured(): boolean {
 
 export function setRuntimeGoogleMapsConfig(apiKey: string, mapId?: string): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  if (apiKey) {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, apiKey.trim());
-  } else {
-    window.localStorage.removeItem(LOCAL_STORAGE_KEY);
-  }
+  try {
+    if (apiKey && apiKey.trim()) {
+      window.localStorage.setItem(LOCAL_STORAGE_KEY, apiKey.trim());
+    } else {
+      window.localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
 
-  if (mapId) {
-    window.localStorage.setItem(LOCAL_STORAGE_MAP_ID_KEY, mapId.trim());
-  } else {
-    window.localStorage.removeItem(LOCAL_STORAGE_MAP_ID_KEY);
+    if (mapId && mapId.trim()) {
+      window.localStorage.setItem(LOCAL_STORAGE_MAP_ID_KEY, mapId.trim());
+    } else {
+      window.localStorage.removeItem(LOCAL_STORAGE_MAP_ID_KEY);
+    }
+  } catch {
+    // Ignore localStorage access restrictions
   }
 }

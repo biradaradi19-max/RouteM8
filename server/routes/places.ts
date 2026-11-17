@@ -2,10 +2,7 @@ import { Router } from 'express';
 
 const router = Router();
 
-const GOOGLE_MAPS_KEY =
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.VITE_GOOGLE_MAPS_API_KEY ||
-  'AIzaSyBGd5npLdnbQRZSWyO6lhbo7FoiI02OmsY';
+const GOOGLE_MAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || '').trim();
 
 export interface PlaceSuggestion {
   placeId: string;
@@ -40,58 +37,60 @@ router.get('/autocomplete', async (req, res): Promise<void> => {
     return;
   }
 
-  // 1. Try Google Places API (New)
-  try {
-    const body: Record<string, any> = { input };
+  // 1. Try Google Places API (New) only if server-side key is configured
+  if (GOOGLE_MAPS_KEY) {
+    try {
+      const body: Record<string, any> = { input };
 
-    // Optional GPS search bias only if valid coordinates passed
-    if (latStr && lngStr) {
-      const lat = parseFloat(latStr);
-      const lng = parseFloat(lngStr);
-      if (!Number.isNaN(lat) && !Number.isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        body.locationBias = {
-          circle: {
-            center: { latitude: lat, longitude: lng },
-            radius: 50000.0, // 50km bias circle
-          },
-        };
+      // Optional GPS search bias only if valid coordinates passed
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          body.locationBias = {
+            circle: {
+              center: { latitude: lat, longitude: lng },
+              radius: 50000.0, // 50km bias circle
+            },
+          };
+        }
       }
-    }
 
-    const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_MAPS_KEY,
-      },
-      body: JSON.stringify(body),
-    });
+      const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_MAPS_KEY,
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (response.ok) {
-      const data = (await response.json()) as any;
-      if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
-        const suggestions: PlaceSuggestion[] = data.suggestions
-          .filter((s: any) => s.placePrediction)
-          .map((s: any) => {
-            const p = s.placePrediction;
-            return {
-              placeId: p.placeId || p.place?.replace('places/', '') || '',
-              description: p.text?.text || p.structuredFormat?.mainText?.text || '',
-              mainText: p.structuredFormat?.mainText?.text || p.text?.text || '',
-              secondaryText: p.structuredFormat?.secondaryText?.text || '',
-              types: p.types || [],
-            };
-          });
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+          const suggestions: PlaceSuggestion[] = data.suggestions
+            .filter((s: any) => s.placePrediction)
+            .map((s: any) => {
+              const p = s.placePrediction;
+              return {
+                placeId: p.placeId || p.place?.replace('places/', '') || '',
+                description: p.text?.text || p.structuredFormat?.mainText?.text || '',
+                mainText: p.structuredFormat?.mainText?.text || p.text?.text || '',
+                secondaryText: p.structuredFormat?.secondaryText?.text || '',
+                types: p.types || [],
+              };
+            });
 
-        res.json({ suggestions, source: 'google' });
-        return;
+          res.json({ suggestions, source: 'google' });
+          return;
+        }
+      } else {
+        const errText = await response.text();
+        console.warn('[Places API New] HTTP Error:', response.status, errText);
       }
-    } else {
-      const errText = await response.text();
-      console.warn('[Places API New] HTTP Error:', response.status, errText);
+    } catch (err: any) {
+      console.warn('[Places API New] Error fetching suggestions:', err.message);
     }
-  } catch (err: any) {
-    console.warn('[Places API New] Error fetching suggestions:', err.message);
   }
 
   // 2. High-reliability Worldwide Fallback (OpenStreetMap Nominatim)
@@ -144,8 +143,8 @@ router.get('/details', async (req, res): Promise<void> => {
     return;
   }
 
-  // 1. If it's a Google Place ID
-  if (!placeId.startsWith('osm-')) {
+  // 1. If it's a Google Place ID and server-side key is configured
+  if (!placeId.startsWith('osm-') && GOOGLE_MAPS_KEY) {
     try {
       const cleanId = placeId.replace('places/', '');
       const url = `https://places.googleapis.com/v1/places/${cleanId}?fields=id,displayName,formattedAddress,location&key=${GOOGLE_MAPS_KEY}`;
