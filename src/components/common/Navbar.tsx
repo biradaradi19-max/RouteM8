@@ -205,15 +205,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Location & Marketplace Currency Selector */}
           <CurrencySelector compact />
 
-          {/* Infrastructure & Settings Control */}
-          <button
-            onClick={onOpenSupabaseConfig}
-            className="icon-btn"
-            aria-label="Database & Infrastructure Settings"
-            title="Database & Infrastructure Settings"
-          >
-            <Settings size={18} />
-          </button>
+          {/* Infrastructure & Settings Control (Hidden from ordinary users; accessible to Admins & privileged staff) */}
+          {(user?.role === 'both' || currentView === 'admin') && (
+            <button
+              onClick={onOpenSupabaseConfig}
+              className="icon-btn"
+              aria-label="Database & Infrastructure Settings"
+              title="Database & Infrastructure Settings"
+            >
+              <Settings size={18} />
+            </button>
+          )}
 
           {/* Theme Switcher */}
           <button
@@ -228,7 +230,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Auth Button or User Profile Badge */}
           {isAuthenticated && user ? (
             <div
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => setCurrentView('account')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -236,11 +238,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 cursor: 'pointer',
                 padding: '0.25rem 0.5rem',
                 borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-surface-subtle)',
-                border: '1px solid var(--border-subtle)',
+                backgroundColor: (currentView === 'account' || currentView === 'profile') ? 'var(--bg-brand-subtle)' : 'var(--bg-surface-subtle)',
+                border: (currentView === 'account' || currentView === 'profile') ? '1px solid var(--color-mint-500)' : '1px solid var(--border-subtle)',
                 transition: 'background-color var(--transition-fast)'
               }}
-              title="View Dashboard Profile"
+              title="View and manage your account"
+              role="button"
+              tabIndex={0}
+              aria-label="View My Account"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setCurrentView('account');
+                }
+              }}
             >
               {user.avatarUrl ? (
                 <img

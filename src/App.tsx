@@ -14,6 +14,7 @@ import { PublishJourneyModal } from './components/forms/PublishJourneyModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { SupabaseConfigModal } from './components/forms/SupabaseConfigModal';
 import { AdminDashboard } from './components/admin/AdminDashboard';
+import { AccountView } from './components/account/AccountView';
 import { initializeCurrency } from './services/currency';
 import type { DeliveryRequest, PublishedJourney } from './types';
 
@@ -114,7 +115,18 @@ const MainAppContent: React.FC = () => {
               />
             )}
 
-            {currentView === 'admin' && <AdminDashboard />}
+            {currentView === 'admin' && (
+              <AdminDashboard onOpenSystemConfig={() => setIsSupabaseModalOpen(true)} />
+            )}
+
+            {(currentView === 'account' || currentView === 'profile') && (
+              <AccountView
+                onBack={() => setCurrentView('dashboard')}
+                onOpenCreateRequest={() => setIsCreateReqOpen(true)}
+                onOpenPublishJourney={() => setIsPublishJrnOpen(true)}
+                onOpenAuth={() => setIsAuthModalOpen(true)}
+              />
+            )}
           </main>
         </div>
       )}

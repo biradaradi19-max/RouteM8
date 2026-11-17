@@ -11,15 +11,15 @@ import {
   Sun, 
   Moon, 
   LogOut, 
-  Settings, 
   Compass,
+  UserCircle,
   X
 } from 'lucide-react';
 
 interface SidebarProps {
   onOpenCreateRequest: () => void;
   onOpenPublishJourney: () => void;
-  onOpenSupabaseConfig: () => void;
+  onOpenSupabaseConfig?: () => void;
   onOpenAuth: () => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
@@ -28,7 +28,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   onOpenCreateRequest,
   onOpenPublishJourney,
-  onOpenSupabaseConfig,
+  onOpenSupabaseConfig: _onOpenSupabaseConfig,
   onOpenAuth,
   isMobileOpen,
   onCloseMobile
@@ -38,7 +38,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setCurrentView,
     theme,
     toggleTheme,
-    supabaseStatus,
     activeRoleMode,
     setActiveRoleMode,
     partnerAvailable,
@@ -59,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Requester Overview', icon: LayoutDashboard },
     { id: 'deliveries', label: 'Track Deliveries', icon: Compass },
     { id: 'matching', label: 'Explore Corridors', icon: Map },
+    { id: 'account', label: 'My Account', icon: UserCircle },
     { id: 'admin', label: 'Operations Command', icon: ShieldCheck },
     { id: 'landing', label: 'Product Landing', icon: Compass },
   ];
@@ -67,6 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Partner Overview', icon: LayoutDashboard },
     { id: 'matching', label: 'Find Requests', icon: Map, badge: 'Live' },
     { id: 'deliveries', label: 'My Active Deliveries', icon: Package },
+    { id: 'account', label: 'My Account', icon: UserCircle },
     { id: 'admin', label: 'Operations Command', icon: ShieldCheck },
     { id: 'landing', label: 'Product Landing', icon: Compass },
   ];
@@ -263,6 +264,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <button
                 key={item.id}
+                data-testid={`nav-item-${item.id}`}
                 onClick={() => {
                   setCurrentView(item.id as any);
                   onCloseMobile?.();
@@ -295,48 +297,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
-
-        {/* Supabase Connection Status Card */}
-        <div style={{ padding: '0 0.875rem 0.625rem' }}>
-          <div
-            onClick={onOpenSupabaseConfig}
-            role="button"
-            tabIndex={0}
-            title="Backend System Status"
-            style={{
-              padding: '0.625rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'var(--bg-surface-subtle)',
-              border: '1px solid var(--border-subtle)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              transition: 'all var(--transition-fast)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span className={`status-dot ${
-                supabaseStatus === 'connected' ? 'status-dot-connected' :
-                supabaseStatus === 'connecting' ? 'status-dot-connecting' :
-                'status-dot-offline'
-              }`} />
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-primary)' }}>
-                  {supabaseStatus === 'connected' ? 'Express + MongoDB' :
-                   supabaseStatus === 'connecting' ? 'Express Connecting...' :
-                   'Express Offline'}
-                </div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                  {supabaseStatus === 'connected' ? 'API & Socket.IO Active' :
-                   supabaseStatus === 'connecting' ? 'Probing backend' :
-                   'Local cache active'}
-                </div>
-              </div>
-            </div>
-            <Settings size={14} color="var(--text-tertiary)" />
-          </div>
-        </div>
 
         {/* User Card & Settings Footer */}
         <div style={{
@@ -376,8 +336,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
           {isAuthenticated && user ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView('account');
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className={`sidebar-account-btn ${(currentView === 'account' || currentView === 'profile') ? 'active' : ''}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.625rem',
+                  minWidth: 0,
+                  flex: 1,
+                  background: (currentView === 'account' || currentView === 'profile')
+                    ? 'var(--bg-brand-subtle, rgba(45, 212, 191, 0.15))'
+                    : 'transparent',
+                  border: (currentView === 'account' || currentView === 'profile')
+                    ? '1px solid var(--color-mint-500, #16A878)'
+                    : '1px solid transparent',
+                  borderRadius: '8px',
+                  padding: '0.375rem 0.5rem',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease-in-out',
+                }}
+                title="View and manage your account"
+                aria-label="View My Account"
+              >
                 {user.avatarUrl ? (
                   <img
                     src={user.avatarUrl}
@@ -395,12 +382,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 700,
-                    fontSize: '0.75rem'
+                    fontSize: '0.75rem',
+                    flexShrink: 0,
                   }}>
                     {user.fullName[0]}
                   </div>
                 )}
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.fullName}
                   </div>
@@ -408,9 +396,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <ShieldCheck size={11} /> Trust {user.trustScore}%
                   </div>
                 </div>
-              </div>
+              </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
                 <button
                   onClick={toggleTheme}
                   aria-label="Toggle Theme"

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import L from 'leaflet';
 import type { RouteMatchResult, TransporterLocation } from '../../types';
 import { Compass, Layers } from 'lucide-react';
@@ -17,7 +17,9 @@ export interface MapViewProps {
   pickupAddress?: string;
   dropoffAddress?: string;
   engine?: 'leaflet' | 'google';
+  role?: 'requester' | 'transporter' | 'admin';
   allowEngineSwitch?: boolean;
+  onMapClick?: (coords: [number, number]) => void;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -30,15 +32,35 @@ export const MapView: React.FC<MapViewProps> = ({
   pickupAddress,
   dropoffAddress,
   engine: propEngine,
+  role = 'transporter',
   allowEngineSwitch = false,
+  onMapClick,
 }) => {
   const [googleKey, setGoogleKey] = useState<string>(() => getGoogleMapsApiKey());
   const mapId = useMemo(() => getGoogleMapsMapId(), []);
-  // Default to Leaflet + OpenStreetMap for seamless, zero-cost reliability across all user roles
-  const [mapEngine, setMapEngine] = useState<'google' | 'leaflet'>(() => {
-    if (propEngine) return propEngine;
+
+  // Determine active engine: Requester defaults to Google Maps (with automatic Leaflet fallback),
+  // Transporter defaults to Leaflet + OpenStreetMap.
+  const resolveEngine = useCallback((eng?: 'google' | 'leaflet', r?: 'requester' | 'transporter' | 'admin', key?: string): 'google' | 'leaflet' => {
+    if (eng === 'google') return key ? 'google' : 'leaflet';
+    if (eng === 'leaflet') return 'leaflet';
+    if (r === 'requester') return key ? 'google' : 'leaflet';
     return 'leaflet';
-  });
+  }, []);
+
+  const [mapEngine, setMapEngine] = useState<'google' | 'leaflet'>(() =>
+    resolveEngine(propEngine, role, googleKey)
+  );
+
+  useEffect(() => {
+    setMapEngine(resolveEngine(propEngine, role, googleKey));
+  }, [propEngine, role, googleKey, resolveEngine]);
+
+  const handleGoogleLoadError = useCallback((_err: string) => {
+    // Graceful automatic fallback to Leaflet + OpenStreetMap when Google Maps is unavailable
+    setMapEngine('leaflet');
+  }, []);
+
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [tempKeyInput, setTempKeyInput] = useState('');
 
@@ -165,6 +187,12 @@ export const MapView: React.FC<MapViewProps> = ({
     }).addTo(map);
 
     L.control.zoom({ position: 'topright' }).addTo(map);
+
+    if (onMapClick) {
+      map.on('click', (e: L.LeafletMouseEvent) => {
+        onMapClick([e.latlng.lat, e.latlng.lng]);
+      });
+    }
 
     const layerGroup = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
@@ -465,7 +493,7 @@ export const MapView: React.FC<MapViewProps> = ({
             onClick={() => {
               if (googleKey) {
                 setMapEngine('google');
-              } else {
+              } else if (allowEngineSwitch && role === 'admin') {
                 setShowKeyInput(true);
               }
             }}
@@ -523,6 +551,8 @@ export const MapView: React.FC<MapViewProps> = ({
           dropoffCoords={propDropoff}
           pickupAddress={pickupAddress}
           dropoffAddress={dropoffAddress}
+          onLoadError={handleGoogleLoadError}
+          onMapClick={onMapClick}
         />
       ) : (
         /* Render Leaflet Engine */

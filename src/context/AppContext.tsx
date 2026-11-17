@@ -16,8 +16,9 @@ import { deliveriesApi, journeysApi, activitiesApi } from '../services/api';
 import { calculateRouteMatch } from '../services/routing';
 import { getSocket } from '../services/socket';
 import { useAuth } from './AuthContext';
+import { formatCurrency } from '../services/currency';
 
-export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile' | 'privacy' | 'terms' | 'admin';
+export type AppView = 'landing' | 'dashboard' | 'matching' | 'deliveries' | 'requests' | 'tracking' | 'history' | 'routes' | 'earnings' | 'profile' | 'account' | 'privacy' | 'terms' | 'admin';
 export type RoleMode = 'requester' | 'transporter';
 export type BackendConnectionStatus = 'connected' | 'connecting' | 'offline';
 
@@ -682,7 +683,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `act-${Date.now()}`,
         type: 'request_created',
         title: `New Request: ${createdReq.title}`,
-        description: `Compensation: $${createdReq.compensation.toFixed(2)} | Needed by ${createdReq.neededBy}`,
+        description: `Compensation: ${formatCurrency(createdReq.compensation)} | Needed by ${createdReq.neededBy}`,
         timestamp: 'Just now',
         relatedId: createdReq.id,
       },

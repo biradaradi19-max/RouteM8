@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import type { ItemSize, RequestCategory, RequestUrgency } from '../../types';
+import type { ItemSize, RequestCategory, RequestUrgency, PricingSnapshot } from '../../types';
 import {
   X,
   Package,
-  DollarSign,
+  IndianRupee,
   Clock,
   AlertCircle,
   MapPin,
@@ -12,6 +12,10 @@ import {
   ChevronRight,
   ChevronLeft,
   CheckCircle2,
+  CloudRain,
+  Car,
+  ShieldCheck,
+  Info,
 } from 'lucide-react';
 import { LocationPickerInput } from './LocationPickerInput';
 import { CreateRequestRouteMap } from './CreateRequestRouteMap';
@@ -20,8 +24,10 @@ import { isValidCoordinate } from '../../services/geolocation';
 import {
   getStoredCurrency,
   getCurrencyConfig,
+  formatCurrency,
   CURRENCY_CHANGED_EVENT,
 } from '../../services/currency';
+import { fetchPricingQuote } from '../../services/pricing';
 
 interface CreateRequestModalProps {
   isOpen: boolean;
@@ -51,29 +57,59 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
   const currencyConfig = getCurrencyConfig(activeCurrency);
   const defaultBaseComp = activeCurrency === 'INR' ? 150 : 15;
   const [compensation, setCompensation] = useState(defaultBaseComp);
+  const [pricingSnapshot, setPricingSnapshot] = useState<PricingSnapshot | null>(null);
+  const [isCalculatingPrice, setIsCalculatingPrice] = useState(false);
   const [urgency, setUrgency] = useState<RequestUrgency>('standard');
   const [neededBy, setNeededBy] = useState('Today, 19:00');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleCurrencyChanged = (e: Event) => {
       const customEvent = e as CustomEvent<{ currency: string }>;
       if (customEvent.detail?.currency) {
         const newCode = customEvent.detail.currency;
         setActiveCurrency(newCode);
-        if (newCode === 'INR' && compensation < 50) {
-          setCompensation(150);
-        } else if (newCode !== 'INR' && compensation > 80) {
-          setCompensation(15);
-        }
       }
     };
     window.addEventListener(CURRENCY_CHANGED_EVENT, handleCurrencyChanged);
     return () => {
       window.removeEventListener(CURRENCY_CHANGED_EVENT, handleCurrencyChanged);
     };
-  }, [compensation]);
+  }, []);
+
+  // Automatically calculate authoritative delivery pricing & dynamic surcharges
+  useEffect(() => {
+    if (pickupCoords && dropoffCoords) {
+      let isCancelled = false;
+      setIsCalculatingPrice(true);
+      fetchPricingQuote({
+        pickupCoords,
+        dropoffCoords,
+        distanceKm: routeStats?.distanceKm,
+      })
+        .then((snapshot) => {
+          if (!isCancelled) {
+            setPricingSnapshot(snapshot);
+            setCompensation(snapshot.finalFareRupees);
+            setIsCalculatingPrice(false);
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setIsCalculatingPrice(false);
+          }
+        });
+
+      return () => {
+        isCancelled = true;
+      };
+    } else if (routeStats && typeof routeStats.distanceKm === 'number' && routeStats.distanceKm > 0) {
+      const roadKm = Math.round(routeStats.distanceKm * 100) / 100;
+      const baseFare = Math.max(7, Math.round(roadKm * 7 * 100) / 100);
+      setCompensation(baseFare);
+    }
+  }, [pickupCoords, dropoffCoords, routeStats]);
 
   if (!isOpen) return null;
 
@@ -199,12 +235,13 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
         dropoffCoords: effectiveDropoffCoords,
         dropoffPlaceId,
         itemSize,
-        compensation: Number(compensation),
+        compensation: pricingSnapshot ? pricingSnapshot.finalFareRupees : Number(compensation),
+        pricingSnapshot: pricingSnapshot || undefined,
         currency: currencyConfig.code,
         currencyCode: currencyConfig.code,
         urgency,
         neededBy: neededBy.trim() || 'Today, 19:00',
-        distanceKm: routeStats?.distanceKm,
+        distanceKm: pricingSnapshot?.distanceKm ?? routeStats?.distanceKm,
         estimatedDurationMin: routeStats?.durationMin,
       } as any);
 
@@ -279,7 +316,7 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
           {[
             { step: 1, label: '1. Route & Map', icon: MapPin },
             { step: 2, label: '2. Package & Size', icon: Package },
-            { step: 3, label: '3. Pricing & Review', icon: DollarSign },
+            { step: 3, label: '3. Pricing & Review', icon: IndianRupee },
           ].map((item) => {
             const isActive = currentStep === item.step;
             const isDone = currentStep > item.step;
@@ -518,82 +555,173 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
 
           {/* STEP 3: COMPENSATION, REVIEW & CONFIRMATION */}
           <div style={{ display: currentStep === 3 ? 'flex' : 'none', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div>
-                <label className="form-label" htmlFor="req-comp">
-                  Delivery Fee — Authoritative Rate ₹7/km ({currencyConfig.symbol} {currencyConfig.code})
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    id="req-comp"
-                    type="number"
-                    min={activeCurrency === 'INR' ? 25 : 2}
-                    max={activeCurrency === 'INR' ? 5000 : 250}
-                    step={activeCurrency === 'INR' ? 5 : 0.5}
-                    required
-                    value={compensation}
-                    onChange={e => setCompensation(Number(e.target.value))}
-                    className="form-input"
-                    style={{ paddingLeft: '2.25rem' }}
-                  />
-                  <span
-                    style={{
-                      position: 'absolute',
-                      left: '0.875rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      color: 'var(--text-tertiary)',
-                      fontWeight: 700,
-                      fontSize: '0.875rem',
-                    }}
-                  >
-                    {currencyConfig.symbol}
+            {/* Automatic Authoritative Fare Card (Locked & Non-Editable) */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-surface-subtle)',
+                border: '1px solid var(--border-medium)',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ShieldCheck size={18} color="#16A878" />
+                  <span style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Authoritative Delivery Fare
                   </span>
                 </div>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: 'var(--radius-full)',
+                    backgroundColor: isCalculatingPrice ? 'rgba(59, 130, 246, 0.12)' : 'rgba(22, 168, 120, 0.12)',
+                    color: isCalculatingPrice ? '#2563EB' : '#128861',
+                    border: '1px solid rgba(22, 168, 120, 0.25)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {isCalculatingPrice ? 'Calculating...' : 'Locked Rate ₹7/km'}
+                </span>
               </div>
 
-              <div>
-                <label className="form-label" htmlFor="req-need">Needed By Time</label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    id="req-need"
-                    type="text"
-                    required
-                    placeholder="e.g. Today, 19:30"
-                    value={neededBy}
-                    onChange={e => setNeededBy(e.target.value)}
-                    className="form-input"
-                    style={{ paddingLeft: '2.25rem' }}
-                  />
-                  <Clock size={16} style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+              {/* Price Breakdown Grid */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.8125rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                  <span>Actual Road Distance:</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    {pricingSnapshot ? `${pricingSnapshot.distanceKm} km` : routeStats ? `${routeStats.distanceKm} km` : 'Pending route'}
+                  </strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                  <span>Base Delivery Fare (₹7.00/km):</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                    {formatCurrency(pricingSnapshot ? pricingSnapshot.baseFareRupees : compensation, currencyConfig.code)}
+                  </span>
+                </div>
+
+                {pricingSnapshot && pricingSnapshot.weatherSurchargeRupees > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2563EB', fontWeight: 600 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <CloudRain size={14} /> Rain Surcharge:
+                    </span>
+                    <span>+{formatCurrency(pricingSnapshot.weatherSurchargeRupees, currencyConfig.code)}</span>
+                  </div>
+                )}
+
+                {pricingSnapshot && pricingSnapshot.trafficSurchargeRupees > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#D97706', fontWeight: 600 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Car size={14} /> Traffic Congestion Surcharge:
+                    </span>
+                    <span>+{formatCurrency(pricingSnapshot.trafficSurchargeRupees, currencyConfig.code)}</span>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    borderTop: '1px solid var(--border-subtle)',
+                    paddingTop: '0.5rem',
+                    marginTop: '0.25rem',
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Final Customer Fare:
+                    </span>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+                      Includes 88% commuter payout + 12% platform fee
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#16A878' }}>
+                    {formatCurrency(pricingSnapshot ? pricingSnapshot.finalFareRupees : compensation, currencyConfig.code)}
+                  </span>
+                </div>
+
+                {/* Transparency Split Details */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '0.5rem',
+                    backgroundColor: 'var(--bg-surface)',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    marginTop: '0.25rem',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  <div>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Commuter Compensation (88%): </span>
+                    <strong style={{ color: 'var(--text-secondary)' }}>
+                      {formatCurrency(
+                        pricingSnapshot
+                          ? pricingSnapshot.transporterEarningsRupees
+                          : Math.round(compensation * 0.88 * 100) / 100,
+                        currencyConfig.code
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Platform Commission (12%): </span>
+                    <strong style={{ color: 'var(--text-secondary)' }}>
+                      {formatCurrency(
+                        pricingSnapshot
+                          ? pricingSnapshot.platformCommissionRupees
+                          : Math.round(compensation * 0.12 * 100) / 100,
+                        currencyConfig.code
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Dynamic Explanation Note */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    fontSize: '0.75rem',
+                    marginTop: '0.25rem',
+                    color: (pricingSnapshot?.totalSurchargeRupees ?? 0) > 0 ? '#B45309' : 'var(--text-secondary)',
+                    backgroundColor: (pricingSnapshot?.totalSurchargeRupees ?? 0) > 0 ? 'rgba(217, 119, 6, 0.08)' : 'transparent',
+                    padding: (pricingSnapshot?.totalSurchargeRupees ?? 0) > 0 ? '0.4rem 0.6rem' : '0',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  <Info size={14} />
+                  <span>
+                    {pricingSnapshot?.explanation || 'Fare calculated automatically based on road distance.'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Quick Compensation Presets */}
             <div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                Recommended compensation chips ({currencyConfig.code}):
-              </span>
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                {(activeCurrency === 'INR' ? [100, 150, 200, 250, 350] : [10, 15, 20, 25, 35]).map(amt => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => setCompensation(amt)}
-                    style={{
-                      padding: '0.25rem 0.625rem',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      backgroundColor: compensation === amt ? '#101C2C' : 'var(--bg-surface-subtle)',
-                      color: compensation === amt ? '#FFFFFF' : 'var(--text-primary)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    {currencyConfig.symbol}{amt}
-                  </button>
-                ))}
+              <label className="form-label" htmlFor="req-need">Needed By Time</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="req-need"
+                  type="text"
+                  required
+                  placeholder="e.g. Today, 19:30"
+                  value={neededBy}
+                  onChange={e => setNeededBy(e.target.value)}
+                  className="form-input"
+                  style={{ paddingLeft: '2.25rem' }}
+                />
+                <Clock size={16} style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
               </div>
             </div>
 
@@ -636,10 +764,14 @@ export const CreateRequestModal: React.FC<CreateRequestModalProps> = ({ isOpen, 
             }}>
               <div style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>Delivery Summary</span>
-                <span style={{ color: '#16A878' }}>{currencyConfig.symbol}{Number(compensation).toFixed(2)} ({currencyConfig.code})</span>
+                <span style={{ color: '#16A878', fontSize: '1rem', fontWeight: 800 }}>
+                  {formatCurrency(pricingSnapshot ? pricingSnapshot.finalFareRupees : (Number(compensation) || 0), currencyConfig.code)}
+                </span>
               </div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                Authoritative pricing: ₹7/km (88% transporter earnings, 12% RouteM8 fee)
+                {pricingSnapshot && pricingSnapshot.totalSurchargeRupees > 0
+                  ? `Authoritative fare: Base ₹7/km + Surcharge (${pricingSnapshot.explanation})`
+                  : 'Authoritative pricing: ₹7/km (88% transporter earnings, 12% RouteM8 fee)'}
               </div>
               <div style={{ color: 'var(--text-secondary)' }}>
                 <strong>Route:</strong> {pickupAddress ? pickupAddress.split(',')[0] : 'Origin'} → {dropoffAddress ? dropoffAddress.split(',')[0] : 'Destination'}

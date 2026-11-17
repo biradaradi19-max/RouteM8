@@ -1,7 +1,7 @@
 import { Router, type Response } from 'express';
 import mongoose from 'mongoose';
 import multer from 'multer';
-import { requireAuth, optionalAuth, requireApprovedPartner, type AuthenticatedRequest } from '../middleware/auth.js';
+import { requireAuth, optionalAuth, requireApprovedPartner, requireAdmin, type AuthenticatedRequest } from '../middleware/auth.js';
 import { DeliveryRequest, type DeliveryStatus, type ItemSize, type RequestUrgency, type RequestCategory } from '../models/DeliveryRequest.js';
 import { User } from '../models/User.js';
 import { PaymentOrder } from '../models/PaymentOrder.js';
@@ -11,7 +11,8 @@ import { Location } from '../models/Location.js';
 import { isDbConnected } from '../config/db.js';
 import { dispatchService } from '../services/dispatchService.js';
 import { calculateHaversineDistance } from '../services/matchingEngine.js';
-import { calculateAuthoritativeDeliveryPrice } from '../services/pricingEngine.js';
+import { calculateDynamicDeliveryPricing, type PricingSnapshot } from '../services/pricingEngine.js';
+import { getActivePricingPolicy, setInMemoryPricingPolicy, DynamicPricingPolicy } from '../models/DynamicPricingPolicy.js';
 import { generateHandoverPin, generatePinSalt, hashPin, verifyPinHash } from '../services/security.js';
 
 const router = Router();
@@ -70,6 +71,7 @@ export interface InMemDelivery {
   pickupDistanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
+  pricingSnapshot?: PricingSnapshot;
   lastKnownLocation?: any;
   createdAt?: Date;
   updatedAt?: Date;
@@ -248,6 +250,7 @@ function formatDelivery(doc: any, forUserId?: string) {
     ...(typeof doc.pickupDistanceKm === 'number' ? { pickupDistanceKm: doc.pickupDistanceKm } : {}),
     estimatedDurationMin: doc.estimatedDurationMin,
     estimatedDetourMinutes: doc.estimatedDetourMinutes,
+    ...(doc.pricingSnapshot ? { pricingSnapshot: doc.pricingSnapshot } : {}),
     createdAt: doc.createdAt?.toISOString?.() || (doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString()),
     updatedAt: doc.updatedAt?.toISOString?.() || (doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()),
   };
@@ -425,6 +428,124 @@ router.get('/nearby', requireAuth, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
+// POST /api/deliveries/quote & POST /api/deliveries/calculate-fare
+// Real-time authoritative fare calculation with dynamic weather and traffic surcharges
+const handleCalculateFareQuote = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { pickupCoords, dropoffCoords, distanceKm, mockWeather, mockTraffic, skipLiveChecks } = req.body || {};
+
+    if (!isValidPickupCoords(pickupCoords) || !isValidPickupCoords(dropoffCoords)) {
+      res.status(400).json({
+        error: 'Invalid coordinates. Both pickupCoords and dropoffCoords must be valid [lat, lng] arrays within valid geographic limits [-90..90, -180..180].',
+      });
+      return;
+    }
+
+    const pricingSnapshot = await calculateDynamicDeliveryPricing({
+      pickupCoords,
+      dropoffCoords,
+      distanceKm: typeof distanceKm === 'number' && !isNaN(distanceKm) ? distanceKm : undefined,
+      mockWeather,
+      mockTraffic,
+      skipLiveChecks: Boolean(skipLiveChecks),
+    });
+
+    res.status(200).json(pricingSnapshot);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to calculate authoritative fare quote', details: err.message });
+  }
+};
+
+router.post('/quote', optionalAuth, handleCalculateFareQuote);
+router.post('/calculate-fare', optionalAuth, handleCalculateFareQuote);
+
+// GET /api/deliveries/pricing-policy - View active dynamic pricing configuration
+router.get('/pricing-policy', optionalAuth, async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const policy = await getActivePricingPolicy();
+    res.json(policy);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch pricing policy', details: err.message });
+  }
+});
+
+// PUT /api/deliveries/pricing-policy - Update pricing policy (Admin only, conservative caps enforced)
+router.put('/pricing-policy', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const uid = req.user!.uid;
+    const {
+      weatherSurchargeEnabled,
+      weatherSurchargeRatePercent,
+      weatherSurchargeCapPaise,
+      trafficSurchargeEnabled,
+      trafficSurchargeRatePercent,
+      trafficSurchargeCapPaise,
+      maxCombinedSurchargePercent,
+      maxCombinedSurchargeCapPaise,
+      notes,
+    } = req.body || {};
+
+    // Validate conservative bounds
+    if (weatherSurchargeRatePercent !== undefined && (weatherSurchargeRatePercent < 0 || weatherSurchargeRatePercent > 30)) {
+      res.status(400).json({ error: 'Weather surcharge rate must be between 0% and 30%.' });
+      return;
+    }
+    if (trafficSurchargeRatePercent !== undefined && (trafficSurchargeRatePercent < 0 || trafficSurchargeRatePercent > 30)) {
+      res.status(400).json({ error: 'Traffic surcharge rate must be between 0% and 30%.' });
+      return;
+    }
+    if (maxCombinedSurchargePercent !== undefined && (maxCombinedSurchargePercent < 0 || maxCombinedSurchargePercent > 40)) {
+      res.status(400).json({ error: 'Maximum combined surcharge percent must be between 0% and 40%.' });
+      return;
+    }
+    if (weatherSurchargeCapPaise !== undefined && (weatherSurchargeCapPaise < 0 || weatherSurchargeCapPaise > 10000)) {
+      res.status(400).json({ error: 'Weather surcharge cap must be between 0 and 10,000 paise (₹100).' });
+      return;
+    }
+    if (trafficSurchargeCapPaise !== undefined && (trafficSurchargeCapPaise < 0 || trafficSurchargeCapPaise > 10000)) {
+      res.status(400).json({ error: 'Traffic surcharge cap must be between 0 and 10,000 paise (₹100).' });
+      return;
+    }
+    if (maxCombinedSurchargeCapPaise !== undefined && (maxCombinedSurchargeCapPaise < 0 || maxCombinedSurchargeCapPaise > 15000)) {
+      res.status(400).json({ error: 'Max combined surcharge cap must be between 0 and 15,000 paise (₹150).' });
+      return;
+    }
+
+    const updates: any = {
+      updatedBy: uid,
+      approvedBy: uid,
+      ...(weatherSurchargeEnabled !== undefined ? { weatherSurchargeEnabled: Boolean(weatherSurchargeEnabled) } : {}),
+      ...(weatherSurchargeRatePercent !== undefined ? { weatherSurchargeRatePercent: Number(weatherSurchargeRatePercent) } : {}),
+      ...(weatherSurchargeCapPaise !== undefined ? { weatherSurchargeCapPaise: Number(weatherSurchargeCapPaise) } : {}),
+      ...(trafficSurchargeEnabled !== undefined ? { trafficSurchargeEnabled: Boolean(trafficSurchargeEnabled) } : {}),
+      ...(trafficSurchargeRatePercent !== undefined ? { trafficSurchargeRatePercent: Number(trafficSurchargeRatePercent) } : {}),
+      ...(trafficSurchargeCapPaise !== undefined ? { trafficSurchargeCapPaise: Number(trafficSurchargeCapPaise) } : {}),
+      ...(maxCombinedSurchargePercent !== undefined ? { maxCombinedSurchargePercent: Number(maxCombinedSurchargePercent) } : {}),
+      ...(maxCombinedSurchargeCapPaise !== undefined ? { maxCombinedSurchargeCapPaise: Number(maxCombinedSurchargeCapPaise) } : {}),
+      ...(notes !== undefined ? { notes: String(notes).trim() } : {}),
+    };
+
+    setInMemoryPricingPolicy(updates);
+
+    if (isDbConnected()) {
+      try {
+        await DynamicPricingPolicy.create({
+          version: `2026.${Date.now()}`,
+          isActive: true,
+          ...updates,
+        });
+      } catch (dbErr: any) {
+        console.warn('[DB Policy Save Notice]', dbErr.message);
+      }
+    }
+
+    const activePolicy = await getActivePricingPolicy();
+    res.json({ message: 'Pricing policy updated and approved successfully', policy: activePolicy });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update pricing policy', details: err.message });
+  }
+});
+
 // POST /api/deliveries - Create new delivery request
 router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -523,9 +644,12 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       ? (urgency as RequestUrgency)
       : 'standard';
 
-    // Authoritative backend pricing & distance calculation (₹7.00/km; client cannot override distance or compensation)
-    const authoritativeDistanceKm = calculateHaversineDistance(pickupCoords, dropoffCoords);
-    const authoritativePricing = calculateAuthoritativeDeliveryPrice(authoritativeDistanceKm);
+    // Authoritative backend dynamic pricing & road distance calculation (client cannot spoof distance or compensation)
+    const authoritativePricing = await calculateDynamicDeliveryPricing({
+      pickupCoords,
+      dropoffCoords,
+      distanceKm: req.body?.distanceKm,
+    });
 
     const deliveryData: InMemDelivery = {
       _id: newId,
@@ -541,7 +665,8 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response): 
       dropoffPlaceId: dropoffPlaceId ? String(dropoffPlaceId).trim() : undefined,
       itemSize: sanitizedItemSize,
       weightEstimateKg: weightEstimateKg ? Number(weightEstimateKg) : undefined,
-      compensation: authoritativePricing.amountRupees,
+      compensation: authoritativePricing.finalFareRupees,
+      pricingSnapshot: authoritativePricing,
       urgency: sanitizedUrgency,
       neededBy: neededBy || 'Today by 18:00',
       status: 'open',

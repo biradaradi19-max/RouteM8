@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Search,
-  DollarSign,
+  IndianRupee,
   Leaf,
   AlertCircle,
   Clock,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { DeliveryRequest, PublishedJourney, TransporterLocation } from '../../types';
 import { calculateHaversineDistance } from '../../services/routing';
+import { formatCurrency } from '../../services/currency';
 import { MapView } from '../map/MapView';
 import { CallButton } from '../audio/CallButton';
 import { AudioCallModal } from '../audio/AudioCallModal';
@@ -710,15 +711,15 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Earnings</span>
             <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={18} />
+              <IndianRupee size={18} />
             </div>
           </div>
           <div>
             <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-              ${(Number(totalEarned) || 0).toFixed(2)}
+              {formatCurrency(Number(totalEarned) || 0)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
-              + ${(Number(pendingEarnings) || 0).toFixed(2)} in active transit
+              + {formatCurrency(Number(pendingEarnings) || 0)} in active transit
             </div>
           </div>
         </div>
@@ -797,7 +798,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         Your Compensation
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${(Number(del.compensation) || 0).toFixed(2)}
+                        {formatCurrency(Number(del.compensation) || 0)}
                       </div>
                     </div>
                   </div>
@@ -1425,7 +1426,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                         Earn
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.1875rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${(Number(req.compensation) || 0).toFixed(2)}
+                        {formatCurrency(Number(req.compensation) || 0)}
                       </div>
                     </div>
 
@@ -1573,7 +1574,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
               </p>
             </div>
             <span className="badge badge-completed">
-              ${(Number(totalEarned) || 0).toFixed(2)} Total Settled
+              {formatCurrency(Number(totalEarned) || 0)} Total Settled
             </span>
           </div>
 
@@ -1621,7 +1622,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({
                     PIN Verified
                   </span>
                   <div className="tabular-nums" style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-forest-850)' }}>
-                    +${(Number(del.compensation) || 0).toFixed(2)}
+                    +{formatCurrency(Number(del.compensation) || 0)}
                   </div>
                 </div>
               </div>
@@ -1740,6 +1741,7 @@ const PartnerLiveMapWithGps: React.FC<{
 
       <div style={{ height: '260px' }}>
         <MapView
+          role="transporter"
           pickupCoords={delivery.pickupCoords}
           dropoffCoords={delivery.dropoffCoords}
           pickupAddress={delivery.pickupAddress}

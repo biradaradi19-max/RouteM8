@@ -1,4 +1,5 @@
 import mongoose, { Schema, type Document, type Model } from 'mongoose';
+import type { PricingSnapshot } from '../services/pricingEngine.js';
 
 export type DeliveryStatus = 'open' | 'matched' | 'in_transit' | 'completed' | 'cancelled';
 export type ItemSize = 'small' | 'medium' | 'large';
@@ -56,6 +57,7 @@ export interface IDeliveryRequest extends Document {
   distanceKm?: number;
   estimatedDurationMin?: number;
   estimatedDetourMinutes?: number;
+  pricingSnapshot?: PricingSnapshot;
   lastKnownLocation?: {
     deliveryId: string;
     transporterId: string;
@@ -244,6 +246,9 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
     estimatedDetourMinutes: {
       type: Number,
       default: 5,
+    },
+    pricingSnapshot: {
+      type: Schema.Types.Mixed,
     },
     lastKnownLocation: {
       type: Schema.Types.Mixed,

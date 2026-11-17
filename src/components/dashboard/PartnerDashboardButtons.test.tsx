@@ -168,12 +168,12 @@ describe('PartnerDashboard — Visible & Responsive Accept / Decline Buttons', (
     expect(screen.getByText('College Textbooks & Graphic Calculator')).toBeDefined();
     expect(screen.getByText(/Main Library, Stanford, CA/i)).toBeDefined();
     expect(screen.getByText(/Downtown Mountain View, CA/i)).toBeDefined();
-    expect(screen.getByText('$25.00')).toBeDefined();
+    expect(screen.getByText(/₹\s?25(\.00)?/)).toBeDefined();
     expect(screen.getByText('7.2 km')).toBeDefined();
     expect(screen.getByText('~12m')).toBeDefined();
 
     expect(screen.getByText('Urgent Medical Document Envelope')).toBeDefined();
-    expect(screen.getByText('$19.50')).toBeDefined();
+    expect(screen.getByText(/₹\s?19\.50/)).toBeDefined();
   });
 
   it('renders visible Accept Delivery and Decline / Reject buttons for each pending request', () => {

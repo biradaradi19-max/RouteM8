@@ -157,6 +157,8 @@ const LeafletRouteMapPreview: React.FC<{
       ], { padding: [35, 35] });
     } else if (pickupCoords) {
       map.setView([pickupCoords[0], pickupCoords[1]], 14);
+    } else if (dropoffCoords) {
+      map.setView([dropoffCoords[0], dropoffCoords[1]], 14);
     }
   }, [pickupCoords, dropoffCoords, polyline]);
 
@@ -225,6 +227,8 @@ export const CreateRequestRouteMap: React.FC<CreateRequestRouteMapProps> = ({
   const apiKey = useMemo(() => getGoogleMapsApiKey(), []);
   const mapId = useMemo(() => getGoogleMapsMapId(), []);
   const isGoogleActive = useMemo(() => isGoogleMapsConfigured(), []);
+  const [googleLoadFailed, setGoogleLoadFailed] = useState(false);
+  const effectiveGoogleActive = isGoogleActive && !googleLoadFailed;
 
   const [pinMode, setPinMode] = useState<'pickup' | 'dropoff'>('pickup');
   const [routePolyline, setRoutePolyline] = useState<[number, number][]>([]);
@@ -325,8 +329,12 @@ export const CreateRequestRouteMap: React.FC<CreateRequestRouteMapProps> = ({
       }}
     >
       {/* Map Engine: Google Maps or Leaflet Fallback */}
-      {isGoogleActive ? (
-        <APIProvider apiKey={apiKey} libraries={['places', 'geometry', 'marker']}>
+      {effectiveGoogleActive ? (
+        <APIProvider
+          apiKey={apiKey}
+          libraries={['places', 'geometry', 'marker']}
+          onError={() => setGoogleLoadFailed(true)}
+        >
           <Map
             defaultCenter={defaultCenter}
             defaultZoom={12}

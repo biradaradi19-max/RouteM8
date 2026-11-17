@@ -4,6 +4,63 @@ const router = Router();
 
 const GOOGLE_MAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || '').trim();
 
+export const KNOWN_REGIONAL_FALLBACKS: Record<string, PlaceSuggestion & { lat: number; lng: number }> = {
+  atigre: {
+    placeId: 'loc-atigre-kolhapur',
+    description: 'Atigre, Hatkanangale, Kolhapur, Maharashtra 416118, India',
+    mainText: 'Atigre',
+    secondaryText: 'Hatkanangale, Kolhapur, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.744566,
+    lng: 74.360000,
+  },
+  'sanjay ghodawat university': {
+    placeId: 'loc-sgu-atigre',
+    description: 'Sanjay Ghodawat University, Kolhapur - Sangli Highway, Atigre, Maharashtra 416118, India',
+    mainText: 'Sanjay Ghodawat University',
+    secondaryText: 'Atigre, Kolhapur, Maharashtra, India',
+    types: ['university', 'point_of_interest'],
+    lat: 16.744540,
+    lng: 74.383920,
+  },
+  hatkanangle: {
+    placeId: 'loc-hatkanangle-kolhapur',
+    description: 'Hatkanangle, Kolhapur, Maharashtra, India',
+    mainText: 'Hatkanangle',
+    secondaryText: 'Kolhapur, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.744500,
+    lng: 74.375300,
+  },
+  hatkanangale: {
+    placeId: 'loc-hatkanangale-kolhapur',
+    description: 'Hatkanangle, Kolhapur, Maharashtra, India',
+    mainText: 'Hatkanangle',
+    secondaryText: 'Kolhapur, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.744500,
+    lng: 74.375300,
+  },
+  majalgaon: {
+    placeId: 'loc-majalgaon-beed',
+    description: 'Majalgaon, Beed, Maharashtra, India',
+    mainText: 'Majalgaon',
+    secondaryText: 'Beed, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 19.155100,
+    lng: 76.209900,
+  },
+  sangli: {
+    placeId: 'loc-sangli-maharashtra',
+    description: 'Sangli, Maharashtra, India',
+    mainText: 'Sangli',
+    secondaryText: 'Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.850300,
+    lng: 74.594900,
+  },
+};
+
 export interface PlaceSuggestion {
   placeId: string;
   description: string;
@@ -128,6 +185,26 @@ router.get('/autocomplete', async (req, res): Promise<void> => {
     console.warn('[Places Fallback] Nominatim search notice:', err.message);
   }
 
+  // 3. Regional Fallback for locations with incomplete OSM indexing (e.g. Atigre, SGU)
+  const queryLower = input.toLowerCase();
+  for (const [key, fallback] of Object.entries(KNOWN_REGIONAL_FALLBACKS)) {
+    if (queryLower.includes(key) || key.includes(queryLower)) {
+      res.json({
+        suggestions: [
+          {
+            placeId: fallback.placeId,
+            description: fallback.description,
+            mainText: fallback.mainText,
+            secondaryText: fallback.secondaryText,
+            types: fallback.types,
+          },
+        ],
+        source: 'regional_fallback',
+      });
+      return;
+    }
+  }
+
   res.json({ suggestions: [] });
 });
 
@@ -141,6 +218,20 @@ router.get('/details', async (req, res): Promise<void> => {
   if (!placeId) {
     res.status(400).json({ error: 'placeId is required' });
     return;
+  }
+
+  // 0. Regional fallback place IDs (e.g. loc-atigre-kolhapur)
+  if (placeId.startsWith('loc-')) {
+    const match = Object.values(KNOWN_REGIONAL_FALLBACKS).find((item) => item.placeId === placeId);
+    if (match) {
+      res.json({
+        placeId: match.placeId,
+        formattedAddress: match.description,
+        name: match.mainText,
+        location: { lat: match.lat, lng: match.lng },
+      });
+      return;
+    }
   }
 
   // 1. If it's a Google Place ID and server-side key is configured

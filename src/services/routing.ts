@@ -95,7 +95,7 @@ export async function fetchOSRMRoute(waypoints: [number, number][]): Promise<{
     if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
       const route = data.routes[0];
       const polyline = convertLngLatToLatLng(route.geometry.coordinates);
-      const distanceKm = Number((route.distance / 1000).toFixed(1));
+      const distanceKm = Number((route.distance / 1000).toFixed(2));
       const durationMin = Math.round(route.duration / 60);
       return { polyline, distanceKm, durationMin };
     }
@@ -114,7 +114,7 @@ export async function fetchOSRMRoute(waypoints: [number, number][]): Promise<{
 
   return {
     polyline: generateFallbackPolyline(waypoints),
-    distanceKm: Number(totalDistanceKm.toFixed(1)),
+    distanceKm: Number(totalDistanceKm.toFixed(2)),
     durationMin
   };
 }
@@ -143,7 +143,7 @@ export async function calculateRouteMatch(
   ]);
 
   const additionalDetourMin = Math.max(0, detourRoute.durationMin - directRoute.durationMin);
-  const additionalDistanceKm = Math.max(0, Number((detourRoute.distanceKm - directRoute.distanceKm).toFixed(1)));
+  const additionalDistanceKm = Math.max(0, Number((detourRoute.distanceKm - directRoute.distanceKm).toFixed(2)));
 
   // Calculate real departure compatibility & overall matching score
   // Detour ratio: how close detour is to allowed maximum

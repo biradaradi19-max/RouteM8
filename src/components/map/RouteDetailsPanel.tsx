@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { RouteMatchResult, DeliveryRequest, PublishedJourney } from '../../types';
+import { formatCurrency } from '../../services/currency';
 import { 
   Clock, 
   ShieldCheck, 
@@ -403,7 +404,7 @@ export const RouteDetailsPanel: React.FC<RouteDetailsPanelProps> = ({
             Compensation
           </div>
           <div className="tabular-nums" style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-            ${request.compensation.toFixed(2)}
+            {formatCurrency(request.compensation)}
           </div>
         </div>
       </div>

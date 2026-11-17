@@ -46,6 +46,16 @@ describe('Server Places Route Key Migration & Fallback Tests', () => {
         expect(data.suggestions[0].placeId).toMatch(/^osm-/);
       }
     });
+
+    it('should successfully find Atigre even when Nominatim lacks direct indexing', async () => {
+      const res = await fetch(`${baseUrl}/api/places/autocomplete?input=Atigre`);
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(Array.isArray(data.suggestions)).toBe(true);
+      expect(data.suggestions.length).toBeGreaterThan(0);
+      expect(data.suggestions[0].mainText).toBe('Atigre');
+      expect(data.suggestions[0].description).toContain('Atigre');
+    });
   });
 
   describe('2. Details Endpoint (/api/places/details)', () => {
@@ -54,6 +64,15 @@ describe('Server Places Route Key Migration & Fallback Tests', () => {
       expect(res.status).toBe(400);
       const data = (await res.json()) as any;
       expect(data.error).toBe('placeId is required');
+    });
+
+    it('should resolve regional fallback place ID (e.g. loc-atigre-kolhapur) with exact coordinates', async () => {
+      const res = await fetch(`${baseUrl}/api/places/details?placeId=loc-atigre-kolhapur`);
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.formattedAddress).toContain('Atigre');
+      expect(data.location.lat).toBeCloseTo(16.7445, 2);
+      expect(data.location.lng).toBeCloseTo(74.3600, 2);
     });
 
     it('should return 404 when non-OSM placeId is queried without Google server key', async () => {

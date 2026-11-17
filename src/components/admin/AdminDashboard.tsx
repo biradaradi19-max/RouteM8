@@ -5,7 +5,7 @@ import {
   CheckCircle2,
   Car,
   Package,
-  DollarSign,
+  IndianRupee,
   Activity,
   AlertTriangle,
   RefreshCw,
@@ -18,6 +18,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { MapView } from '../map/MapView';
+import { formatCurrency } from '../../services/currency';
+import { isGoogleMapsConfigured } from '../../services/googleMapsConfig';
 import {
   partnerApi,
   paymentApi,
@@ -28,7 +30,11 @@ import {
   type MockVendorAccountInfo,
 } from '../../services/api';
 
-export const AdminDashboard: React.FC = () => {
+export interface AdminDashboardProps {
+  onOpenSystemConfig?: () => void;
+}
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSystemConfig }) => {
   const { requests, journeys, refreshData, isLoadingData } = useApp();
 
   const [activeTab, setActiveTab] = useState<'operations' | 'verifications' | 'finance' | 'audit' | 'disputes' | 'settings'>('operations');
@@ -363,12 +369,12 @@ export const AdminDashboard: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Escrow Volume</span>
             <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={17} />
+              <IndianRupee size={17} />
             </div>
           </div>
           <div>
             <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-              ${totalVolume.toFixed(2)}
+              {formatCurrency(totalVolume, 'INR')}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
               Zero platform commissions
@@ -406,7 +412,7 @@ export const AdminDashboard: React.FC = () => {
         {[
           { id: 'operations', label: 'Live Operations & Map', icon: Activity },
           { id: 'verifications', label: `Partner Applications (${pendingAppsCount})`, icon: ShieldCheck },
-          { id: 'finance', label: 'Finances & Settlements', icon: DollarSign },
+          { id: 'finance', label: 'Finances & Settlements', icon: IndianRupee },
           { id: 'audit', label: 'Compliance Audit Logs', icon: History },
           { id: 'disputes', label: 'Disputes & Incident Reports', icon: AlertTriangle },
           { id: 'settings', label: 'Dispatch Parameters', icon: Sliders },
@@ -471,7 +477,7 @@ export const AdminDashboard: React.FC = () => {
                       <span className="badge badge-active" style={{ fontSize: '0.6875rem' }}>{del.status}</span>
                     </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                      Compensation: ${Number(del.compensation).toFixed(2)}
+                      Compensation: {formatCurrency(Number(del.compensation) || 0, 'INR')}
                     </div>
                   </div>
                 );
@@ -1376,6 +1382,26 @@ export const AdminDashboard: React.FC = () => {
                 Verification required before releasing compensation to transporter.
               </div>
               <span className="badge badge-verified">4-Digit Recipient Secret PIN</span>
+            </div>
+
+            <div style={{ padding: '1rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+                System Infrastructure & Maps
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0.75rem' }}>
+                Google Maps: {isGoogleMapsConfigured() ? 'Primary (Configured)' : 'Leaflet Fallback Active'}
+              </div>
+              {onOpenSystemConfig && (
+                <button
+                  type="button"
+                  onClick={onOpenSystemConfig}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}
+                >
+                  <Sliders size={13} />
+                  <span>Configure System Settings</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

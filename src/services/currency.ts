@@ -4,7 +4,7 @@
  * and header/browser-based privacy-conscious location detection.
  */
 
-import { paymentApi } from './api';
+
 
 export interface CurrencyOption {
   code: string;
@@ -261,7 +261,8 @@ export function detectBrowserCountry(): string {
 
 /**
  * Initializes location and currency preference asynchronously.
- * Respects explicit user overrides in localStorage before probing headers or browser locale.
+ * Respects explicit user overrides in localStorage.
+ * Guaranteed India-first: Defaults strictly to INR to prevent accidental USD fallback.
  */
 export async function initializeCurrency(): Promise<string> {
   try {
@@ -273,19 +274,9 @@ export async function initializeCurrency(): Promise<string> {
     // Fallthrough
   }
 
-  try {
-    const detection = await paymentApi.detectCountry();
-    if (detection.success && detection.currencyCode && isSupportedCurrency(detection.currencyCode)) {
-      setStoredCountry(detection.countryCode || DEFAULT_COUNTRY);
-      return detection.currencyCode;
-    }
-  } catch {
-    // Network or offline fallback
-  }
-
-  const browserCountry = detectBrowserCountry();
-  const browserCurrency = COUNTRY_TO_CURRENCY_MAP[browserCountry] || DEFAULT_CURRENCY;
-  setStoredCountry(browserCountry);
-  return browserCurrency;
+  // Persist INR as authoritative default currency
+  setStoredCountry(DEFAULT_COUNTRY);
+  setStoredCurrency(DEFAULT_CURRENCY);
+  return DEFAULT_CURRENCY;
 }
 

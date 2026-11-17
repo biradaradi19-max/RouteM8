@@ -7,6 +7,7 @@ import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { AudioCallModal } from '../audio/AudioCallModal';
 import { CallButton } from '../audio/CallButton';
 import { MapView } from '../map/MapView';
+import { formatCurrency } from '../../services/currency';
 import {
   Key,
   CheckCircle2,
@@ -254,8 +255,17 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
             Compensation
           </div>
           <div className="tabular-nums" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-            ${req.compensation.toFixed(2)}
+            {formatCurrency(req.compensation)}
           </div>
+          {req.pricingSnapshot && req.pricingSnapshot.totalSurchargeRupees > 0 ? (
+            <div style={{ fontSize: '0.6875rem', color: '#D97706', fontWeight: 700, marginTop: '0.15rem' }}>
+              Includes Surge (+{formatCurrency(req.pricingSnapshot.totalSurchargeRupees)})
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.15rem' }}>
+              Base ₹7/km
+            </div>
+          )}
         </div>
       </div>
 
@@ -397,6 +407,7 @@ export const DeliveryCard: React.FC<DeliveryCardProps> = ({
             }}
           >
             <MapView
+              role={isAssignedTransporter ? 'transporter' : 'requester'}
               pickupCoords={req.pickupCoords}
               dropoffCoords={req.dropoffCoords}
               pickupAddress={req.pickupAddress}

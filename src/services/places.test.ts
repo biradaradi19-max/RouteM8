@@ -103,6 +103,101 @@ describe('Global Location Search & Google Places (New) Service Tests', () => {
       const resolved = await resolvePlaceCoordinates('');
       expect(resolved).toBeNull();
     });
+
+    it('should resolve regional fallback IDs (e.g. loc-atigre-kolhapur) with exact coordinates', async () => {
+      const resolved = await resolvePlaceCoordinates('loc-atigre-kolhapur');
+      expect(resolved).not.toBeNull();
+      expect(resolved?.formattedAddress).toContain('Atigre');
+      expect(resolved?.coords[0]).toBeCloseTo(16.7445, 2);
+      expect(resolved?.coords[1]).toBeCloseTo(74.3600, 2);
+    });
+  });
+
+  describe('3. Regional & Incomplete OSM Fallback Handling', () => {
+    it('should resolve Atigre, Hatkanangle, SGU, Majalgaon, and Sangli via regional fallback when backend/OSM are empty', async () => {
+      vi.spyOn(placesApi, 'getAutocompleteSuggestions').mockResolvedValue([]);
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => '[]',
+      } as any);
+
+      try {
+        const atigre = await searchGlobalPlaces('Atigre');
+        expect(atigre.length).toBeGreaterThan(0);
+        expect(atigre[0].description).toContain('Atigre');
+
+        const sgu = await searchGlobalPlaces('Sanjay Ghodawat University, Kolhapur');
+        expect(sgu.length).toBeGreaterThan(0);
+        expect(sgu[0].description).toContain('Sanjay Ghodawat University');
+
+        const hatkanangle = await searchGlobalPlaces('Hatkanangle, Maharashtra');
+        expect(hatkanangle.length).toBeGreaterThan(0);
+        expect(hatkanangle[0].description).toContain('Hatkanangle');
+
+        const majalgaon = await searchGlobalPlaces('Majalgaon, Beed, Maharashtra');
+        expect(majalgaon.length).toBeGreaterThan(0);
+        expect(majalgaon[0].description).toContain('Majalgaon');
+
+        const sangli = await searchGlobalPlaces('Sangli, Maharashtra');
+        expect(sangli.length).toBeGreaterThan(0);
+        expect(sangli[0].description).toContain('Sangli');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('should resolve Eiffel Tower, Paris via worldwide search', async () => {
+      vi.spyOn(placesApi, 'getAutocompleteSuggestions').mockResolvedValueOnce([
+        {
+          placeId: 'eiffel-paris-1',
+          description: 'Eiffel Tower, Champ de Mars, 5 Av. Anatole France, 75007 Paris, France',
+          mainText: 'Eiffel Tower',
+          secondaryText: 'Paris, France',
+        },
+      ]);
+
+      const results = await searchGlobalPlaces('Eiffel Tower, Paris');
+      expect(results.length).toBe(1);
+      expect(results[0].mainText).toBe('Eiffel Tower');
+      expect(results[0].secondaryText).toContain('Paris');
+    });
+
+    it('should use browser google.maps.places.AutocompleteService when available in window', async () => {
+      const mockPredictions = [
+        {
+          place_id: 'browser-google-atigre',
+          description: 'Atigre, Maharashtra, India',
+          structured_formatting: {
+            main_text: 'Atigre',
+            secondary_text: 'Maharashtra, India',
+          },
+          types: ['locality'],
+        },
+      ];
+
+      (globalThis as any).window = (globalThis as any).window || {};
+      (globalThis as any).window.google = {
+        maps: {
+          places: {
+            AutocompleteService: class {
+              getPlacePredictions(_req: any, callback: any) {
+                callback(mockPredictions, 'OK');
+              }
+            },
+          },
+        },
+      };
+
+      try {
+        const results = await searchGlobalPlaces('Atigre');
+        expect(results.length).toBe(1);
+        expect(results[0].placeId).toBe('browser-google-atigre');
+        expect(results[0].mainText).toBe('Atigre');
+      } finally {
+        delete (globalThis as any).window.google;
+      }
+    });
   });
 
   describe('3. Reverse Geocoding & Coordinate Validation', () => {

@@ -77,6 +77,35 @@ export type RequestUrgency = 'standard' | 'flexible' | 'urgent';
 export type DeliveryStatus = 'open' | 'matched' | 'in_transit' | 'completed' | 'cancelled';
 export type RequestCategory = 'groceries' | 'campus-supplies' | 'essentials' | 'pharmacy' | 'electronics' | 'other';
 
+export interface PricingSnapshot {
+  distanceKm: number;
+  baseFarePaise: number;
+  baseFareRupees: number;
+  weatherSurchargePaise: number;
+  weatherSurchargeRupees: number;
+  weatherReason?: string;
+  trafficSurchargePaise: number;
+  trafficSurchargeRupees: number;
+  trafficReason?: string;
+  totalSurchargePaise: number;
+  totalSurchargeRupees: number;
+  finalFarePaise: number;
+  finalFareRupees: number;
+  platformCommissionPaise: number;
+  platformCommissionRupees: number;
+  transporterEarningsPaise: number;
+  transporterEarningsRupees: number;
+  currency: string;
+  currencySymbol: string;
+  pricingVersion: string;
+  calculatedAt: string;
+  explanation: string;
+  evidence?: {
+    weather?: any;
+    traffic?: any;
+  };
+}
+
 export interface DeliveryRequest {
   id: string;
   title: string;
@@ -91,6 +120,7 @@ export interface DeliveryRequest {
   itemSize: ItemSize;
   weightEstimateKg?: number;
   compensation: number; // e.g. 9.50
+  pricingSnapshot?: PricingSnapshot;
   urgency: RequestUrgency;
   neededBy: string; // ISO or human string
   status: DeliveryStatus;

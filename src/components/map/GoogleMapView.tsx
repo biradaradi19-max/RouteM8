@@ -21,6 +21,8 @@ interface GoogleMapViewProps {
   dropoffCoords?: [number, number];
   pickupAddress?: string;
   dropoffAddress?: string;
+  onLoadError?: (error: string) => void;
+  onMapClick?: (coords: [number, number]) => void;
 }
 
 // Inner helper to manage camera bounds and Google Maps polylines
@@ -246,6 +248,8 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
   dropoffCoords: propDropoff,
   pickupAddress,
   dropoffAddress,
+  onLoadError,
+  onMapClick,
 }) => {
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -270,7 +274,11 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
       <APIProvider
         apiKey={apiKey}
         onLoad={() => setLoadError(null)}
-        onError={() => setLoadError('Failed to load Google Maps SDK. Please check your API key and network connection.')}
+        onError={() => {
+          const errMessage = 'Failed to load Google Maps SDK. Please check your API key and network connection.';
+          setLoadError(errMessage);
+          onLoadError?.(errMessage);
+        }}
       >
         <Map
           defaultCenter={defaultCenter}
@@ -280,6 +288,13 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
           style={{ width: '100%', height: '100%', minHeight: '440px' }}
           disableDefaultUI={false}
           gestureHandling="greedy"
+          onClick={(e) => {
+            const lat = e.detail?.latLng?.lat;
+            const lng = e.detail?.latLng?.lng;
+            if (typeof lat === 'number' && typeof lng === 'number' && onMapClick) {
+              onMapClick([lat, lng]);
+            }
+          }}
         >
           <MapController
             match={match}

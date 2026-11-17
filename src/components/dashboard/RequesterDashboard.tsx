@@ -8,7 +8,7 @@ import {
   CheckCircle2,
   Key,
   Search,
-  DollarSign,
+  IndianRupee,
   Leaf,
   AlertCircle,
   MapPin,
@@ -23,6 +23,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import type { DeliveryRequest, DeliveryStatus } from '../../types';
+import { formatCurrency } from '../../services/currency';
 import { MapView } from '../map/MapView';
 import { CallButton } from '../audio/CallButton';
 import { AudioCallModal } from '../audio/AudioCallModal';
@@ -263,15 +264,15 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-tertiary)' }}>
             <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Compensation Spent</span>
             <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-md)', backgroundColor: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={18} />
+              <IndianRupee size={18} />
             </div>
           </div>
           <div>
             <div className="tabular-nums" style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
-              ${(Number(totalSpent) || 0).toFixed(2)}
+              {formatCurrency(Number(totalSpent) || 0)}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--color-mint-600)', fontWeight: 600, marginTop: '0.5rem' }}>
-              + ${(Number(activeBudget) || 0).toFixed(2)} in active escrow
+              + {formatCurrency(Number(activeBudget) || 0)} in active escrow
             </div>
           </div>
         </div>
@@ -354,8 +355,17 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                         Offered Compensation
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${(Number(del.compensation) || 0).toFixed(2)}
+                        {formatCurrency(Number(del.compensation) || 0)}
                       </div>
+                      {del.pricingSnapshot && del.pricingSnapshot.totalSurchargeRupees > 0 ? (
+                        <div style={{ fontSize: '0.6875rem', color: '#D97706', fontWeight: 700, marginTop: '0.15rem' }}>
+                          Surge (+{formatCurrency(del.pricingSnapshot.totalSurchargeRupees)})
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.15rem' }}>
+                          ₹7/km base fare
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -737,7 +747,7 @@ export const RequesterDashboard: React.FC<RequesterDashboardProps> = ({
                         Compensation
                       </div>
                       <div className="tabular-nums" style={{ fontSize: '1.1875rem', fontWeight: 800, color: 'var(--color-forest-850)' }}>
-                        ${(Number(req.compensation) || 0).toFixed(2)}
+                        {formatCurrency(Number(req.compensation) || 0)}
                       </div>
                     </div>
 
@@ -954,6 +964,7 @@ const RequesterLiveTrackingMap: React.FC<{ delivery: DeliveryRequest }> = ({ del
 
       <div style={{ height: '280px' }}>
         <MapView
+          role="requester"
           pickupCoords={delivery.pickupCoords}
           dropoffCoords={delivery.dropoffCoords}
           pickupAddress={delivery.pickupAddress}

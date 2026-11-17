@@ -208,8 +208,8 @@ describe('PartnerDashboard Location-Based Nearby Delivery Discovery', () => {
       expect(screen.getByText(/El Camino Pharmacy Prescription/i)).toBeDefined();
       expect(screen.getByText(/0.4 km away/i)).toBeDefined();
       expect(screen.getByText(/4.0 km away/i)).toBeDefined();
-      expect(screen.getByText(/\$14.50/i)).toBeDefined();
-      expect(screen.getByText(/\$22.00/i)).toBeDefined();
+      expect(screen.getByText(/₹\s?14\.50/i)).toBeDefined();
+      expect(screen.getByText(/₹\s?22(\.00)?/i)).toBeDefined();
     });
   });
 

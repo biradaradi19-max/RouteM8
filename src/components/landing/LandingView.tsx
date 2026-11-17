@@ -503,7 +503,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                   <span className="badge badge-active">Active Errand Need</span>
-                  <span className="tabular-nums" style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--color-forest-800)' }}>$14.50 reward</span>
+                  <span className="tabular-nums" style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--color-forest-800)' }}>₹150.00 reward</span>
                 </div>
                 <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>
                   Lab Notebook & Circuit Breadboard

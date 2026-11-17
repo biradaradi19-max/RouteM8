@@ -5,6 +5,7 @@ import { MapView } from '../map/MapView';
 import { RouteDetailsPanel } from '../map/RouteDetailsPanel';
 import { Compass, Clock, SlidersHorizontal, AlertCircle } from 'lucide-react';
 import type { DeliveryRequest } from '../../types';
+import { formatCurrency } from '../../services/currency';
 
 export const MatchingView: React.FC = () => {
   const { user } = useAuth();
@@ -19,6 +20,7 @@ export const MatchingView: React.FC = () => {
     acceptDeliveryMatch,
     rejectDelivery,
     backendError,
+    activeRoleMode,
   } = useApp();
 
   const [maxDetourFilter, setMaxDetourFilter] = useState<number>(20);
@@ -294,7 +296,7 @@ export const MatchingView: React.FC = () => {
                         borderRadius: '4px',
                         flexShrink: 0
                       }}>
-                        ${req.compensation.toFixed(2)}
+                        {formatCurrency(req.compensation)}
                       </span>
                     </div>
 
@@ -368,7 +370,11 @@ export const MatchingView: React.FC = () => {
         {/* Right Area: Interactive Map Region & Route Details */}
         <div className="matching-details-region">
           <div className="matching-map-box">
-            <MapView match={activeMatch} isLoading={isMatchComputing} />
+            <MapView
+              match={activeMatch}
+              isLoading={isMatchComputing}
+              role={activeRoleMode === 'requester' ? 'requester' : 'transporter'}
+            />
           </div>
 
           <div className="matching-panel-box">

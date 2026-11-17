@@ -24,6 +24,71 @@ export interface ResolvedPlace {
   coords: [number, number]; // [lat, lng]
 }
 
+export const KNOWN_REGIONAL_FALLBACKS: Record<string, {
+  placeId: string;
+  description: string;
+  mainText: string;
+  secondaryText: string;
+  types: string[];
+  lat: number;
+  lng: number;
+}> = {
+  atigre: {
+    placeId: 'loc-atigre-kolhapur',
+    description: 'Atigre, Hatkanangale, Kolhapur, Maharashtra 416118, India',
+    mainText: 'Atigre',
+    secondaryText: 'Hatkanangale, Kolhapur, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.744566,
+    lng: 74.360000,
+  },
+  'sanjay ghodawat university': {
+    placeId: 'loc-sgu-atigre',
+    description: 'Sanjay Ghodawat University, Kolhapur - Sangli Highway, Atigre, Maharashtra 416118, India',
+    mainText: 'Sanjay Ghodawat University',
+    secondaryText: 'Atigre, Kolhapur, Maharashtra, India',
+    types: ['university', 'point_of_interest'],
+    lat: 16.744540,
+    lng: 74.383920,
+  },
+  hatkanangle: {
+    placeId: 'loc-hatkanangle-kolhapur',
+    description: 'Hatkanangle, Kolhapur, Maharashtra, India',
+    mainText: 'Hatkanangle',
+    secondaryText: 'Kolhapur, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.744500,
+    lng: 74.375300,
+  },
+  hatkanangale: {
+    placeId: 'loc-hatkanangale-kolhapur',
+    description: 'Hatkanangle, Kolhapur, Maharashtra, India',
+    mainText: 'Hatkanangle',
+    secondaryText: 'Kolhapur, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.744500,
+    lng: 74.375300,
+  },
+  majalgaon: {
+    placeId: 'loc-majalgaon-beed',
+    description: 'Majalgaon, Beed, Maharashtra, India',
+    mainText: 'Majalgaon',
+    secondaryText: 'Beed, Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 19.155100,
+    lng: 76.209900,
+  },
+  sangli: {
+    placeId: 'loc-sangli-maharashtra',
+    description: 'Sangli, Maharashtra, India',
+    mainText: 'Sangli',
+    secondaryText: 'Maharashtra, India',
+    types: ['locality', 'political'],
+    lat: 16.850300,
+    lng: 74.594900,
+  },
+};
+
 /**
  * Fetch genuine autocomplete predictions worldwide without regional restriction.
  * Optional GPS coordinates provide proximity search bias only when permitted.
@@ -46,6 +111,40 @@ export async function searchGlobalPlaces(
 ): Promise<PlacePrediction[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery || cleanQuery.length < 2) return [];
+
+  // 0. Try browser Google Places AutocompleteService if Maps JS is loaded
+  if (typeof window !== 'undefined' && (window as any).google?.maps?.places?.AutocompleteService) {
+    try {
+      const svc = new (window as any).google.maps.places.AutocompleteService();
+      const req: any = { input: cleanQuery };
+      if (biasCoords && isValidCoordinate(biasCoords[0], biasCoords[1])) {
+        req.locationBias = {
+          radius: 50000,
+          center: { lat: biasCoords[0], lng: biasCoords[1] },
+        };
+      }
+      const predictions: any[] = await new Promise((resolve) => {
+        svc.getPlacePredictions(req, (results: any, status: any) => {
+          if (status === 'OK' && Array.isArray(results) && results.length > 0) {
+            resolve(results);
+          } else {
+            resolve([]);
+          }
+        });
+      });
+      if (predictions.length > 0) {
+        return predictions.map((p: any) => ({
+          placeId: p.place_id,
+          description: p.description,
+          mainText: p.structured_formatting?.main_text || p.description,
+          secondaryText: p.structured_formatting?.secondary_text || '',
+          types: p.types || [],
+        }));
+      }
+    } catch (err) {
+      console.warn('[Places Service] Browser Google Autocomplete notice:', err);
+    }
+  }
 
   // 1. Try backend proxy (uses Google Places API New with Nominatim fallback)
   try {
@@ -109,6 +208,23 @@ export async function searchGlobalPlaces(
     console.warn('[Places Service] Client fallback error:', err);
   }
 
+  // 3. Known regional locations fallback (villages / hubs omitted by standard OSM nodes)
+  const queryLower = cleanQuery.toLowerCase();
+  for (const [key, fallback] of Object.entries(KNOWN_REGIONAL_FALLBACKS)) {
+    if (queryLower.includes(key) || key.includes(queryLower)) {
+      placeCoordsCache.set(fallback.placeId, [fallback.lat, fallback.lng]);
+      return [
+        {
+          placeId: fallback.placeId,
+          description: fallback.description,
+          mainText: fallback.mainText,
+          secondaryText: fallback.secondaryText,
+          types: fallback.types,
+        },
+      ];
+    }
+  }
+
   return [];
 }
 
@@ -121,7 +237,21 @@ export async function resolvePlaceCoordinates(
 ): Promise<ResolvedPlace | null> {
   if (!placeId) return null;
 
-  // 0. Instant resolution from prediction cache (eliminates Nominatim rate limits)
+  // 0. Known regional fallback place IDs
+  if (placeId.startsWith('loc-')) {
+    const match = Object.values(KNOWN_REGIONAL_FALLBACKS).find((item) => item.placeId === placeId);
+    if (match) {
+      placeCoordsCache.set(placeId, [match.lat, match.lng]);
+      return {
+        placeId: match.placeId,
+        formattedAddress: match.description,
+        name: match.mainText,
+        coords: [match.lat, match.lng],
+      };
+    }
+  }
+
+  // 0b. Instant resolution from prediction cache (eliminates Nominatim rate limits)
   const cached = placeCoordsCache.get(placeId);
   if (cached && isValidCoordinate(cached[0], cached[1])) {
     return {
@@ -131,7 +261,37 @@ export async function resolvePlaceCoordinates(
     };
   }
 
-  // 1. Try backend Place Details endpoint
+  // 1. If running in browser with Google Maps Geocoder and this is a Google Place ID
+  if (typeof window !== 'undefined' && (window as any).google?.maps?.Geocoder && !placeId.startsWith('osm-')) {
+    try {
+      const geocoder = new (window as any).google.maps.Geocoder();
+      const resolved: ResolvedPlace | null = await new Promise((resolve) => {
+        geocoder.geocode({ placeId }, (results: any, status: string) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+            const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+            resolve({
+              placeId,
+              formattedAddress: results[0].formatted_address || fallbackAddress || 'Selected Location',
+              name: results[0].address_components?.[0]?.long_name,
+              coords: [lat, lng],
+            });
+          } else {
+            resolve(null);
+          }
+        });
+      });
+      if (resolved && isValidCoordinate(resolved.coords[0], resolved.coords[1])) {
+        placeCoordsCache.set(placeId, resolved.coords);
+        return resolved;
+      }
+    } catch (err) {
+      console.warn('[Places Service] Browser Geocoder notice:', err);
+    }
+  }
+
+  // 2. Try backend Place Details endpoint
   try {
     const details = await placesApi.getPlaceDetails(placeId);
     if (details && details.location) {
