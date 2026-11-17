@@ -3,7 +3,7 @@ import L from 'leaflet';
 import type { RouteMatchResult, TransporterLocation } from '../../types';
 import { Compass, Layers } from 'lucide-react';
 import { GoogleMapView } from './GoogleMapView';
-import { getGoogleMapsApiKey, getGoogleMapsMapId, isGoogleMapsConfigured, setRuntimeGoogleMapsConfig } from '../../services/googleMapsConfig';
+import { getGoogleMapsApiKey, getGoogleMapsMapId, setRuntimeGoogleMapsConfig } from '../../services/googleMapsConfig';
 import { fetchRouteBetween, calculateHaversineDistance } from '../../services/routing';
 import { isCoordinateStale } from '../../services/geolocation';
 
@@ -16,6 +16,8 @@ export interface MapViewProps {
   dropoffCoords?: [number, number];
   pickupAddress?: string;
   dropoffAddress?: string;
+  engine?: 'leaflet' | 'google';
+  allowEngineSwitch?: boolean;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -27,12 +29,16 @@ export const MapView: React.FC<MapViewProps> = ({
   dropoffCoords: propDropoff,
   pickupAddress,
   dropoffAddress,
+  engine: propEngine,
+  allowEngineSwitch = false,
 }) => {
   const [googleKey, setGoogleKey] = useState<string>(() => getGoogleMapsApiKey());
   const mapId = useMemo(() => getGoogleMapsMapId(), []);
-  const [mapEngine, setMapEngine] = useState<'google' | 'leaflet'>(() =>
-    isGoogleMapsConfigured() ? 'google' : 'leaflet'
-  );
+  // Default to Leaflet + OpenStreetMap for seamless, zero-cost reliability across all user roles
+  const [mapEngine, setMapEngine] = useState<'google' | 'leaflet'>(() => {
+    if (propEngine) return propEngine;
+    return 'leaflet';
+  });
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [tempKeyInput, setTempKeyInput] = useState('');
 
@@ -404,7 +410,7 @@ export const MapView: React.FC<MapViewProps> = ({
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '440px', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '220px', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
       
       {/* Re-center Control Button */}
       <button
@@ -435,72 +441,74 @@ export const MapView: React.FC<MapViewProps> = ({
         <span>Re-center</span>
       </button>
 
-      {/* Provider Selector Switch in Top Right */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '0.875rem',
-          right: '0.875rem',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.375rem',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid var(--border-medium)',
-          borderRadius: 'var(--radius-full)',
-          padding: '0.25rem',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            if (googleKey) {
-              setMapEngine('google');
-            } else {
-              setShowKeyInput(true);
-            }
-          }}
+      {/* Provider Selector Switch in Top Right (only shown when explicitly permitted) */}
+      {allowEngineSwitch && (
+        <div
           style={{
-            display: 'inline-flex',
+            position: 'absolute',
+            top: '0.875rem',
+            right: '0.875rem',
+            zIndex: 1000,
+            display: 'flex',
             alignItems: 'center',
             gap: '0.375rem',
-            padding: '0.25rem 0.625rem',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid var(--border-medium)',
             borderRadius: 'var(--radius-full)',
-            fontSize: '0.75rem',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: mapEngine === 'google' ? 'var(--color-forest-850)' : 'transparent',
-            color: mapEngine === 'google' ? '#FFFFFF' : 'var(--text-secondary)',
-            transition: 'all var(--transition-fast)',
+            padding: '0.25rem',
+            boxShadow: 'var(--shadow-sm)',
           }}
         >
-          <span>Google Maps</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (googleKey) {
+                setMapEngine('google');
+              } else {
+                setShowKeyInput(true);
+              }
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.25rem 0.625rem',
+              borderRadius: 'var(--radius-full)',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: mapEngine === 'google' ? 'var(--color-forest-850)' : 'transparent',
+              color: mapEngine === 'google' ? '#FFFFFF' : 'var(--text-secondary)',
+              transition: 'all var(--transition-fast)',
+            }}
+          >
+            <span>Google Maps</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setMapEngine('leaflet')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '0.25rem 0.625rem',
-            borderRadius: 'var(--radius-full)',
-            fontSize: '0.75rem',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: mapEngine === 'leaflet' ? 'var(--color-forest-850)' : 'transparent',
-            color: mapEngine === 'leaflet' ? '#FFFFFF' : 'var(--text-secondary)',
-            transition: 'all var(--transition-fast)',
-          }}
-        >
-          <span>Leaflet OSM</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setMapEngine('leaflet')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.25rem 0.625rem',
+              borderRadius: 'var(--radius-full)',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: mapEngine === 'leaflet' ? 'var(--color-forest-850)' : 'transparent',
+              color: mapEngine === 'leaflet' ? '#FFFFFF' : 'var(--text-secondary)',
+              transition: 'all var(--transition-fast)',
+            }}
+          >
+            <span>Leaflet OSM</span>
+          </button>
+        </div>
+      )}
 
       {/* Render Google Maps Engine */}
       {mapEngine === 'google' && googleKey ? (
@@ -600,8 +608,8 @@ export const MapView: React.FC<MapViewProps> = ({
         </div>
       )}
 
-      {/* Google Maps API Key Setup Popover */}
-      {showKeyInput && (
+      {/* Google Maps API Key Setup Popover (only shown when explicitly permitted) */}
+      {allowEngineSwitch && showKeyInput && (
         <div
           style={{
             position: 'absolute',

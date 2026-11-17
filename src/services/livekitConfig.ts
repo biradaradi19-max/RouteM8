@@ -10,7 +10,7 @@ const LIVEKIT_URL_STORAGE_KEY = 'routem8_livekit_url';
  * Default is empty string if not configured.
  * 
  * NOTE: Frontend NEVER accesses or stores LIVEKIT_API_SECRET.
- * All tokens are minted server-side via Supabase Edge Function 'livekit-token'.
+ * All tokens are minted server-side via Express backend '/api/livekit/token'.
  */
 export function getLiveKitServerUrl(): string {
   // 1. Vite environment variable

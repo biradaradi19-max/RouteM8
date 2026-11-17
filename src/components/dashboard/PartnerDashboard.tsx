@@ -1746,6 +1746,8 @@ const PartnerLiveMapWithGps: React.FC<{
           dropoffAddress={delivery.dropoffAddress}
           transporterLocation={location}
           isLiveTracking={isSharing}
+          engine="leaflet"
+          allowEngineSwitch={false}
         />
       </div>
     </div>
